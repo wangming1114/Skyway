@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <parent>
+        <artifactId>skyway</artifactId>
+        <groupId>com.skyway</groupId>
+        <version>3.9.1</version>
+    </parent>
+    <modelVersion>4.0.0</modelVersion>
+
+    <artifactId>skyway-member</artifactId>
+
+    <description>
+        会员中心模块（客户 mb_customer、关联节点等）
+    </description>
+
+    <dependencies>
+
+        <!-- 通用工具-->
+        <dependency>
+            <groupId>com.skyway</groupId>
+            <artifactId>skyway-common</artifactId>
+        </dependency>
+
+        <!-- 资源模块（按 customer_id 查节点）-->
+        <dependency>
+            <groupId>com.skyway</groupId>
+            <artifactId>skyway-resource</artifactId>
+        </dependency>
+
+    </dependencies>
+
+</project>

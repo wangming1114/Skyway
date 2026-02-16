@@ -1,0 +1,59 @@
+######################################################################
+# Build Tools
+
+.gradle
+/build/
+!gradle/wrapper/gradle-wrapper.jar
+
+target/
+!.mvn/wrapper/maven-wrapper.jar
+
+######################################################################
+# IDE
+.cursor
+
+### STS ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+
+### IntelliJ IDEA ###
+.idea
+*.iws
+*.iml
+*.ipr
+
+### JRebel ###
+rebel.xml
+
+### NetBeans ###
+nbproject/private/
+build/*
+nbbuild/
+dist/
+skyway-c-ui/dist/
+skyway-c-ui/node_modules/
+nbdist/
+.nb-gradle/
+
+######################################################################
+# Docker 镜像仓库密码（勿提交）
+docker/.registry.env
+
+# Docker 前端构建产物（部署时复制 skyway-ui/dist、skyway-c-ui/dist 到该目录）
+docker/volumes/nginx/admin/*
+!docker/volumes/nginx/admin/.gitkeep
+docker/volumes/nginx/c/*
+!docker/volumes/nginx/c/.gitkeep
+
+# Others
+*.log
+*.xml.versionsBackup
+*.swp
+
+!*/build/*.java
+!*/build/*.html
+!*/build/*.xml

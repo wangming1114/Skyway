@@ -1,0 +1,90 @@
+﻿<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.skyway.resource.mapper.ProxyNodeMapper">
+
+    <resultMap type="com.skyway.resource.domain.ProxyNode" id="ProxyNodeResult">
+        <id     property="id"          column="id"           />
+        <result property="instanceId"  column="instance_id"  />
+        <result property="customerId"  column="customer_id"  />
+        <result property="nodeName"    column="node_name"    />
+        <result property="nodeType"    column="node_type"    />
+        <result property="address"     column="address"      />
+        <result property="port"        column="port"         />
+        <result property="url"         column="url"          />
+        <result property="configJson"  column="config_json"  />
+        <result property="expireTime"  column="expire_time"  />
+        <result property="customId"    column="custom_id"    />
+        <result property="status"      column="status"       />
+        <result property="remark"      column="remark"       />
+        <result property="createBy"    column="create_by"    />
+        <result property="createTime"  column="create_time"  />
+        <result property="updateBy"    column="update_by"    />
+        <result property="updateTime"  column="update_time"  />
+    </resultMap>
+
+    <sql id="selectProxyNodeVo">
+        select id, instance_id, customer_id, node_name, node_type, address, port, url, config_json, expire_time, custom_id, status, remark, create_by, create_time, update_by, update_time
+        from res_proxy_node
+    </sql>
+
+    <select id="selectList" parameterType="com.skyway.resource.domain.ProxyNode" resultMap="ProxyNodeResult">
+        <include refid="selectProxyNodeVo"/>
+        <where>
+            <if test="instanceId != null"> and instance_id = #{instanceId} </if>
+            <if test="customerId != null"> and customer_id = #{customerId} </if>
+            <if test="nodeType != null and nodeType != ''"> and node_type = #{nodeType} </if>
+            <if test="status != null and status != ''"> and status = #{status} </if>
+            <if test="nodeName != null and nodeName != ''"> and node_name like concat('%', #{nodeName}, '%') </if>
+        </where>
+        order by create_time desc
+    </select>
+
+    <select id="selectById" parameterType="Long" resultMap="ProxyNodeResult">
+        <include refid="selectProxyNodeVo"/>
+        where id = #{id}
+    </select>
+
+    <select id="selectByInstanceIdAndPort" resultMap="ProxyNodeResult">
+        <include refid="selectProxyNodeVo"/>
+        where instance_id = #{instanceId} and port = #{port}
+        limit 1
+    </select>
+
+    <insert id="insert" parameterType="com.skyway.resource.domain.ProxyNode" useGeneratedKeys="true" keyProperty="id">
+        insert into res_proxy_node (instance_id, customer_id, node_name, node_type, address, port, url, config_json, expire_time, custom_id, status, remark, create_by, create_time, update_time)
+        values (#{instanceId}, #{customerId}, #{nodeName}, #{nodeType}, #{address}, #{port}, #{url}, #{configJson}, #{expireTime}, #{customId}, #{status}, #{remark}, #{createBy}, sysdate(), sysdate())
+    </insert>
+
+    <update id="update" parameterType="com.skyway.resource.domain.ProxyNode">
+        update res_proxy_node
+        <set>
+            <if test="customerId != null">customer_id = #{customerId},</if>
+            <if test="nodeName != null">node_name = #{nodeName},</if>
+            <if test="nodeType != null and nodeType != ''">node_type = #{nodeType},</if>
+            <if test="address != null and address != ''">address = #{address},</if>
+            <if test="port != null">port = #{port},</if>
+            <if test="url != null">url = #{url},</if>
+            <if test="configJson != null">config_json = #{configJson},</if>
+            expire_time = #{expireTime},
+            <if test="customId != null">custom_id = #{customId},</if>
+            <if test="status != null">status = #{status},</if>
+            <if test="remark != null">remark = #{remark},</if>
+            <if test="updateBy != null and updateBy != ''">update_by = #{updateBy},</if>
+            update_time = sysdate()
+        </set>
+        where id = #{id}
+    </update>
+
+    <delete id="deleteById" parameterType="Long">
+        delete from res_proxy_node where id = #{id}
+    </delete>
+
+    <delete id="deleteByIds" parameterType="Long">
+        delete from res_proxy_node where id in
+        <foreach item="id" collection="array" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </delete>
+</mapper>

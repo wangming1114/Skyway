@@ -1,0 +1,37 @@
+﻿<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.skyway.resource.mapper.ProxyNodeTrafficSnapshotMapper">
+
+    <resultMap type="com.skyway.resource.domain.ProxyNodeTrafficSnapshot" id="ProxyNodeTrafficSnapshotResult">
+        <id     property="nodeId"    column="node_id"    />
+        <result property="lastRx"   column="last_rx"   />
+        <result property="lastTx"   column="last_tx"   />
+        <result property="updatedAt" column="updated_at" />
+    </resultMap>
+
+    <sql id="selectSnapshotVo">
+        select node_id, last_rx, last_tx, updated_at from res_proxy_node_traffic_snapshot
+    </sql>
+
+    <select id="selectByNodeId" resultMap="ProxyNodeTrafficSnapshotResult">
+        <include refid="selectSnapshotVo"/>
+        where node_id = #{nodeId}
+    </select>
+
+    <insert id="insert" parameterType="com.skyway.resource.domain.ProxyNodeTrafficSnapshot">
+        insert into res_proxy_node_traffic_snapshot (node_id, last_rx, last_tx, updated_at)
+        values (#{nodeId}, #{lastRx}, #{lastTx}, #{updatedAt})
+    </insert>
+
+    <update id="update" parameterType="com.skyway.resource.domain.ProxyNodeTrafficSnapshot">
+        update res_proxy_node_traffic_snapshot
+        set last_rx = #{lastRx}, last_tx = #{lastTx}, updated_at = #{updatedAt}
+        where node_id = #{nodeId}
+    </update>
+
+    <delete id="deleteByNodeId">
+        delete from res_proxy_node_traffic_snapshot where node_id = #{nodeId}
+    </delete>
+</mapper>

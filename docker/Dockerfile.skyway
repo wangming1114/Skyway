@@ -1,0 +1,42 @@
+# Stage 1: build skyway-admin jar（镜像源：docker.1ms.run）
+FROM docker.1ms.run/library/maven:3.8-eclipse-temurin-8 AS builder
+WORKDIR /build
+
+# copy parent and all module poms
+COPY pom.xml .
+COPY skyway-admin/pom.xml skyway-admin/
+COPY skyway-common/pom.xml skyway-common/
+COPY skyway-framework/pom.xml skyway-framework/
+COPY skyway-system/pom.xml skyway-system/
+COPY skyway-resource/pom.xml skyway-resource/
+COPY skyway-member/pom.xml skyway-member/
+COPY skyway-quartz/pom.xml skyway-quartz/
+COPY skyway-generator/pom.xml skyway-generator/
+
+# download dependencies (cache layer)
+RUN mvn dependency:go-offline -B -pl skyway-admin -am || true
+
+# copy source
+COPY skyway-admin/src skyway-admin/src
+COPY skyway-common/src skyway-common/src
+COPY skyway-framework/src skyway-framework/src
+COPY skyway-system/src skyway-system/src
+COPY skyway-resource/src skyway-resource/src
+COPY skyway-member/src skyway-member/src
+COPY skyway-quartz/src skyway-quartz/src
+COPY skyway-generator/src skyway-generator/src
+
+# build only skyway-admin and its dependencies
+RUN mvn package -B -pl skyway-admin -am -DskipTests -q
+
+# Stage 2: runtime（镜像源：docker.1ms.run）
+FROM docker.1ms.run/library/eclipse-temurin:8-jre
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends fontconfig && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /build/skyway-admin/target/skyway-admin.jar ./app.jar
+
+# config mounted at /app/config (application-prod.yml)
+EXPOSE 8080
+ENTRYPOINT ["java", "-jar", "app.jar", "--spring.config.additional-location=file:/app/config/"]

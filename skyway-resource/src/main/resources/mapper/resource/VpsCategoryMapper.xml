@@ -1,0 +1,69 @@
+﻿<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.skyway.resource.mapper.VpsCategoryMapper">
+
+    <resultMap type="com.skyway.resource.domain.VpsCategory" id="VpsCategoryResult">
+        <id     property="id"        column="id"        />
+        <result property="parentId"  column="parent_id"  />
+        <result property="name"      column="name"      />
+        <result property="orderNum" column="order_num" />
+        <result property="type"     column="type"      />
+        <result property="createTime" column="create_time" />
+        <result property="updateTime" column="update_time" />
+    </resultMap>
+
+    <sql id="selectVpsCategoryVo">
+        select id, parent_id, name, order_num, type, create_time, update_time
+        from res_category
+    </sql>
+
+    <select id="selectListByType" resultMap="VpsCategoryResult">
+        <include refid="selectVpsCategoryVo"/>
+        where type = #{type}
+        order by parent_id, order_num
+    </select>
+
+    <select id="selectById" parameterType="Long" resultMap="VpsCategoryResult">
+        <include refid="selectVpsCategoryVo"/>
+        where id = #{id}
+    </select>
+
+    <select id="hasChildById" parameterType="Long" resultType="int">
+        select count(1) from res_category
+        where parent_id = #{id} limit 1
+    </select>
+
+    <select id="countInstanceByCategoryId" parameterType="Long" resultType="int">
+        select count(1) from res_instance where category_id = #{categoryId}
+    </select>
+
+    <select id="countInstanceByNodeId" parameterType="Long" resultType="int">
+        select count(1) from res_instance where node_id = #{nodeId}
+    </select>
+
+    <insert id="insert" parameterType="com.skyway.resource.domain.VpsCategory" useGeneratedKeys="true" keyProperty="id">
+        insert into res_category (
+            parent_id, name, order_num, type, create_time, update_time
+        ) values (
+            #{parentId}, #{name}, #{orderNum}, #{type}, sysdate(), sysdate()
+        )
+    </insert>
+
+    <update id="update" parameterType="com.skyway.resource.domain.VpsCategory">
+        update res_category
+        <set>
+            <if test="parentId != null">parent_id = #{parentId},</if>
+            <if test="name != null and name != ''">name = #{name},</if>
+            <if test="orderNum != null">order_num = #{orderNum},</if>
+            <if test="type != null">type = #{type},</if>
+            update_time = sysdate()
+        </set>
+        where id = #{id}
+    </update>
+
+    <delete id="deleteById" parameterType="Long">
+        delete from res_category where id = #{id}
+    </delete>
+</mapper>

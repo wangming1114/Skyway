@@ -1,0 +1,119 @@
+﻿<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.skyway.member.mapper.MbCustomerMapper">
+
+    <resultMap type="com.skyway.member.domain.MbCustomer" id="MbCustomerResult">
+        <id     property="id"            column="id"             />
+        <result property="username"      column="username"       />
+        <result property="password"      column="password"       />
+        <result property="email"         column="email"          />
+        <result property="phone"         column="phone"          />
+        <result property="wechat"        column="wechat"         />
+        <result property="qq"            column="qq"             />
+        <result property="avatar"        column="avatar"         />
+        <result property="status"        column="status"         />
+        <result property="registerTime"  column="register_time"  />
+        <result property="lastLoginAt"   column="last_login_at"  />
+        <result property="lastLoginIp"   column="last_login_ip"  />
+        <result property="nodeBindCount" column="node_bind_count" />
+        <result property="remark"        column="remark"         />
+        <result property="createBy"      column="create_by"      />
+        <result property="createTime"    column="create_time"    />
+        <result property="updateBy"      column="update_by"      />
+        <result property="updateTime"    column="update_time"    />
+    </resultMap>
+
+    <sql id="selectMbCustomerVo">
+        select c.id, c.username, c.password, c.email, c.phone, c.wechat, c.qq, c.avatar, c.status,
+               c.register_time, c.last_login_at, c.last_login_ip,
+               c.remark, c.create_by, c.create_time, c.update_by, c.update_time,
+               (select count(*) from res_proxy_node n where n.customer_id = c.id) as node_bind_count
+        from mb_customer c
+    </sql>
+
+    <select id="selectList" parameterType="com.skyway.member.domain.MbCustomer" resultMap="MbCustomerResult">
+        <include refid="selectMbCustomerVo"/>
+        <where>
+            <if test="keyword != null and keyword != ''">
+                and (c.username like concat('%', #{keyword}, '%') or c.phone like concat('%', #{keyword}, '%'))
+            </if>
+            <if test="username != null and username != ''"> and c.username like concat('%', #{username}, '%') </if>
+            <if test="phone != null and phone != ''"> and c.phone like concat('%', #{phone}, '%') </if>
+            <if test="status != null and status != ''"> and c.status = #{status} </if>
+        </where>
+        order by c.create_time desc
+    </select>
+
+    <select id="selectById" parameterType="Long" resultMap="MbCustomerResult">
+        <include refid="selectMbCustomerVo"/>
+        where c.id = #{id}
+    </select>
+
+    <select id="selectByEmail" parameterType="String" resultMap="MbCustomerResult">
+        <include refid="selectMbCustomerVo"/>
+        where c.email = #{email}
+        limit 1
+    </select>
+
+    <select id="selectByUsername" parameterType="String" resultMap="MbCustomerResult">
+        <include refid="selectMbCustomerVo"/>
+        where c.username = #{username}
+        limit 1
+    </select>
+
+    <insert id="insert" parameterType="com.skyway.member.domain.MbCustomer" useGeneratedKeys="true" keyProperty="id">
+        insert into mb_customer (username, password, email, phone, wechat, qq, avatar, status, register_time,
+            last_login_at, last_login_ip, remark, create_by, create_time, update_time)
+        values (#{username}, #{password}, #{email}, #{phone}, #{wechat}, #{qq}, #{avatar}, #{status}, sysdate(),
+            #{lastLoginAt}, #{lastLoginIp}, #{remark}, #{createBy}, sysdate(), sysdate())
+    </insert>
+
+    <update id="update" parameterType="com.skyway.member.domain.MbCustomer">
+        update mb_customer
+        <set>
+            <if test="username != null">username = #{username},</if>
+            <if test="email != null">email = #{email},</if>
+            <if test="phone != null">phone = #{phone},</if>
+            <if test="wechat != null">wechat = #{wechat},</if>
+            <if test="qq != null">qq = #{qq},</if>
+            <if test="avatar != null">avatar = #{avatar},</if>
+            <if test="status != null">status = #{status},</if>
+            <if test="lastLoginAt != null">last_login_at = #{lastLoginAt},</if>
+            <if test="lastLoginIp != null">last_login_ip = #{lastLoginIp},</if>
+            <if test="remark != null">remark = #{remark},</if>
+            <if test="updateBy != null and updateBy != ''">update_by = #{updateBy},</if>
+            update_time = sysdate()
+        </set>
+        where id = #{id}
+    </update>
+
+    <update id="updateStatus">
+        update mb_customer set status = #{param2}, update_by = #{param3}, update_time = sysdate() where id = #{param1}
+    </update>
+
+    <update id="updatePassword">
+        update mb_customer set password = #{param2}, update_by = #{param3}, update_time = sysdate() where id = #{param1}
+    </update>
+
+    <delete id="deleteById" parameterType="Long">
+        delete from mb_customer where id = #{id}
+    </delete>
+
+    <delete id="deleteByIds" parameterType="Long">
+        delete from mb_customer where id in
+        <foreach item="id" collection="array" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </delete>
+
+    <select id="checkUsernameUnique" resultType="int">
+        select count(1) from mb_customer where username = #{param1}
+        <if test="param2 != null"> and id != #{param2} </if>
+    </select>
+
+    <select id="countByEmail" resultType="int">
+        select count(1) from mb_customer where email = #{email}
+    </select>
+</mapper>
