@@ -11,7 +11,7 @@
  Target Server Version : 50744
  File Encoding         : 65001
 
- Date: 16/02/2026 12:18:50
+ Date: 16/02/2026 19:24:00
 */
 
 SET NAMES utf8mb4;
@@ -44,7 +44,7 @@ CREATE TABLE `gen_table`  (
   `update_time` datetime NULL DEFAULT NULL COMMENT '更新时间',
   `remark` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '备注',
   PRIMARY KEY (`table_id`) USING BTREE
-) ENGINE = InnoDB AUTO_INCREMENT = 1 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '代码生成业务表' ROW_FORMAT = Dynamic;
+) ENGINE = InnoDB AUTO_INCREMENT = 1 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '代码生成业务表' ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of gen_table
@@ -78,7 +78,7 @@ CREATE TABLE `gen_table_column`  (
   `update_by` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT '' COMMENT '更新者',
   `update_time` datetime NULL DEFAULT NULL COMMENT '更新时间',
   PRIMARY KEY (`column_id`) USING BTREE
-) ENGINE = InnoDB AUTO_INCREMENT = 1 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '代码生成业务表字段' ROW_FORMAT = Dynamic;
+) ENGINE = InnoDB AUTO_INCREMENT = 1 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '代码生成业务表字段' ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of gen_table_column
@@ -109,13 +109,11 @@ CREATE TABLE `mb_customer`  (
   PRIMARY KEY (`id`) USING BTREE,
   UNIQUE INDEX `uk_username`(`username`) USING BTREE,
   INDEX `idx_status`(`status`) USING BTREE
-) ENGINE = InnoDB AUTO_INCREMENT = 6 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '会员客户表' ROW_FORMAT = Dynamic;
+) ENGINE = InnoDB AUTO_INCREMENT = 6 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '会员客户表' ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of mb_customer
 -- ----------------------------
-INSERT INTO `mb_customer` VALUES (1, '1111', '$2a$10$.LKhwktXVorU2JoZ6/O2XeqBGaqpLrwCm4fBEXzNOeru7O9TS9.0O', '1942152752@qq.com', '2112', '', '', '', '0', '2026-02-14 14:50:19', '2026-02-15 17:08:49', '127.0.0.1', '', 'admin', '2026-02-14 14:50:19', 'admin', '2026-02-15 09:08:51');
-INSERT INTO `mb_customer` VALUES (5, 'ewrwewe', '$2a$10$Ci/Ay7skQVAicbHVMuOGTu24d3p7liDYfFd8SaS4TbQBLCPsrRYzq', 'admin@topdemo.cn', NULL, NULL, NULL, NULL, '0', '2026-02-15 15:38:59', '2026-02-16 00:29:00', '127.0.0.1', NULL, NULL, '2026-02-15 15:38:59', '', '2026-02-15 16:29:02');
 
 -- ----------------------------
 -- Table structure for qrtz_blob_triggers
@@ -128,7 +126,7 @@ CREATE TABLE `qrtz_blob_triggers`  (
   `blob_data` blob NULL COMMENT '存放持久化Trigger对象',
   PRIMARY KEY (`sched_name`, `trigger_name`, `trigger_group`) USING BTREE,
   CONSTRAINT `qrtz_blob_triggers_ibfk_1` FOREIGN KEY (`sched_name`, `trigger_name`, `trigger_group`) REFERENCES `qrtz_triggers` (`sched_name`, `trigger_name`, `trigger_group`) ON DELETE RESTRICT ON UPDATE RESTRICT
-) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = 'Blob类型的触发器表' ROW_FORMAT = Dynamic;
+) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = 'Blob类型的触发器表' ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of qrtz_blob_triggers
@@ -143,7 +141,7 @@ CREATE TABLE `qrtz_calendars`  (
   `calendar_name` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL COMMENT '日历名称',
   `calendar` blob NOT NULL COMMENT '存放持久化calendar对象',
   PRIMARY KEY (`sched_name`, `calendar_name`) USING BTREE
-) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '日历信息表' ROW_FORMAT = Dynamic;
+) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '日历信息表' ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of qrtz_calendars
@@ -161,7 +159,7 @@ CREATE TABLE `qrtz_cron_triggers`  (
   `time_zone_id` varchar(80) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '时区',
   PRIMARY KEY (`sched_name`, `trigger_name`, `trigger_group`) USING BTREE,
   CONSTRAINT `qrtz_cron_triggers_ibfk_1` FOREIGN KEY (`sched_name`, `trigger_name`, `trigger_group`) REFERENCES `qrtz_triggers` (`sched_name`, `trigger_name`, `trigger_group`) ON DELETE RESTRICT ON UPDATE RESTRICT
-) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = 'Cron类型的触发器表' ROW_FORMAT = Dynamic;
+) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = 'Cron类型的触发器表' ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of qrtz_cron_triggers
@@ -186,7 +184,7 @@ CREATE TABLE `qrtz_fired_triggers`  (
   `is_nonconcurrent` varchar(1) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '是否并发',
   `requests_recovery` varchar(1) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '是否接受恢复执行',
   PRIMARY KEY (`sched_name`, `entry_id`) USING BTREE
-) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '已触发的触发器表' ROW_FORMAT = Dynamic;
+) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '已触发的触发器表' ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of qrtz_fired_triggers
@@ -208,7 +206,7 @@ CREATE TABLE `qrtz_job_details`  (
   `requests_recovery` varchar(1) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL COMMENT '是否接受恢复执行',
   `job_data` blob NULL COMMENT '存放持久化job对象',
   PRIMARY KEY (`sched_name`, `job_name`, `job_group`) USING BTREE
-) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '任务详细信息表' ROW_FORMAT = Dynamic;
+) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '任务详细信息表' ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of qrtz_job_details
@@ -222,7 +220,7 @@ CREATE TABLE `qrtz_locks`  (
   `sched_name` varchar(120) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL COMMENT '调度名称',
   `lock_name` varchar(40) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL COMMENT '悲观锁名称',
   PRIMARY KEY (`sched_name`, `lock_name`) USING BTREE
-) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '存储的悲观锁信息表' ROW_FORMAT = Dynamic;
+) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '存储的悲观锁信息表' ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of qrtz_locks
@@ -236,7 +234,7 @@ CREATE TABLE `qrtz_paused_trigger_grps`  (
   `sched_name` varchar(120) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL COMMENT '调度名称',
   `trigger_group` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL COMMENT 'qrtz_triggers表trigger_group的外键',
   PRIMARY KEY (`sched_name`, `trigger_group`) USING BTREE
-) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '暂停的触发器表' ROW_FORMAT = Dynamic;
+) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '暂停的触发器表' ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of qrtz_paused_trigger_grps
@@ -252,7 +250,7 @@ CREATE TABLE `qrtz_scheduler_state`  (
   `last_checkin_time` bigint(13) NOT NULL COMMENT '上次检查时间',
   `checkin_interval` bigint(13) NOT NULL COMMENT '检查间隔时间',
   PRIMARY KEY (`sched_name`, `instance_name`) USING BTREE
-) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '调度器状态表' ROW_FORMAT = Dynamic;
+) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '调度器状态表' ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of qrtz_scheduler_state
@@ -271,7 +269,7 @@ CREATE TABLE `qrtz_simple_triggers`  (
   `times_triggered` bigint(10) NOT NULL COMMENT '已经触发的次数',
   PRIMARY KEY (`sched_name`, `trigger_name`, `trigger_group`) USING BTREE,
   CONSTRAINT `qrtz_simple_triggers_ibfk_1` FOREIGN KEY (`sched_name`, `trigger_name`, `trigger_group`) REFERENCES `qrtz_triggers` (`sched_name`, `trigger_name`, `trigger_group`) ON DELETE RESTRICT ON UPDATE RESTRICT
-) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '简单触发器的信息表' ROW_FORMAT = Dynamic;
+) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '简单触发器的信息表' ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of qrtz_simple_triggers
@@ -298,7 +296,7 @@ CREATE TABLE `qrtz_simprop_triggers`  (
   `bool_prop_2` varchar(1) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT 'Boolean类型的trigger的第二个参数',
   PRIMARY KEY (`sched_name`, `trigger_name`, `trigger_group`) USING BTREE,
   CONSTRAINT `qrtz_simprop_triggers_ibfk_1` FOREIGN KEY (`sched_name`, `trigger_name`, `trigger_group`) REFERENCES `qrtz_triggers` (`sched_name`, `trigger_name`, `trigger_group`) ON DELETE RESTRICT ON UPDATE RESTRICT
-) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '同步机制的行锁表' ROW_FORMAT = Dynamic;
+) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '同步机制的行锁表' ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of qrtz_simprop_triggers
@@ -328,7 +326,7 @@ CREATE TABLE `qrtz_triggers`  (
   PRIMARY KEY (`sched_name`, `trigger_name`, `trigger_group`) USING BTREE,
   INDEX `sched_name`(`sched_name`, `job_name`, `job_group`) USING BTREE,
   CONSTRAINT `qrtz_triggers_ibfk_1` FOREIGN KEY (`sched_name`, `job_name`, `job_group`) REFERENCES `qrtz_job_details` (`sched_name`, `job_name`, `job_group`) ON DELETE RESTRICT ON UPDATE RESTRICT
-) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '触发器详细信息表' ROW_FORMAT = Dynamic;
+) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '触发器详细信息表' ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of qrtz_triggers
@@ -347,7 +345,7 @@ CREATE TABLE `res_category`  (
   `create_time` datetime NULL DEFAULT NULL COMMENT '创建时间',
   `update_time` datetime NULL DEFAULT NULL COMMENT '更新时间',
   PRIMARY KEY (`id`) USING BTREE
-) ENGINE = InnoDB AUTO_INCREMENT = 6 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '资源分类与节点表' ROW_FORMAT = Dynamic;
+) ENGINE = InnoDB AUTO_INCREMENT = 6 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '资源分类与节点表' ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of res_category
@@ -378,12 +376,11 @@ CREATE TABLE `res_instance`  (
   `ssh_username` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT 'SSH登录账号',
   `ssh_password` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT 'SSH登录密码',
   PRIMARY KEY (`id`) USING BTREE
-) ENGINE = InnoDB AUTO_INCREMENT = 2 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = 'VPS实例表' ROW_FORMAT = Dynamic;
+) ENGINE = InnoDB AUTO_INCREMENT = 2 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = 'VPS实例表' ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of res_instance
 -- ----------------------------
-INSERT INTO `res_instance` VALUES (1, '美国003（狐蒂云）', 5, NULL, '38.55.36.18', '2', '2', '10', 'running', '', '2026-02-13 15:32:03', '2026-02-14 15:20:07', 22, 'root', 'wangming1114');
 
 -- ----------------------------
 -- Table structure for res_proxy_node
@@ -410,12 +407,11 @@ CREATE TABLE `res_proxy_node`  (
   PRIMARY KEY (`id`) USING BTREE,
   INDEX `idx_instance_id`(`instance_id`) USING BTREE,
   INDEX `idx_customer_id`(`customer_id`) USING BTREE
-) ENGINE = InnoDB AUTO_INCREMENT = 33 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '代理节点表' ROW_FORMAT = Dynamic;
+) ENGINE = InnoDB AUTO_INCREMENT = 31 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '代理节点表' ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of res_proxy_node
 -- ----------------------------
-INSERT INTO `res_proxy_node` VALUES (30, 1, 1, 'VLESS-REALITY-888-1-permanent', 'VLESS-REALITY', '38.55.36.18', 888, 'vless://f299de16-4234-4540-9318-bfae9ec1f11b@38.55.36.18:888?encryption=none&security=reality&flow=xtls-rprx-vision&type=tcp&sni=www.paypal.com&pbk=n3ViJTh1giILqSv3-namdP-WeHFTCPUdKRITMp_51mA&fp=chrome#VLESS-REALITY-888-1-permanent', '{\"protocol\":\"vless\",\"id\":\"f299de16-4234-4540-9318-bfae9ec1f11b\",\"flow\":\"xtls-rprx-vision\",\"network\":\"tcp\",\"security\":\"reality\",\"sni\":\"www.paypal.com\",\"fingerprint\":\"chrome\",\"publicKey\":\"n3ViJTh1giILqSv3-namdP-WeHFTCPUdKRITMp_51mA\"}', NULL, '0', NULL, NULL, '2026-02-15 08:16:11', '', '2026-02-15 08:16:11', '1');
 
 -- ----------------------------
 -- Table structure for res_proxy_node_traffic
@@ -429,135 +425,11 @@ CREATE TABLE `res_proxy_node_traffic`  (
   `tx_delta` bigint(20) NULL DEFAULT 0 COMMENT '本周期上行增量(字节)',
   PRIMARY KEY (`id`) USING BTREE,
   INDEX `idx_node_id_stat_time`(`node_id`, `stat_time`) USING BTREE
-) ENGINE = InnoDB AUTO_INCREMENT = 159 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '代理节点流量明细' ROW_FORMAT = Dynamic;
+) ENGINE = InnoDB AUTO_INCREMENT = 197 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '代理节点流量明细' ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of res_proxy_node_traffic
 -- ----------------------------
-INSERT INTO `res_proxy_node_traffic` VALUES (1, 25, '2026-02-15 15:03:41', 0, 0);
-INSERT INTO `res_proxy_node_traffic` VALUES (2, 25, '2026-02-15 15:04:49', 0, 0);
-INSERT INTO `res_proxy_node_traffic` VALUES (3, 25, '2026-02-15 15:05:00', 0, 0);
-INSERT INTO `res_proxy_node_traffic` VALUES (4, 25, '2026-02-15 15:10:00', 0, 0);
-INSERT INTO `res_proxy_node_traffic` VALUES (5, 25, '2026-02-15 15:11:57', 0, 0);
-INSERT INTO `res_proxy_node_traffic` VALUES (6, 25, '2026-02-15 15:15:00', 0, 0);
-INSERT INTO `res_proxy_node_traffic` VALUES (7, 25, '2026-02-15 15:16:31', 0, 0);
-INSERT INTO `res_proxy_node_traffic` VALUES (8, 25, '2026-02-15 15:19:59', 0, 0);
-INSERT INTO `res_proxy_node_traffic` VALUES (9, 25, '2026-02-15 15:20:03', 0, 0);
-INSERT INTO `res_proxy_node_traffic` VALUES (10, 25, '2026-02-15 15:21:54', 0, 0);
-INSERT INTO `res_proxy_node_traffic` VALUES (11, 25, '2026-02-15 15:25:00', 0, 0);
-INSERT INTO `res_proxy_node_traffic` VALUES (12, 25, '2026-02-15 15:25:42', 0, 0);
-INSERT INTO `res_proxy_node_traffic` VALUES (13, 25, '2026-02-15 15:27:45', 0, 0);
-INSERT INTO `res_proxy_node_traffic` VALUES (14, 25, '2026-02-15 15:29:50', 183932, 45523);
-INSERT INTO `res_proxy_node_traffic` VALUES (15, 25, '2026-02-15 15:30:00', 231, 521);
-INSERT INTO `res_proxy_node_traffic` VALUES (16, 25, '2026-02-15 15:30:05', 1804, 3174);
-INSERT INTO `res_proxy_node_traffic` VALUES (17, 25, '2026-02-15 15:34:48', 1003498, 24711974);
-INSERT INTO `res_proxy_node_traffic` VALUES (18, 25, '2026-02-15 15:35:00', 2610136, 77925398);
-INSERT INTO `res_proxy_node_traffic` VALUES (19, 25, '2026-02-15 15:35:34', 88828060, 31132141);
-INSERT INTO `res_proxy_node_traffic` VALUES (39, 30, '2026-02-15 16:16:24', 0, 0);
-INSERT INTO `res_proxy_node_traffic` VALUES (40, 30, '2026-02-15 16:16:43', 54208, 105586);
-INSERT INTO `res_proxy_node_traffic` VALUES (41, 30, '2026-02-15 16:18:04', 113139265, 153403974);
-INSERT INTO `res_proxy_node_traffic` VALUES (42, 30, '2026-02-15 16:20:00', 23163, 46224);
-INSERT INTO `res_proxy_node_traffic` VALUES (43, 30, '2026-02-15 16:25:00', 49051, 87742);
-INSERT INTO `res_proxy_node_traffic` VALUES (44, 30, '2026-02-15 16:30:00', 2982991, 10171670);
-INSERT INTO `res_proxy_node_traffic` VALUES (45, 30, '2026-02-15 16:35:00', 1439830, 5578984);
-INSERT INTO `res_proxy_node_traffic` VALUES (46, 30, '2026-02-15 16:40:00', 148705, 822387);
-INSERT INTO `res_proxy_node_traffic` VALUES (47, 30, '2026-02-15 16:45:01', 59069, 121661);
-INSERT INTO `res_proxy_node_traffic` VALUES (48, 30, '2026-02-15 16:50:00', 46989, 71663);
-INSERT INTO `res_proxy_node_traffic` VALUES (49, 30, '2026-02-15 16:55:00', 16554, 17343);
-INSERT INTO `res_proxy_node_traffic` VALUES (50, 30, '2026-02-15 17:00:00', 31315, 768404);
-INSERT INTO `res_proxy_node_traffic` VALUES (51, 30, '2026-02-15 17:05:00', 187328, 134979);
-INSERT INTO `res_proxy_node_traffic` VALUES (52, 30, '2026-02-15 17:10:00', 77083, 123349);
-INSERT INTO `res_proxy_node_traffic` VALUES (53, 30, '2026-02-15 17:15:00', 50812, 98250);
-INSERT INTO `res_proxy_node_traffic` VALUES (54, 30, '2026-02-15 17:20:20', 258869, 402316);
-INSERT INTO `res_proxy_node_traffic` VALUES (55, 30, '2026-02-15 17:25:00', 94063, 137734);
-INSERT INTO `res_proxy_node_traffic` VALUES (56, 30, '2026-02-15 17:30:00', 103119, 170401);
-INSERT INTO `res_proxy_node_traffic` VALUES (57, 30, '2026-02-15 17:35:00', 389856, 429962);
-INSERT INTO `res_proxy_node_traffic` VALUES (59, 30, '2026-02-15 17:40:01', 251823, 2015423);
-INSERT INTO `res_proxy_node_traffic` VALUES (61, 30, '2026-02-15 17:45:00', 280036, 816747);
-INSERT INTO `res_proxy_node_traffic` VALUES (63, 30, '2026-02-15 17:50:00', 42331, 51203);
-INSERT INTO `res_proxy_node_traffic` VALUES (65, 30, '2026-02-15 17:55:00', 572176, 1887096);
-INSERT INTO `res_proxy_node_traffic` VALUES (67, 30, '2026-02-15 18:00:00', 153311, 150274);
-INSERT INTO `res_proxy_node_traffic` VALUES (69, 30, '2026-02-15 18:05:00', 713167, 710869);
-INSERT INTO `res_proxy_node_traffic` VALUES (71, 30, '2026-02-15 18:10:00', 148968, 128117);
-INSERT INTO `res_proxy_node_traffic` VALUES (73, 30, '2026-02-15 18:15:00', 207611, 332648);
-INSERT INTO `res_proxy_node_traffic` VALUES (75, 30, '2026-02-15 18:20:00', 125242, 112114);
-INSERT INTO `res_proxy_node_traffic` VALUES (77, 30, '2026-02-15 18:25:00', 106073, 103754);
-INSERT INTO `res_proxy_node_traffic` VALUES (79, 30, '2026-02-15 18:30:00', 151885, 146082);
-INSERT INTO `res_proxy_node_traffic` VALUES (81, 30, '2026-02-15 18:35:00', 827719, 1398464);
-INSERT INTO `res_proxy_node_traffic` VALUES (83, 30, '2026-02-15 18:40:00', 257547, 282939);
-INSERT INTO `res_proxy_node_traffic` VALUES (85, 30, '2026-02-15 18:45:00', 256087, 413393);
-INSERT INTO `res_proxy_node_traffic` VALUES (87, 30, '2026-02-15 18:50:00', 232451, 278895);
-INSERT INTO `res_proxy_node_traffic` VALUES (88, 30, '2026-02-15 18:55:00', 231531, 308810);
-INSERT INTO `res_proxy_node_traffic` VALUES (89, 32, '2026-02-15 18:55:00', 0, 0);
-INSERT INTO `res_proxy_node_traffic` VALUES (90, 30, '2026-02-15 19:00:00', 2408511, 38603261);
-INSERT INTO `res_proxy_node_traffic` VALUES (91, 30, '2026-02-15 19:05:00', 208051, 94338);
-INSERT INTO `res_proxy_node_traffic` VALUES (92, 30, '2026-02-15 19:10:00', 114315, 181033);
-INSERT INTO `res_proxy_node_traffic` VALUES (93, 30, '2026-02-15 19:15:00', 98849, 173708);
-INSERT INTO `res_proxy_node_traffic` VALUES (94, 30, '2026-02-15 19:20:00', 145073, 354205);
-INSERT INTO `res_proxy_node_traffic` VALUES (95, 30, '2026-02-15 19:25:00', 82886, 153423);
-INSERT INTO `res_proxy_node_traffic` VALUES (96, 30, '2026-02-15 19:30:00', 144320, 224479);
-INSERT INTO `res_proxy_node_traffic` VALUES (97, 30, '2026-02-15 19:35:21', 176003, 193585);
-INSERT INTO `res_proxy_node_traffic` VALUES (98, 30, '2026-02-15 19:40:21', 79925, 104699);
-INSERT INTO `res_proxy_node_traffic` VALUES (99, 30, '2026-02-15 19:45:21', 75487, 128505);
-INSERT INTO `res_proxy_node_traffic` VALUES (100, 30, '2026-02-15 19:50:00', 120029, 196158);
-INSERT INTO `res_proxy_node_traffic` VALUES (101, 30, '2026-02-15 19:55:21', 74138, 105487);
-INSERT INTO `res_proxy_node_traffic` VALUES (102, 30, '2026-02-15 20:00:21', 79965, 114163);
-INSERT INTO `res_proxy_node_traffic` VALUES (103, 30, '2026-02-15 20:05:00', 417710, 604391);
-INSERT INTO `res_proxy_node_traffic` VALUES (104, 30, '2026-02-15 20:10:00', 476364, 1866125);
-INSERT INTO `res_proxy_node_traffic` VALUES (105, 30, '2026-02-15 20:15:00', 172653, 329658);
-INSERT INTO `res_proxy_node_traffic` VALUES (106, 30, '2026-02-15 20:20:00', 2735535, 26917784);
-INSERT INTO `res_proxy_node_traffic` VALUES (107, 30, '2026-02-15 20:25:00', 1266555, 4393271);
-INSERT INTO `res_proxy_node_traffic` VALUES (108, 30, '2026-02-15 20:30:00', 1379988, 3823523);
-INSERT INTO `res_proxy_node_traffic` VALUES (109, 30, '2026-02-15 20:35:00', 989069, 1967784);
-INSERT INTO `res_proxy_node_traffic` VALUES (110, 30, '2026-02-15 20:40:00', 186688, 336632);
-INSERT INTO `res_proxy_node_traffic` VALUES (111, 30, '2026-02-15 20:45:00', 476469, 3751816);
-INSERT INTO `res_proxy_node_traffic` VALUES (112, 30, '2026-02-15 20:50:00', 154049, 238191);
-INSERT INTO `res_proxy_node_traffic` VALUES (113, 30, '2026-02-15 20:55:00', 163353, 311589);
-INSERT INTO `res_proxy_node_traffic` VALUES (114, 30, '2026-02-15 21:00:00', 98615, 284677);
-INSERT INTO `res_proxy_node_traffic` VALUES (115, 30, '2026-02-15 21:05:00', 265762, 199889);
-INSERT INTO `res_proxy_node_traffic` VALUES (116, 30, '2026-02-15 21:10:00', 116911, 282731);
-INSERT INTO `res_proxy_node_traffic` VALUES (117, 30, '2026-02-15 21:15:00', 68870, 133587);
-INSERT INTO `res_proxy_node_traffic` VALUES (118, 30, '2026-02-15 21:20:00', 95279, 212394);
-INSERT INTO `res_proxy_node_traffic` VALUES (119, 30, '2026-02-15 21:25:00', 145876, 297882);
-INSERT INTO `res_proxy_node_traffic` VALUES (120, 30, '2026-02-15 21:30:00', 553111, 3627150);
-INSERT INTO `res_proxy_node_traffic` VALUES (121, 30, '2026-02-15 21:35:00', 275649, 299761);
-INSERT INTO `res_proxy_node_traffic` VALUES (122, 30, '2026-02-15 21:40:00', 86632, 167106);
-INSERT INTO `res_proxy_node_traffic` VALUES (123, 30, '2026-02-15 21:45:00', 48002, 65994);
-INSERT INTO `res_proxy_node_traffic` VALUES (124, 30, '2026-02-15 21:50:00', 53215, 76043);
-INSERT INTO `res_proxy_node_traffic` VALUES (125, 30, '2026-02-15 21:55:00', 107629, 185569);
-INSERT INTO `res_proxy_node_traffic` VALUES (126, 30, '2026-02-15 22:00:00', 61545, 86838);
-INSERT INTO `res_proxy_node_traffic` VALUES (127, 30, '2026-02-15 22:05:00', 162355, 209722);
-INSERT INTO `res_proxy_node_traffic` VALUES (128, 30, '2026-02-15 22:10:00', 105542, 186734);
-INSERT INTO `res_proxy_node_traffic` VALUES (129, 30, '2026-02-15 22:15:00', 125774, 241085);
-INSERT INTO `res_proxy_node_traffic` VALUES (130, 30, '2026-02-15 22:20:00', 33444, 51993);
-INSERT INTO `res_proxy_node_traffic` VALUES (131, 30, '2026-02-15 22:25:00', 155575, 278344);
-INSERT INTO `res_proxy_node_traffic` VALUES (132, 30, '2026-02-15 22:30:00', 105741, 315203);
-INSERT INTO `res_proxy_node_traffic` VALUES (133, 30, '2026-02-15 22:35:00', 227887, 200668);
-INSERT INTO `res_proxy_node_traffic` VALUES (134, 30, '2026-02-15 22:40:00', 170930, 298191);
-INSERT INTO `res_proxy_node_traffic` VALUES (135, 30, '2026-02-15 22:45:00', 45087, 76750);
-INSERT INTO `res_proxy_node_traffic` VALUES (136, 30, '2026-02-15 22:50:00', 2111845, 2872836);
-INSERT INTO `res_proxy_node_traffic` VALUES (137, 30, '2026-02-15 22:55:00', 295766, 412298);
-INSERT INTO `res_proxy_node_traffic` VALUES (138, 30, '2026-02-15 23:00:21', 267977, 463455);
-INSERT INTO `res_proxy_node_traffic` VALUES (139, 30, '2026-02-15 23:05:00', 236092, 196144);
-INSERT INTO `res_proxy_node_traffic` VALUES (140, 30, '2026-02-15 23:10:00', 179650, 292521);
-INSERT INTO `res_proxy_node_traffic` VALUES (141, 30, '2026-02-15 23:15:00', 336273, 727123);
-INSERT INTO `res_proxy_node_traffic` VALUES (142, 30, '2026-02-15 23:20:00', 689644, 1657931);
-INSERT INTO `res_proxy_node_traffic` VALUES (143, 30, '2026-02-15 23:25:00', 175355, 383843);
-INSERT INTO `res_proxy_node_traffic` VALUES (144, 30, '2026-02-15 23:30:00', 33681, 51538);
-INSERT INTO `res_proxy_node_traffic` VALUES (145, 30, '2026-02-15 23:35:00', 286176, 233524);
-INSERT INTO `res_proxy_node_traffic` VALUES (146, 30, '2026-02-15 23:40:00', 43113, 60800);
-INSERT INTO `res_proxy_node_traffic` VALUES (147, 30, '2026-02-15 23:45:20', 169281, 348032);
-INSERT INTO `res_proxy_node_traffic` VALUES (148, 30, '2026-02-15 23:50:00', 711038, 5939302);
-INSERT INTO `res_proxy_node_traffic` VALUES (149, 30, '2026-02-15 23:55:00', 43177, 99989);
-INSERT INTO `res_proxy_node_traffic` VALUES (150, 30, '2026-02-16 00:00:00', 37242, 174445);
-INSERT INTO `res_proxy_node_traffic` VALUES (151, 30, '2026-02-16 00:05:00', 206873, 339349);
-INSERT INTO `res_proxy_node_traffic` VALUES (152, 30, '2026-02-16 00:10:00', 707347, 2033920);
-INSERT INTO `res_proxy_node_traffic` VALUES (153, 30, '2026-02-16 00:15:00', 5205279, 19683618);
-INSERT INTO `res_proxy_node_traffic` VALUES (154, 30, '2026-02-16 00:20:39', 730032, 1037584);
-INSERT INTO `res_proxy_node_traffic` VALUES (155, 30, '2026-02-16 00:25:00', 0, 7166);
-INSERT INTO `res_proxy_node_traffic` VALUES (156, 30, '2026-02-16 00:30:00', 0, 21741);
-INSERT INTO `res_proxy_node_traffic` VALUES (157, 30, '2026-02-16 00:35:00', 0, 0);
-INSERT INTO `res_proxy_node_traffic` VALUES (158, 30, '2026-02-16 00:40:00', 0, 0);
 
 -- ----------------------------
 -- Table structure for res_proxy_node_traffic_snapshot
@@ -569,14 +441,11 @@ CREATE TABLE `res_proxy_node_traffic_snapshot`  (
   `last_tx` bigint(20) NULL DEFAULT 0 COMMENT '上次上行累计字节',
   `updated_at` datetime NULL DEFAULT NULL COMMENT '更新时间',
   PRIMARY KEY (`node_id`) USING BTREE
-) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '代理节点流量快照' ROW_FORMAT = Dynamic;
+) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '代理节点流量快照' ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of res_proxy_node_traffic_snapshot
 -- ----------------------------
-INSERT INTO `res_proxy_node_traffic_snapshot` VALUES (25, 92627661, 133818731, '2026-02-15 15:35:34');
-INSERT INTO `res_proxy_node_traffic_snapshot` VALUES (30, 1358460987, 1214391969, '2026-02-16 00:40:00');
-INSERT INTO `res_proxy_node_traffic_snapshot` VALUES (32, 0, 0, '2026-02-15 18:55:00');
 
 -- ----------------------------
 -- Table structure for sys_config
@@ -594,7 +463,7 @@ CREATE TABLE `sys_config`  (
   `update_time` datetime NULL DEFAULT NULL COMMENT '更新时间',
   `remark` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '备注',
   PRIMARY KEY (`config_id`) USING BTREE
-) ENGINE = InnoDB AUTO_INCREMENT = 9 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '参数配置表' ROW_FORMAT = Dynamic;
+) ENGINE = InnoDB AUTO_INCREMENT = 9 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '参数配置表' ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of sys_config
@@ -628,7 +497,7 @@ CREATE TABLE `sys_dept`  (
   `update_by` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT '' COMMENT '更新者',
   `update_time` datetime NULL DEFAULT NULL COMMENT '更新时间',
   PRIMARY KEY (`dept_id`) USING BTREE
-) ENGINE = InnoDB AUTO_INCREMENT = 110 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '部门表' ROW_FORMAT = Dynamic;
+) ENGINE = InnoDB AUTO_INCREMENT = 110 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '部门表' ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of sys_dept
@@ -664,7 +533,7 @@ CREATE TABLE `sys_dict_data`  (
   `update_time` datetime NULL DEFAULT NULL COMMENT '更新时间',
   `remark` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '备注',
   PRIMARY KEY (`dict_code`) USING BTREE
-) ENGINE = InnoDB AUTO_INCREMENT = 37 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '字典数据表' ROW_FORMAT = Dynamic;
+) ENGINE = InnoDB AUTO_INCREMENT = 37 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '字典数据表' ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of sys_dict_data
@@ -722,7 +591,7 @@ CREATE TABLE `sys_dict_type`  (
   `remark` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '备注',
   PRIMARY KEY (`dict_id`) USING BTREE,
   UNIQUE INDEX `dict_type`(`dict_type`) USING BTREE
-) ENGINE = InnoDB AUTO_INCREMENT = 14 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '字典类型表' ROW_FORMAT = Dynamic;
+) ENGINE = InnoDB AUTO_INCREMENT = 14 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '字典类型表' ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of sys_dict_type
@@ -760,7 +629,7 @@ CREATE TABLE `sys_job`  (
   `update_time` datetime NULL DEFAULT NULL COMMENT '更新时间',
   `remark` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT '' COMMENT '备注信息',
   PRIMARY KEY (`job_id`, `job_name`, `job_group`) USING BTREE
-) ENGINE = InnoDB AUTO_INCREMENT = 5 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '定时任务调度表' ROW_FORMAT = Dynamic;
+) ENGINE = InnoDB AUTO_INCREMENT = 5 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '定时任务调度表' ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of sys_job
@@ -784,7 +653,7 @@ CREATE TABLE `sys_job_log`  (
   `exception_info` varchar(2000) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT '' COMMENT '异常信息',
   `create_time` datetime NULL DEFAULT NULL COMMENT '创建时间',
   PRIMARY KEY (`job_log_id`) USING BTREE
-) ENGINE = InnoDB AUTO_INCREMENT = 122 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '定时任务调度日志表' ROW_FORMAT = Dynamic;
+) ENGINE = InnoDB AUTO_INCREMENT = 160 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '定时任务调度日志表' ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of sys_job_log
@@ -904,6 +773,44 @@ INSERT INTO `sys_job_log` VALUES (118, '节点流量采集', 'DEFAULT', 'proxyNo
 INSERT INTO `sys_job_log` VALUES (119, '节点流量采集', 'DEFAULT', 'proxyNodeTrafficTask.collect', '节点流量采集 总共耗时：4577毫秒', '0', '', '2026-02-15 16:30:07');
 INSERT INTO `sys_job_log` VALUES (120, '节点流量采集', 'DEFAULT', 'proxyNodeTrafficTask.collect', '节点流量采集 总共耗时：3774毫秒', '0', '', '2026-02-15 16:35:06');
 INSERT INTO `sys_job_log` VALUES (121, '节点流量采集', 'DEFAULT', 'proxyNodeTrafficTask.collect', '节点流量采集 总共耗时：4046毫秒', '0', '', '2026-02-15 16:40:06');
+INSERT INTO `sys_job_log` VALUES (122, '节点流量采集', 'DEFAULT', 'proxyNodeTrafficTask.collect', '节点流量采集 总共耗时：2016毫秒', '0', '', '2026-02-16 16:15:02');
+INSERT INTO `sys_job_log` VALUES (123, '节点流量采集', 'DEFAULT', 'proxyNodeTrafficTask.collect', '节点流量采集 总共耗时：3325毫秒', '0', '', '2026-02-16 16:20:03');
+INSERT INTO `sys_job_log` VALUES (124, '节点流量采集', 'DEFAULT', 'proxyNodeTrafficTask.collect', '节点流量采集 总共耗时：857毫秒', '0', '', '2026-02-16 16:25:00');
+INSERT INTO `sys_job_log` VALUES (125, '节点流量采集', 'DEFAULT', 'proxyNodeTrafficTask.collect', '节点流量采集 总共耗时：2156毫秒', '0', '', '2026-02-16 16:30:02');
+INSERT INTO `sys_job_log` VALUES (126, '节点流量采集', 'DEFAULT', 'proxyNodeTrafficTask.collect', '节点流量采集 总共耗时：1646毫秒', '0', '', '2026-02-16 16:35:01');
+INSERT INTO `sys_job_log` VALUES (127, '节点流量采集', 'DEFAULT', 'proxyNodeTrafficTask.collect', '节点流量采集 总共耗时：697毫秒', '0', '', '2026-02-16 16:40:00');
+INSERT INTO `sys_job_log` VALUES (128, '节点流量采集', 'DEFAULT', 'proxyNodeTrafficTask.collect', '节点流量采集 总共耗时：655毫秒', '0', '', '2026-02-16 16:45:00');
+INSERT INTO `sys_job_log` VALUES (129, '节点流量采集', 'DEFAULT', 'proxyNodeTrafficTask.collect', '节点流量采集 总共耗时：679毫秒', '0', '', '2026-02-16 16:50:00');
+INSERT INTO `sys_job_log` VALUES (130, '节点流量采集', 'DEFAULT', 'proxyNodeTrafficTask.collect', '节点流量采集 总共耗时：752毫秒', '0', '', '2026-02-16 16:55:00');
+INSERT INTO `sys_job_log` VALUES (131, '节点流量采集', 'DEFAULT', 'proxyNodeTrafficTask.collect', '节点流量采集 总共耗时：698毫秒', '0', '', '2026-02-16 17:00:00');
+INSERT INTO `sys_job_log` VALUES (132, '节点流量采集', 'DEFAULT', 'proxyNodeTrafficTask.collect', '节点流量采集 总共耗时：718毫秒', '0', '', '2026-02-16 17:05:00');
+INSERT INTO `sys_job_log` VALUES (133, '节点流量采集', 'DEFAULT', 'proxyNodeTrafficTask.collect', '节点流量采集 总共耗时：670毫秒', '0', '', '2026-02-16 17:10:00');
+INSERT INTO `sys_job_log` VALUES (134, '节点流量采集', 'DEFAULT', 'proxyNodeTrafficTask.collect', '节点流量采集 总共耗时：692毫秒', '0', '', '2026-02-16 17:15:00');
+INSERT INTO `sys_job_log` VALUES (135, '节点流量采集', 'DEFAULT', 'proxyNodeTrafficTask.collect', '节点流量采集 总共耗时：652毫秒', '0', '', '2026-02-16 17:20:00');
+INSERT INTO `sys_job_log` VALUES (136, '节点流量采集', 'DEFAULT', 'proxyNodeTrafficTask.collect', '节点流量采集 总共耗时：653毫秒', '0', '', '2026-02-16 17:25:00');
+INSERT INTO `sys_job_log` VALUES (137, '节点流量采集', 'DEFAULT', 'proxyNodeTrafficTask.collect', '节点流量采集 总共耗时：697毫秒', '0', '', '2026-02-16 17:30:00');
+INSERT INTO `sys_job_log` VALUES (138, '节点流量采集', 'DEFAULT', 'proxyNodeTrafficTask.collect', '节点流量采集 总共耗时：649毫秒', '0', '', '2026-02-16 17:35:00');
+INSERT INTO `sys_job_log` VALUES (139, '节点流量采集', 'DEFAULT', 'proxyNodeTrafficTask.collect', '节点流量采集 总共耗时：661毫秒', '0', '', '2026-02-16 17:40:00');
+INSERT INTO `sys_job_log` VALUES (140, '节点流量采集', 'DEFAULT', 'proxyNodeTrafficTask.collect', '节点流量采集 总共耗时：655毫秒', '0', '', '2026-02-16 17:45:00');
+INSERT INTO `sys_job_log` VALUES (141, '节点流量采集', 'DEFAULT', 'proxyNodeTrafficTask.collect', '节点流量采集 总共耗时：650毫秒', '0', '', '2026-02-16 17:50:00');
+INSERT INTO `sys_job_log` VALUES (142, '节点流量采集', 'DEFAULT', 'proxyNodeTrafficTask.collect', '节点流量采集 总共耗时：633毫秒', '0', '', '2026-02-16 17:55:00');
+INSERT INTO `sys_job_log` VALUES (143, '节点流量采集', 'DEFAULT', 'proxyNodeTrafficTask.collect', '节点流量采集 总共耗时：657毫秒', '0', '', '2026-02-16 18:00:00');
+INSERT INTO `sys_job_log` VALUES (144, '节点流量采集', 'DEFAULT', 'proxyNodeTrafficTask.collect', '节点流量采集 总共耗时：655毫秒', '0', '', '2026-02-16 18:05:00');
+INSERT INTO `sys_job_log` VALUES (145, '节点流量采集', 'DEFAULT', 'proxyNodeTrafficTask.collect', '节点流量采集 总共耗时：618毫秒', '0', '', '2026-02-16 18:10:00');
+INSERT INTO `sys_job_log` VALUES (146, '节点流量采集', 'DEFAULT', 'proxyNodeTrafficTask.collect', '节点流量采集 总共耗时：679毫秒', '0', '', '2026-02-16 18:15:00');
+INSERT INTO `sys_job_log` VALUES (147, '节点流量采集', 'DEFAULT', 'proxyNodeTrafficTask.collect', '节点流量采集 总共耗时：695毫秒', '0', '', '2026-02-16 18:20:00');
+INSERT INTO `sys_job_log` VALUES (148, '节点流量采集', 'DEFAULT', 'proxyNodeTrafficTask.collect', '节点流量采集 总共耗时：649毫秒', '0', '', '2026-02-16 18:25:00');
+INSERT INTO `sys_job_log` VALUES (149, '节点流量采集', 'DEFAULT', 'proxyNodeTrafficTask.collect', '节点流量采集 总共耗时：662毫秒', '0', '', '2026-02-16 18:30:00');
+INSERT INTO `sys_job_log` VALUES (150, '节点流量采集', 'DEFAULT', 'proxyNodeTrafficTask.collect', '节点流量采集 总共耗时：664毫秒', '0', '', '2026-02-16 18:35:00');
+INSERT INTO `sys_job_log` VALUES (151, '节点流量采集', 'DEFAULT', 'proxyNodeTrafficTask.collect', '节点流量采集 总共耗时：647毫秒', '0', '', '2026-02-16 18:40:00');
+INSERT INTO `sys_job_log` VALUES (152, '节点流量采集', 'DEFAULT', 'proxyNodeTrafficTask.collect', '节点流量采集 总共耗时：651毫秒', '0', '', '2026-02-16 18:45:00');
+INSERT INTO `sys_job_log` VALUES (153, '节点流量采集', 'DEFAULT', 'proxyNodeTrafficTask.collect', '节点流量采集 总共耗时：703毫秒', '0', '', '2026-02-16 18:50:00');
+INSERT INTO `sys_job_log` VALUES (154, '节点流量采集', 'DEFAULT', 'proxyNodeTrafficTask.collect', '节点流量采集 总共耗时：656毫秒', '0', '', '2026-02-16 18:55:00');
+INSERT INTO `sys_job_log` VALUES (155, '节点流量采集', 'DEFAULT', 'proxyNodeTrafficTask.collect', '节点流量采集 总共耗时：683毫秒', '0', '', '2026-02-16 19:00:00');
+INSERT INTO `sys_job_log` VALUES (156, '节点流量采集', 'DEFAULT', 'proxyNodeTrafficTask.collect', '节点流量采集 总共耗时：647毫秒', '0', '', '2026-02-16 19:05:00');
+INSERT INTO `sys_job_log` VALUES (157, '节点流量采集', 'DEFAULT', 'proxyNodeTrafficTask.collect', '节点流量采集 总共耗时：678毫秒', '0', '', '2026-02-16 19:10:00');
+INSERT INTO `sys_job_log` VALUES (158, '节点流量采集', 'DEFAULT', 'proxyNodeTrafficTask.collect', '节点流量采集 总共耗时：774毫秒', '0', '', '2026-02-16 19:15:00');
+INSERT INTO `sys_job_log` VALUES (159, '节点流量采集', 'DEFAULT', 'proxyNodeTrafficTask.collect', '节点流量采集 总共耗时：809毫秒', '0', '', '2026-02-16 19:20:00');
 
 -- ----------------------------
 -- Table structure for sys_logininfor
@@ -922,7 +829,7 @@ CREATE TABLE `sys_logininfor`  (
   PRIMARY KEY (`info_id`) USING BTREE,
   INDEX `idx_sys_logininfor_s`(`status`) USING BTREE,
   INDEX `idx_sys_logininfor_lt`(`login_time`) USING BTREE
-) ENGINE = InnoDB AUTO_INCREMENT = 50 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '系统访问记录' ROW_FORMAT = Dynamic;
+) ENGINE = InnoDB AUTO_INCREMENT = 52 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '系统访问记录' ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of sys_logininfor
@@ -976,6 +883,8 @@ INSERT INTO `sys_logininfor` VALUES (46, 'admin', '127.0.0.1', '内网IP', 'Chro
 INSERT INTO `sys_logininfor` VALUES (47, 'admin', '127.0.0.1', '内网IP', 'Chrome 145', 'Windows10', '0', '登录成功', '2026-02-15 16:06:47');
 INSERT INTO `sys_logininfor` VALUES (48, 'admin', '127.0.0.1', '内网IP', 'Chrome 145', 'Windows10', '0', '退出成功', '2026-02-15 16:09:04');
 INSERT INTO `sys_logininfor` VALUES (49, 'admin', '127.0.0.1', '内网IP', 'Chrome 145', 'Windows10', '0', '登录成功', '2026-02-15 16:11:22');
+INSERT INTO `sys_logininfor` VALUES (50, 'admin', '45.62.119.194', 'XX XX', 'Chrome 145', 'Windows10', '0', '登录成功', '2026-02-16 16:20:03');
+INSERT INTO `sys_logininfor` VALUES (51, 'admin', '45.62.119.194', 'XX XX', 'Chrome 145', 'Windows10', '0', '登录成功', '2026-02-16 19:14:32');
 
 -- ----------------------------
 -- Table structure for sys_menu
@@ -1003,15 +912,14 @@ CREATE TABLE `sys_menu`  (
   `update_time` datetime NULL DEFAULT NULL COMMENT '更新时间',
   `remark` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT '' COMMENT '备注',
   PRIMARY KEY (`menu_id`) USING BTREE
-) ENGINE = InnoDB AUTO_INCREMENT = 1061 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '菜单权限表' ROW_FORMAT = Dynamic;
+) ENGINE = InnoDB AUTO_INCREMENT = 1061 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '菜单权限表' ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of sys_menu
 -- ----------------------------
-INSERT INTO `sys_menu` VALUES (1, '系统管理', 0, 1, 'system', NULL, '', '', 1, 0, 'M', '0', '0', '', 'system', 'admin', '2026-02-13 14:18:37', '', NULL, '系统管理目录');
-INSERT INTO `sys_menu` VALUES (2, '系统监控', 0, 2, 'monitor', NULL, '', '', 1, 0, 'M', '0', '0', '', 'monitor', 'admin', '2026-02-13 14:18:37', '', NULL, '系统监控目录');
-INSERT INTO `sys_menu` VALUES (3, '系统工具', 0, 3, 'tool', NULL, '', '', 1, 0, 'M', '0', '0', '', 'tool', 'admin', '2026-02-13 14:18:37', '', NULL, '系统工具目录');
-INSERT INTO `sys_menu` VALUES (4, 'Skyway', 0, 4, 'https://github.com/skyway/Skyway-Vue', NULL, '', '', 0, 0, 'M', '0', '0', '', 'guide', 'admin', '2026-02-13 14:18:37', '', NULL, 'Skyway');
+INSERT INTO `sys_menu` VALUES (1, '系统管理', 0, 3, 'system', NULL, '', '', 1, 0, 'M', '0', '0', '', 'system', 'admin', '2026-02-13 14:18:37', 'admin', '2026-02-16 16:21:03', '系统管理目录');
+INSERT INTO `sys_menu` VALUES (2, '系统监控', 0, 4, 'monitor', NULL, '', '', 1, 0, 'M', '0', '0', '', 'monitor', 'admin', '2026-02-13 14:18:37', 'admin', '2026-02-16 16:21:11', '系统监控目录');
+INSERT INTO `sys_menu` VALUES (3, '系统工具', 0, 5, 'tool', NULL, '', '', 1, 0, 'M', '0', '0', '', 'tool', 'admin', '2026-02-13 14:18:37', 'admin', '2026-02-16 16:21:21', '系统工具目录');
 INSERT INTO `sys_menu` VALUES (100, '用户管理', 1, 1, 'user', 'system/user/index', '', '', 1, 0, 'C', '0', '0', 'system:user:list', 'user', 'admin', '2026-02-13 14:18:37', '', NULL, '用户管理菜单');
 INSERT INTO `sys_menu` VALUES (101, '角色管理', 1, 2, 'role', 'system/role/index', '', '', 1, 0, 'C', '0', '0', 'system:role:list', 'peoples', 'admin', '2026-02-13 14:18:37', '', NULL, '角色管理菜单');
 INSERT INTO `sys_menu` VALUES (102, '菜单管理', 1, 3, 'menu', 'system/menu/index', '', '', 1, 0, 'C', '0', '0', 'system:menu:list', 'tree-table', 'admin', '2026-02-13 14:18:37', '', NULL, '菜单管理菜单');
@@ -1030,7 +938,7 @@ INSERT INTO `sys_menu` VALUES (114, '缓存列表', 2, 6, 'cacheList', 'monitor/
 INSERT INTO `sys_menu` VALUES (115, '表单构建', 3, 1, 'build', 'tool/build/index', '', '', 1, 0, 'C', '0', '0', 'tool:build:list', 'build', 'admin', '2026-02-13 14:18:37', '', NULL, '表单构建菜单');
 INSERT INTO `sys_menu` VALUES (116, '代码生成', 3, 2, 'gen', 'tool/gen/index', '', '', 1, 0, 'C', '0', '0', 'tool:gen:list', 'code', 'admin', '2026-02-13 14:18:37', '', NULL, '代码生成菜单');
 INSERT INTO `sys_menu` VALUES (117, '系统接口', 3, 3, 'swagger', 'tool/swagger/index', '', '', 1, 0, 'C', '0', '0', 'tool:swagger:list', 'swagger', 'admin', '2026-02-13 14:18:37', '', NULL, '系统接口菜单');
-INSERT INTO `sys_menu` VALUES (200, '资源管理', 0, 5, 'resource', NULL, NULL, '', 1, 0, 'M', '0', '0', '', 'tree', 'admin', '2026-02-13 15:16:14', '', NULL, '资源管理目录');
+INSERT INTO `sys_menu` VALUES (200, '资源管理', 0, 1, 'resource', NULL, NULL, '', 1, 0, 'M', '0', '0', '', 'tree', 'admin', '2026-02-13 15:16:14', 'admin', '2026-02-16 16:20:48', '资源管理目录');
 INSERT INTO `sys_menu` VALUES (201, 'VPS管理', 200, 1, 'vps', 'resource/vps/index', NULL, '', 1, 0, 'C', '0', '0', 'resource:vps:list', 'server', 'admin', '2026-02-13 15:16:14', '', NULL, 'VPS管理菜单');
 INSERT INTO `sys_menu` VALUES (202, 'VPS查询', 201, 1, '', NULL, NULL, '', 1, 0, 'F', '0', '0', 'resource:vps:query', '#', 'admin', '2026-02-13 15:16:14', '', NULL, '');
 INSERT INTO `sys_menu` VALUES (203, 'VPS新增', 201, 2, '', NULL, NULL, '', 1, 0, 'F', '0', '0', 'resource:vps:add', '#', 'admin', '2026-02-13 15:16:14', '', NULL, '');
@@ -1038,7 +946,7 @@ INSERT INTO `sys_menu` VALUES (204, 'VPS修改', 201, 3, '', NULL, NULL, '', 1, 
 INSERT INTO `sys_menu` VALUES (205, 'VPS删除', 201, 4, '', NULL, NULL, '', 1, 0, 'F', '0', '0', 'resource:vps:remove', '#', 'admin', '2026-02-13 15:16:15', '', NULL, '');
 INSERT INTO `sys_menu` VALUES (206, 'VPS导出', 201, 5, '', NULL, NULL, '', 1, 0, 'F', '0', '0', 'resource:vps:export', '#', 'admin', '2026-02-13 15:16:15', '', NULL, '');
 INSERT INTO `sys_menu` VALUES (207, '代理节点', 200, 2, 'proxyNode', 'resource/vps/proxyNode/index', NULL, '', 1, 0, 'C', '0', '0', 'resource:vps:list', 'link', 'admin', '2026-02-14 16:13:57', '', NULL, '代理节点列表菜单');
-INSERT INTO `sys_menu` VALUES (210, '用户中心', 0, 6, 'member', NULL, NULL, '', 1, 0, 'M', '0', '0', '', 'peoples', 'admin', '2026-02-14 14:32:08', '', NULL, '用户中心目录');
+INSERT INTO `sys_menu` VALUES (210, '用户中心', 0, 2, 'member', NULL, NULL, '', 1, 0, 'M', '0', '0', '', 'peoples', 'admin', '2026-02-14 14:32:08', 'admin', '2026-02-16 16:20:55', '用户中心目录');
 INSERT INTO `sys_menu` VALUES (211, '客户管理', 210, 1, 'customer', 'member/customer/index', NULL, '', 1, 0, 'C', '0', '0', 'member:customer:list', 'user', 'admin', '2026-02-14 14:32:08', '', NULL, '客户管理菜单');
 INSERT INTO `sys_menu` VALUES (212, '客户查询', 211, 1, '', NULL, NULL, '', 1, 0, 'F', '0', '0', 'member:customer:query', '#', 'admin', '2026-02-14 14:32:08', '', NULL, '');
 INSERT INTO `sys_menu` VALUES (213, '客户新增', 211, 2, '', NULL, NULL, '', 1, 0, 'F', '0', '0', 'member:customer:add', '#', 'admin', '2026-02-14 14:32:09', '', NULL, '');
@@ -1126,7 +1034,7 @@ CREATE TABLE `sys_notice`  (
   `update_time` datetime NULL DEFAULT NULL COMMENT '更新时间',
   `remark` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '备注',
   PRIMARY KEY (`notice_id`) USING BTREE
-) ENGINE = InnoDB AUTO_INCREMENT = 3 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '通知公告表' ROW_FORMAT = Dynamic;
+) ENGINE = InnoDB AUTO_INCREMENT = 3 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '通知公告表' ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of sys_notice
@@ -1160,7 +1068,7 @@ CREATE TABLE `sys_oper_log`  (
   INDEX `idx_sys_oper_log_bt`(`business_type`) USING BTREE,
   INDEX `idx_sys_oper_log_s`(`status`) USING BTREE,
   INDEX `idx_sys_oper_log_ot`(`oper_time`) USING BTREE
-) ENGINE = InnoDB AUTO_INCREMENT = 94 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '操作日志记录' ROW_FORMAT = Dynamic;
+) ENGINE = InnoDB AUTO_INCREMENT = 104 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '操作日志记录' ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of sys_oper_log
@@ -1258,6 +1166,16 @@ INSERT INTO `sys_oper_log` VALUES (90, '代理节点', 1, 'com.ruoyi.web.control
 INSERT INTO `sys_oper_log` VALUES (91, '代理节点', 3, 'com.ruoyi.web.controller.resource.ProxyNodeController.remove()', 'DELETE', 1, 'admin', '研发部门', '/resource/vps/proxyNode/32', '127.0.0.1', '内网IP', '[32] ', '{\"msg\":\"操作成功\",\"code\":200}', 0, NULL, '2026-02-15 10:55:04', 9125);
 INSERT INTO `sys_oper_log` VALUES (92, '会员客户', 3, 'com.ruoyi.web.controller.member.CustomerController.remove()', 'DELETE', 1, 'admin', '研发部门', '/member/customer/3', '127.0.0.1', '内网IP', '[3] ', '{\"msg\":\"操作成功\",\"code\":200}', 0, NULL, '2026-02-15 15:32:38', 328);
 INSERT INTO `sys_oper_log` VALUES (93, '会员客户', 3, 'com.ruoyi.web.controller.member.CustomerController.remove()', 'DELETE', 1, 'admin', '研发部门', '/member/customer/4', '127.0.0.1', '内网IP', '[4] ', '{\"msg\":\"操作成功\",\"code\":200}', 0, NULL, '2026-02-15 15:35:25', 298);
+INSERT INTO `sys_oper_log` VALUES (94, '菜单管理', 3, 'com.skyway.web.controller.system.SysMenuController.remove()', 'DELETE', 1, 'admin', '研发部门', '/system/menu/4', '45.62.119.194', 'XX XX', '4 ', '{\"msg\":\"菜单已分配,不允许删除\",\"code\":601}', 0, NULL, '2026-02-16 16:20:24', 32);
+INSERT INTO `sys_oper_log` VALUES (95, '角色管理', 2, 'com.skyway.web.controller.system.SysRoleController.edit()', 'PUT', 1, 'admin', '研发部门', '/system/role', '45.62.119.194', 'XX XX', '{\"admin\":false,\"createTime\":\"2026-02-13 14:18:37\",\"dataScope\":\"2\",\"delFlag\":\"0\",\"deptCheckStrictly\":true,\"flag\":false,\"menuCheckStrictly\":true,\"menuIds\":[1,100,1000,1001,1002,1003,1004,1005,1006,101,1007,1008,1009,1010,1011,102,1012,1013,1014,1015,103,1016,1017,1018,1019,104,1020,1021,1022,1023,1024,105,1025,1026,1027,1028,1029,106,1030,1031,1032,1033,1034,107,1035,1036,1037,1038,108,500,1039,1040,1041,501,1042,1043,1044,1045,2,109,1046,1047,1048,110,1049,1050,1051,1052,1053,1054,111,112,113,114,3,115,116,1055,1056,1057,1058,1059,1060,117],\"params\":{},\"remark\":\"普通角色\",\"roleId\":2,\"roleKey\":\"common\",\"roleName\":\"普通角色\",\"roleSort\":2,\"status\":\"0\",\"updateBy\":\"admin\"} ', '{\"msg\":\"操作成功\",\"code\":200}', 0, NULL, '2026-02-16 16:20:35', 109);
+INSERT INTO `sys_oper_log` VALUES (96, '菜单管理', 3, 'com.skyway.web.controller.system.SysMenuController.remove()', 'DELETE', 1, 'admin', '研发部门', '/system/menu/4', '45.62.119.194', 'XX XX', '4 ', '{\"msg\":\"操作成功\",\"code\":200}', 0, NULL, '2026-02-16 16:20:40', 23);
+INSERT INTO `sys_oper_log` VALUES (97, '菜单管理', 2, 'com.skyway.web.controller.system.SysMenuController.edit()', 'PUT', 1, 'admin', '研发部门', '/system/menu', '45.62.119.194', 'XX XX', '{\"children\":[],\"createTime\":\"2026-02-13 15:16:14\",\"icon\":\"tree\",\"isCache\":\"0\",\"isFrame\":\"1\",\"menuId\":200,\"menuName\":\"资源管理\",\"menuType\":\"M\",\"orderNum\":1,\"params\":{},\"parentId\":0,\"path\":\"resource\",\"perms\":\"\",\"routeName\":\"\",\"status\":\"0\",\"updateBy\":\"admin\",\"visible\":\"0\"} ', '{\"msg\":\"操作成功\",\"code\":200}', 0, NULL, '2026-02-16 16:20:48', 49);
+INSERT INTO `sys_oper_log` VALUES (98, '菜单管理', 2, 'com.skyway.web.controller.system.SysMenuController.edit()', 'PUT', 1, 'admin', '研发部门', '/system/menu', '45.62.119.194', 'XX XX', '{\"children\":[],\"createTime\":\"2026-02-14 14:32:08\",\"icon\":\"peoples\",\"isCache\":\"0\",\"isFrame\":\"1\",\"menuId\":210,\"menuName\":\"用户中心\",\"menuType\":\"M\",\"orderNum\":2,\"params\":{},\"parentId\":0,\"path\":\"member\",\"perms\":\"\",\"routeName\":\"\",\"status\":\"0\",\"updateBy\":\"admin\",\"visible\":\"0\"} ', '{\"msg\":\"操作成功\",\"code\":200}', 0, NULL, '2026-02-16 16:20:55', 25);
+INSERT INTO `sys_oper_log` VALUES (99, '菜单管理', 2, 'com.skyway.web.controller.system.SysMenuController.edit()', 'PUT', 1, 'admin', '研发部门', '/system/menu', '45.62.119.194', 'XX XX', '{\"children\":[],\"createTime\":\"2026-02-13 14:18:37\",\"icon\":\"system\",\"isCache\":\"0\",\"isFrame\":\"1\",\"menuId\":1,\"menuName\":\"系统管理\",\"menuType\":\"M\",\"orderNum\":3,\"params\":{},\"parentId\":0,\"path\":\"system\",\"perms\":\"\",\"query\":\"\",\"routeName\":\"\",\"status\":\"0\",\"updateBy\":\"admin\",\"visible\":\"0\"} ', '{\"msg\":\"操作成功\",\"code\":200}', 0, NULL, '2026-02-16 16:21:03', 32);
+INSERT INTO `sys_oper_log` VALUES (100, '菜单管理', 2, 'com.skyway.web.controller.system.SysMenuController.edit()', 'PUT', 1, 'admin', '研发部门', '/system/menu', '45.62.119.194', 'XX XX', '{\"children\":[],\"createTime\":\"2026-02-13 14:18:37\",\"icon\":\"monitor\",\"isCache\":\"0\",\"isFrame\":\"1\",\"menuId\":2,\"menuName\":\"系统监控\",\"menuType\":\"M\",\"orderNum\":4,\"params\":{},\"parentId\":0,\"path\":\"monitor\",\"perms\":\"\",\"query\":\"\",\"routeName\":\"\",\"status\":\"0\",\"updateBy\":\"admin\",\"visible\":\"0\"} ', '{\"msg\":\"操作成功\",\"code\":200}', 0, NULL, '2026-02-16 16:21:11', 26);
+INSERT INTO `sys_oper_log` VALUES (101, '菜单管理', 2, 'com.skyway.web.controller.system.SysMenuController.edit()', 'PUT', 1, 'admin', '研发部门', '/system/menu', '45.62.119.194', 'XX XX', '{\"children\":[],\"createTime\":\"2026-02-13 14:18:37\",\"icon\":\"tool\",\"isCache\":\"0\",\"isFrame\":\"1\",\"menuId\":3,\"menuName\":\"系统工具\",\"menuType\":\"M\",\"orderNum\":5,\"params\":{},\"parentId\":0,\"path\":\"tool\",\"perms\":\"\",\"query\":\"\",\"routeName\":\"\",\"status\":\"0\",\"updateBy\":\"admin\",\"visible\":\"0\"} ', '{\"msg\":\"操作成功\",\"code\":200}', 0, NULL, '2026-02-16 16:21:21', 23);
+INSERT INTO `sys_oper_log` VALUES (102, '会员客户', 3, 'com.skyway.web.controller.member.CustomerController.remove()', 'DELETE', 1, 'admin', '研发部门', '/member/customer/1', '45.62.119.194', 'XX XX', '[1] ', '{\"msg\":\"操作成功\",\"code\":200}', 0, NULL, '2026-02-16 19:22:28', 23);
+INSERT INTO `sys_oper_log` VALUES (103, '会员客户', 3, 'com.skyway.web.controller.member.CustomerController.remove()', 'DELETE', 1, 'admin', '研发部门', '/member/customer/5', '45.62.119.194', 'XX XX', '[5] ', '{\"msg\":\"操作成功\",\"code\":200}', 0, NULL, '2026-02-16 19:22:31', 12);
 
 -- ----------------------------
 -- Table structure for sys_post
@@ -1275,7 +1193,7 @@ CREATE TABLE `sys_post`  (
   `update_time` datetime NULL DEFAULT NULL COMMENT '更新时间',
   `remark` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '备注',
   PRIMARY KEY (`post_id`) USING BTREE
-) ENGINE = InnoDB AUTO_INCREMENT = 5 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '岗位信息表' ROW_FORMAT = Dynamic;
+) ENGINE = InnoDB AUTO_INCREMENT = 5 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '岗位信息表' ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of sys_post
@@ -1305,13 +1223,13 @@ CREATE TABLE `sys_role`  (
   `update_time` datetime NULL DEFAULT NULL COMMENT '更新时间',
   `remark` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '备注',
   PRIMARY KEY (`role_id`) USING BTREE
-) ENGINE = InnoDB AUTO_INCREMENT = 3 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '角色信息表' ROW_FORMAT = Dynamic;
+) ENGINE = InnoDB AUTO_INCREMENT = 3 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '角色信息表' ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of sys_role
 -- ----------------------------
 INSERT INTO `sys_role` VALUES (1, '超级管理员', 'admin', 1, '1', 1, 1, '0', '0', 'admin', '2026-02-13 14:18:37', '', NULL, '超级管理员');
-INSERT INTO `sys_role` VALUES (2, '普通角色', 'common', 2, '2', 1, 1, '0', '0', 'admin', '2026-02-13 14:18:37', '', NULL, '普通角色');
+INSERT INTO `sys_role` VALUES (2, '普通角色', 'common', 2, '2', 1, 1, '0', '0', 'admin', '2026-02-13 14:18:37', 'admin', '2026-02-16 16:20:35', '普通角色');
 
 -- ----------------------------
 -- Table structure for sys_role_dept
@@ -1321,7 +1239,7 @@ CREATE TABLE `sys_role_dept`  (
   `role_id` bigint(20) NOT NULL COMMENT '角色ID',
   `dept_id` bigint(20) NOT NULL COMMENT '部门ID',
   PRIMARY KEY (`role_id`, `dept_id`) USING BTREE
-) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '角色和部门关联表' ROW_FORMAT = Dynamic;
+) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '角色和部门关联表' ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of sys_role_dept
@@ -1338,7 +1256,7 @@ CREATE TABLE `sys_role_menu`  (
   `role_id` bigint(20) NOT NULL COMMENT '角色ID',
   `menu_id` bigint(20) NOT NULL COMMENT '菜单ID',
   PRIMARY KEY (`role_id`, `menu_id`) USING BTREE
-) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '角色和菜单关联表' ROW_FORMAT = Dynamic;
+) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '角色和菜单关联表' ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of sys_role_menu
@@ -1346,7 +1264,6 @@ CREATE TABLE `sys_role_menu`  (
 INSERT INTO `sys_role_menu` VALUES (2, 1);
 INSERT INTO `sys_role_menu` VALUES (2, 2);
 INSERT INTO `sys_role_menu` VALUES (2, 3);
-INSERT INTO `sys_role_menu` VALUES (2, 4);
 INSERT INTO `sys_role_menu` VALUES (2, 100);
 INSERT INTO `sys_role_menu` VALUES (2, 101);
 INSERT INTO `sys_role_menu` VALUES (2, 102);
@@ -1455,12 +1372,12 @@ CREATE TABLE `sys_user`  (
   `update_time` datetime NULL DEFAULT NULL COMMENT '更新时间',
   `remark` varchar(500) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '备注',
   PRIMARY KEY (`user_id`) USING BTREE
-) ENGINE = InnoDB AUTO_INCREMENT = 3 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '用户信息表' ROW_FORMAT = Dynamic;
+) ENGINE = InnoDB AUTO_INCREMENT = 3 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '用户信息表' ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of sys_user
 -- ----------------------------
-INSERT INTO `sys_user` VALUES (1, 103, 'admin', 'Skyway', '00', 'ry@163.com', '15888888888', '1', '', '$2a$10$7JB720yubVSZvUI0rEqK/.VqGOZTH.ulu33dHOiBE8ByOhJIrdAu2', '0', '0', '127.0.0.1', '2026-02-16 00:11:20', '2026-02-13 14:18:37', 'admin', '2026-02-13 14:18:37', '', NULL, '管理员');
+INSERT INTO `sys_user` VALUES (1, 103, 'admin', 'Skyway', '00', 'ry@163.com', '15888888888', '1', '', '$2a$10$7JB720yubVSZvUI0rEqK/.VqGOZTH.ulu33dHOiBE8ByOhJIrdAu2', '0', '0', '45.62.119.194', '2026-02-16 19:14:28', '2026-02-13 14:18:37', 'admin', '2026-02-13 14:18:37', '', NULL, '管理员');
 INSERT INTO `sys_user` VALUES (2, 105, 'ry', 'Skyway', '00', 'ry@qq.com', '15666666666', '1', '', '$2a$10$7JB720yubVSZvUI0rEqK/.VqGOZTH.ulu33dHOiBE8ByOhJIrdAu2', '0', '0', '127.0.0.1', '2026-02-13 14:18:37', '2026-02-13 14:18:37', 'admin', '2026-02-13 14:18:37', '', NULL, '测试员');
 
 -- ----------------------------
@@ -1471,7 +1388,7 @@ CREATE TABLE `sys_user_post`  (
   `user_id` bigint(20) NOT NULL COMMENT '用户ID',
   `post_id` bigint(20) NOT NULL COMMENT '岗位ID',
   PRIMARY KEY (`user_id`, `post_id`) USING BTREE
-) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '用户与岗位关联表' ROW_FORMAT = Dynamic;
+) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '用户与岗位关联表' ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of sys_user_post
@@ -1487,7 +1404,7 @@ CREATE TABLE `sys_user_role`  (
   `user_id` bigint(20) NOT NULL COMMENT '用户ID',
   `role_id` bigint(20) NOT NULL COMMENT '角色ID',
   PRIMARY KEY (`user_id`, `role_id`) USING BTREE
-) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '用户和角色关联表' ROW_FORMAT = Dynamic;
+) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci COMMENT = '用户和角色关联表' ROW_FORMAT = DYNAMIC;
 
 -- ----------------------------
 -- Records of sys_user_role
