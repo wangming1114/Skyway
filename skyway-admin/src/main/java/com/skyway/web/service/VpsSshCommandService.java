@@ -98,6 +98,140 @@ public class VpsSshCommandService {
         return ssh;
     }
 
+    /**
+     * 检测实例 SSH 可达性，返回应设置的状态：running / stopped / abnormal。
+     * 供定时任务同步 VPS 状态使用。
+     */
+    public String detectInstanceStatus(Long instanceId) {
+        try {
+            SSHClient ssh = createSshClient(instanceId);
+            try {
+                try (Session session = ssh.startSession()) {
+                    Command cmd = session.exec("true");
+                    consumeStream(cmd.getInputStream());
+                    consumeStream(cmd.getErrorStream());
+                    cmd.join(10, TimeUnit.SECONDS);
+                    Integer exit = cmd.getExitStatus();
+                    if (exit != null && exit == 0) return "running";
+                }
+            } finally {
+                try {
+                    ssh.close();
+                } catch (IOException e) {
+                    log.debug("SSH close: {}", e.getMessage());
+                }
+            }
+            return "running";
+        } catch (IOException e) {
+            String msg = e.getMessage() != null ? e.getMessage().toLowerCase() : "";
+            if (msg.contains("refused") || msg.contains("timeout") || msg.contains("connection") || msg.contains("timed out")) {
+                return "stopped";
+            }
+            return "abnormal";
+        } catch (Exception e) {
+            log.debug("detectInstanceStatus instanceId={} error: {}", instanceId, e.getMessage());
+            return "abnormal";
+        }
+    }
+
+    /**
+     * 连接测试并拉取 CPU/内存/磁盘规格（用于新增/编辑 VPS 时「连接测试」按钮）。
+     * 不查库，直接使用传入的 SSH 参数。
+     *
+     * @return Map: success (boolean), message (String), cpu (String), memory (String), disk (String)
+     */
+    public Map<String, Object> testConnectionAndFetchSpec(String ip, Integer sshPort, String sshUsername, String sshPassword) {
+        Map<String, Object> result = new HashMap<>();
+        result.put("success", false);
+        result.put("cpu", "");
+        result.put("memory", "");
+        result.put("disk", "");
+        if (StringUtils.isEmpty(ip) || StringUtils.isEmpty(sshUsername)) {
+            result.put("message", "请填写 IP 和 SSH 账号");
+            return result;
+        }
+        int port = sshPort != null && sshPort > 0 ? sshPort : 22;
+        String pass = sshPassword != null ? sshPassword : "";
+        SSHClient ssh = null;
+        try {
+            ssh = createSshClient(ip, port, sshUsername, pass);
+            // SSHJ 的 Session 一次 exec 后通道即耗尽，每个命令需单独开 Session
+            try (Session s1 = ssh.startSession()) {
+                String nprocOut = execAndRead(s1, "nproc 2>/dev/null || echo 0");
+                int cores = 0;
+                if (nprocOut != null && !nprocOut.trim().isEmpty()) {
+                    try {
+                        cores = Integer.parseInt(nprocOut.trim().split("\\s+")[0]);
+                    } catch (NumberFormatException ignored) {}
+                }
+                result.put("cpu", cores > 0 ? cores + "核" : "");
+            }
+            try (Session s2 = ssh.startSession()) {
+                String freeOut = execAndRead(s2, "free -m 2>/dev/null | grep '^Mem:'");
+                if (freeOut != null && freeOut.trim().length() > 0) {
+                    String[] parts = freeOut.trim().split("\\s+");
+                    if (parts.length >= 2) {
+                        try {
+                            int totalMb = Integer.parseInt(parts[1]);
+                            if (totalMb >= 1024) {
+                                result.put("memory", (totalMb / 1024) + "G");
+                            } else {
+                                result.put("memory", totalMb + "M");
+                            }
+                        } catch (NumberFormatException ignored) {}
+                    }
+                }
+            }
+            try (Session s3 = ssh.startSession()) {
+                String dfOut = execAndRead(s3, "df -h / 2>/dev/null | tail -1");
+                if (dfOut != null && dfOut.trim().length() > 0) {
+                    String[] parts = dfOut.trim().split("\\s+");
+                    if (parts.length >= 2) {
+                        result.put("disk", parts[1].trim());
+                    }
+                }
+            }
+            result.put("success", true);
+            result.put("message", "连接成功，已回写规格");
+        } catch (Exception e) {
+            result.put("message", friendlyConnectionErrorMessage(e));
+            log.debug("testConnectionAndFetchSpec failed: {}", e.getMessage());
+        } finally {
+            if (ssh != null) {
+                try {
+                    ssh.close();
+                } catch (IOException e) {
+                    log.debug("SSH close: {}", e.getMessage());
+                }
+            }
+        }
+        return result;
+    }
+
+    /** 连接测试用：带超时（8 秒），避免账号错误或网络不通时长时间卡住 */
+    private SSHClient createSshClient(String ip, int port, String username, String password) throws IOException {
+        SSHClient ssh = new SSHClient();
+        ssh.addHostKeyVerifier(new PromiscuousVerifier());
+        ssh.setConnectTimeout(8000);
+        ssh.connect(ip, port);
+        ssh.authPassword(username, password);
+        return ssh;
+    }
+
+    /** 将连接/认证异常转为前端可展示的简短提示 */
+    private static String friendlyConnectionErrorMessage(Throwable e) {
+        String msg = e.getMessage() != null ? e.getMessage().toLowerCase() : "";
+        if (msg.contains("auth") || msg.contains("password") || msg.contains("denied") || msg.contains("invalid")
+                || msg.contains("authentication") || msg.contains("access denied")) {
+            return "SSH 账号或密码错误，请检查后重试";
+        }
+        if (msg.contains("refused") || msg.contains("timeout") || msg.contains("timed out") || msg.contains("connect")
+                || msg.contains("unreachable") || msg.contains("no route") || msg.contains("network is unreachable")) {
+            return "网络不通或连接超时，请检查 IP、端口与网络";
+        }
+        return e.getMessage() != null && !e.getMessage().isEmpty() ? e.getMessage() : "连接失败，请检查 IP、端口、账号密码与网络";
+    }
+
     /** 在已建立的 SSH 连接上执行 sb 运行管理 -> 重启，使配置生效。失败仅打日志不抛异常。 */
     private void restartSingBox(SSHClient ssh) throws IOException {
         try (Session session = ssh.startSession()) {

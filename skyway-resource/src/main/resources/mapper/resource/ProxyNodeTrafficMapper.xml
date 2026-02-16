@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="UTF-8" ?>
+<?xml version="1.0" encoding="UTF-8" ?>
 <!DOCTYPE mapper
 PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
@@ -23,6 +23,15 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             ifnull(sum(tx_delta), 0) as totalTx
         from res_proxy_node_traffic
         where node_id = #{nodeId}
+    </select>
+
+    <select id="selectSumByInstanceId" resultType="java.util.HashMap">
+        select
+            ifnull(sum(t.rx_delta), 0) as totalRx,
+            ifnull(sum(t.tx_delta), 0) as totalTx
+        from res_proxy_node_traffic t
+        inner join res_proxy_node p on t.node_id = p.id
+        where p.instance_id = #{instanceId}
     </select>
 
     <select id="selectRecentByNodeId" resultMap="ProxyNodeTrafficResult">

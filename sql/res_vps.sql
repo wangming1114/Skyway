@@ -31,6 +31,9 @@ create table res_instance (
   memory          varchar(50)   default null                comment '内存规格',
   disk            varchar(50)   default null                comment '磁盘规格',
   status          varchar(20)   default 'running'          comment '状态(res_instance_status)',
+  traffic_limit   bigint(20)    default null               comment '流量限制(字节，NULL/0=不限制)',
+  renewal_amount  varchar(100)  default null               comment '续费金额(如10/月、100/年)',
+  expire_time     datetime      default null                comment '到期时间',
   remark          varchar(500)  default null                comment '备注',
   create_time     datetime                                   comment '创建时间',
   update_time     datetime                                   comment '更新时间',
@@ -68,6 +71,12 @@ insert into sys_menu values(206, 'VPS导出', 201, 5, '', null, null, '', 1, 0, 
 --   ADD COLUMN ssh_port int DEFAULT 22 COMMENT 'SSH端口',
 --   ADD COLUMN ssh_username varchar(64) DEFAULT NULL COMMENT 'SSH登录账号',
 --   ADD COLUMN ssh_password varchar(255) DEFAULT NULL COMMENT 'SSH登录密码';
+
+-- 已有 res_instance 表时执行：流量限制、续费、到期时间
+-- ALTER TABLE res_instance
+--   ADD COLUMN traffic_limit bigint(20) DEFAULT NULL COMMENT '流量限制(字节，NULL/0=不限制)',
+--   ADD COLUMN renewal_amount varchar(100) DEFAULT NULL COMMENT '续费金额(如10/月、100/年)',
+--   ADD COLUMN expire_time datetime DEFAULT NULL COMMENT '到期时间';
 
 -- 9、res_proxy_node（代理节点表）
 drop table if exists res_proxy_node;

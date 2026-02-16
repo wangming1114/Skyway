@@ -20,6 +20,11 @@ public interface ProxyNodeTrafficMapper {
     Map<String, Object> selectSumByNodeId(Long nodeId);
 
     /**
+     * 按实例汇总总流量（该实例下所有节点的 rx+tx 合计）
+     */
+    Map<String, Object> selectSumByInstanceId(Long instanceId);
+
+    /**
      * 按节点查近期明细（最近 N 条，用于曲线/速率）
      */
     List<ProxyNodeTraffic> selectRecentByNodeId(@Param("nodeId") Long nodeId, @Param("limit") int limit);

@@ -71,14 +71,28 @@
                 </template>
               </el-table-column>
               <el-table-column label="分类" align="center" prop="categoryName" width="100" :show-overflow-tooltip="true" />
+              <el-table-column label="节点数" align="center" prop="nodeCount" width="80" />
               <el-table-column label="IP" align="center" prop="ip" width="120" />
-              <el-table-column label="SSH端口" align="center" prop="sshPort" width="88" />
-              <el-table-column label="CPU" align="center" prop="cpu" width="80" />
-              <el-table-column label="内存" align="center" prop="memory" width="80" />
-              <el-table-column label="磁盘" align="center" prop="disk" width="80" />
               <el-table-column label="状态" align="center" prop="status" width="90">
                 <template #default="scope">
                   <dict-tag :options="res_instance_status" :value="scope.row.status" />
+                </template>
+              </el-table-column>
+              <el-table-column label="流量限制" align="center" width="100">
+                <template #default="scope">
+                  {{ formatTrafficLimit(scope.row.trafficLimit) }}
+                </template>
+              </el-table-column>
+              <el-table-column label="续费" align="center" prop="renewalAmount" width="100" show-overflow-tooltip />
+              <el-table-column label="到期时间" align="center" prop="expireTime" width="160">
+                <template #default="scope">
+                  <span v-if="!scope.row.expireTime">-</span>
+                  <span v-else :class="{ 'expire-expired': isExpired(scope.row.expireTime) }">{{ parseTime(scope.row.expireTime) }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column label="累计流量" align="center" width="140" show-overflow-tooltip>
+                <template #default="scope">
+                  {{ scope.row.totalTrafficBytes != null ? formatTraffic(scope.row.totalTrafficBytes) : '-' }}
                 </template>
               </el-table-column>
               <el-table-column label="备注" align="center" prop="remark" min-width="120" show-overflow-tooltip />
@@ -163,15 +177,6 @@
             </el-form-item>
           </el-col>
         </el-row>
-        <el-row :gutter="16">
-          <el-col :span="12">
-            <el-form-item label="状态" prop="status">
-              <el-select v-model="instanceForm.status" placeholder="状态" style="width: 100%">
-                <el-option v-for="dict in res_instance_status" :key="dict.value" :label="dict.label" :value="dict.value" />
-              </el-select>
-            </el-form-item>
-          </el-col>
-        </el-row>
         <el-divider content-position="left">连接信息</el-divider>
         <el-row :gutter="16">
           <el-col :span="12">
@@ -197,11 +202,16 @@
             </el-form-item>
           </el-col>
         </el-row>
+        <el-form-item label=" " :span="2">
+          <el-button type="primary" plain :loading="testConnectionLoading" @click="handleTestConnection">
+            连接测试（自动回写 CPU/内存/磁盘）
+          </el-button>
+        </el-form-item>
         <el-divider content-position="left">规格与备注</el-divider>
         <el-row :gutter="16">
           <el-col :span="8">
             <el-form-item label="CPU" prop="cpu">
-              <el-input v-model="instanceForm.cpu" placeholder="如 2核" maxlength="50" />
+              <el-input v-model="instanceForm.cpu" placeholder="如 2核，可点连接测试自动填充" maxlength="50" />
             </el-form-item>
           </el-col>
           <el-col :span="8">
@@ -212,6 +222,26 @@
           <el-col :span="8">
             <el-form-item label="磁盘" prop="disk">
               <el-input v-model="instanceForm.disk" placeholder="如 50G" maxlength="50" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-row :gutter="16">
+          <el-col :span="12">
+            <el-form-item label="流量限制" prop="trafficLimitGb">
+              <el-input-number v-model="instanceForm.trafficLimitGb" :min="0" placeholder="留空或0为不限制(单位GB)" controls-position="right" style="width: 100%" clearable />
+              <span class="form-tip">单位 GB，0 或留空表示不限制</span>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="续费金额" prop="renewalAmount">
+              <el-input v-model="instanceForm.renewalAmount" placeholder="如 10/月、100/年" maxlength="100" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-row :gutter="16">
+          <el-col :span="12">
+            <el-form-item label="到期时间" prop="expireTime">
+              <el-date-picker v-model="instanceForm.expireTime" type="datetime" value-format="YYYY-MM-DD HH:mm:ss" placeholder="选择到期时间" style="width: 100%" />
             </el-form-item>
           </el-col>
         </el-row>
@@ -242,7 +272,8 @@ import {
   getInstance,
   addInstance,
   updateInstance,
-  delInstance
+  delInstance,
+  testConnection
 } from '@/api/resource/vps'
 const { proxy } = getCurrentInstance()
 const { res_instance_status } = proxy.useDict('res_instance_status')
@@ -292,6 +323,10 @@ const instanceForm = ref({
   memory: '',
   disk: '',
   status: 'running',
+  trafficLimit: null,
+  trafficLimitGb: undefined,
+  renewalAmount: '',
+  expireTime: null,
   remark: ''
 })
 const instanceRules = {
@@ -300,7 +335,6 @@ const instanceRules = {
     { min: 1, max: 100, message: '长度在 1 到 100 个字符', trigger: 'blur' }
   ],
   categoryId: [{ required: true, message: '请选择所属分类', trigger: 'change' }],
-  status: [{ required: true, message: '请选择状态', trigger: 'change' }],
   ip: [
     { required: true, message: '请输入IP地址', trigger: 'blur' },
     {
@@ -331,6 +365,36 @@ const instanceRules = {
   ]
 }
 const instanceRef = ref(null)
+const testConnectionLoading = ref(false)
+
+function handleTestConnection() {
+  const form = instanceForm.value
+  if (!form.ip || !form.sshUsername) {
+    proxy.$modal.msgWarning('请先填写 IP 和 SSH 账号')
+    return
+  }
+  testConnectionLoading.value = true
+  testConnection({
+    ip: form.ip,
+    sshPort: form.sshPort != null ? form.sshPort : 22,
+    sshUsername: form.sshUsername,
+    sshPassword: form.sshPassword || ''
+  }).then(res => {
+    testConnectionLoading.value = false
+    const data = res.data || res
+    if (data.success) {
+      if (data.cpu) form.cpu = data.cpu
+      if (data.memory) form.memory = data.memory
+      if (data.disk) form.disk = data.disk
+      proxy.$modal.msgSuccess(data.message || '连接成功，已回写规格')
+    } else {
+      proxy.$modal.msgError(data.message || '连接失败')
+    }
+  }).catch(e => {
+    testConnectionLoading.value = false
+    proxy.$modal.msgError(e.msg || e.message || '连接测试失败')
+  })
+}
 
 function handleConnectServer(row) {
   router.push({
@@ -496,6 +560,10 @@ function handleAddInstance() {
     memory: '',
     disk: '',
     status: 'running',
+    trafficLimit: null,
+    trafficLimitGb: undefined,
+    renewalAmount: '',
+    expireTime: null,
     remark: ''
   }
   instanceTitle.value = '新增VPS'
@@ -505,7 +573,13 @@ function handleAddInstance() {
 
 function handleEditInstance(row) {
   getInstance(row.id).then(res => {
-    instanceForm.value = { ...res.data }
+    const d = res.data
+    instanceForm.value = {
+      ...d,
+      trafficLimitGb: d.trafficLimit != null && d.trafficLimit > 0
+        ? Math.round(d.trafficLimit / (1024 * 1024 * 1024) * 100) / 100
+        : undefined
+    }
     instanceTitle.value = '编辑VPS'
     instanceOpen.value = true
   })
@@ -528,20 +602,43 @@ function handleDeleteInstance(row) {
 function submitInstanceForm() {
   proxy.$refs.instanceRef.validate(valid => {
     if (!valid) return
-    if (instanceForm.value.id) {
-      updateInstance(instanceForm.value).then(() => {
+    const form = instanceForm.value
+    const gb = form.trafficLimitGb != null && form.trafficLimitGb !== '' ? Number(form.trafficLimitGb) : null
+    const payload = {
+      ...form,
+      trafficLimit: gb != null && gb > 0 ? Math.round(gb * 1024 * 1024 * 1024) : null
+    }
+    delete payload.trafficLimitGb
+    if (payload.id) {
+      updateInstance(payload).then(() => {
         proxy.$modal.msgSuccess('修改成功')
         instanceOpen.value = false
         getList()
       })
     } else {
-      addInstance(instanceForm.value).then(() => {
+      addInstance(payload).then(() => {
         proxy.$modal.msgSuccess('新增成功')
         instanceOpen.value = false
         getList()
       })
     }
   })
+}
+
+function formatTrafficLimit(bytes) {
+  if (bytes == null || bytes === 0) return '不限'
+  return formatTraffic(bytes)
+}
+function formatTraffic(bytes) {
+  if (bytes == null || bytes === 0) return '0 B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+  const i = Math.max(0, Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1))
+  return (bytes / Math.pow(k, i)).toFixed(2) + ' ' + sizes[i]
+}
+function isExpired(expireTime) {
+  if (!expireTime) return false
+  return new Date(expireTime) < new Date()
 }
 
 function goDetail(id) {
@@ -603,5 +700,14 @@ onMounted(() => {
 }
 .op-btns .el-button {
   padding: 0 4px;
+}
+.expire-expired {
+  color: var(--el-color-danger);
+  font-weight: 500;
+}
+.form-tip {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  margin-left: 8px;
 }
 </style>

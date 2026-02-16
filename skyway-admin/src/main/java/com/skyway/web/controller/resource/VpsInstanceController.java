@@ -80,6 +80,26 @@ public class VpsInstanceController extends BaseController {
     }
 
     /**
+     * 连接测试并拉取 CPU/内存/磁盘规格（不写库，用于新增/编辑时的「连接测试」按钮）
+     */
+    @PreAuthorize("@ss.hasPermi('resource:vps:add')")
+    @PostMapping("/testConnection")
+    public AjaxResult testConnection(@RequestBody java.util.Map<String, Object> body) {
+        String ip = body != null && body.get("ip") != null ? body.get("ip").toString().trim() : null;
+        Integer sshPort = null;
+        if (body != null && body.get("sshPort") != null) {
+            Object p = body.get("sshPort");
+            if (p instanceof Number) sshPort = ((Number) p).intValue();
+            else try { sshPort = Integer.parseInt(p.toString()); } catch (NumberFormatException ignored) {}
+        }
+        if (sshPort == null) sshPort = 22;
+        String sshUsername = body != null && body.get("sshUsername") != null ? body.get("sshUsername").toString().trim() : null;
+        String sshPassword = body != null && body.get("sshPassword") != null ? body.get("sshPassword").toString() : "";
+        java.util.Map<String, Object> result = vpsSshCommandService.testConnectionAndFetchSpec(ip, sshPort, sshUsername, sshPassword);
+        return success(result);
+    }
+
+    /**
      * 新增VPS实例
      */
     @PreAuthorize("@ss.hasPermi('resource:vps:add')")
@@ -90,12 +110,18 @@ public class VpsInstanceController extends BaseController {
     }
 
     /**
-     * 修改VPS实例
+     * 修改VPS实例（状态由定时任务同步，不随编辑更新）
      */
     @PreAuthorize("@ss.hasPermi('resource:vps:edit')")
     @Log(title = "VPS实例", businessType = BusinessType.UPDATE)
     @PutMapping
     public AjaxResult edit(@Validated @RequestBody VpsInstance row) {
+        if (row.getId() != null) {
+            VpsInstance existing = vpsInstanceService.getById(row.getId());
+            if (existing != null) {
+                row.setStatus(existing.getStatus());
+            }
+        }
         return toAjax(vpsInstanceService.update(row));
     }
 

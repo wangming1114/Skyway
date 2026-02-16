@@ -1,11 +1,13 @@
 package com.skyway.resource.domain;
 
+import java.util.Date;
 import javax.validation.constraints.Max;
 import javax.validation.constraints.Min;
 import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.Size;
 import org.apache.commons.lang3.builder.ToStringBuilder;
 import org.apache.commons.lang3.builder.ToStringStyle;
+import com.fasterxml.jackson.annotation.JsonFormat;
 import com.skyway.common.annotation.Excel;
 import com.skyway.common.core.domain.BaseEntity;
 
@@ -59,6 +61,22 @@ public class VpsInstance extends BaseEntity {
     /** 状态 */
     @Excel(name = "状态", readConverterExp = "running=运行中,stopped=已停止,abnormal=异常")
     private String status;
+
+    /** 流量限制（字节，null 或 0 表示不限制） */
+    private Long trafficLimit;
+
+    /** 续费金额（如 10/月、100/年） */
+    private String renewalAmount;
+
+    /** 到期时间 */
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    private Date expireTime;
+
+    /** 已开通节点数（关联查询，不持久化） */
+    private Integer nodeCount;
+
+    /** 累计流量字节数（关联汇总，不持久化） */
+    private Long totalTrafficBytes;
 
     /** 分类名称（关联查询，不持久化） */
     private String categoryName;
@@ -208,6 +226,46 @@ public class VpsInstance extends BaseEntity {
 
     public void setCategoryIds(java.util.List<Long> categoryIds) {
         this.categoryIds = categoryIds;
+    }
+
+    public Long getTrafficLimit() {
+        return trafficLimit;
+    }
+
+    public void setTrafficLimit(Long trafficLimit) {
+        this.trafficLimit = trafficLimit;
+    }
+
+    public String getRenewalAmount() {
+        return renewalAmount;
+    }
+
+    public void setRenewalAmount(String renewalAmount) {
+        this.renewalAmount = renewalAmount;
+    }
+
+    public Date getExpireTime() {
+        return expireTime;
+    }
+
+    public void setExpireTime(Date expireTime) {
+        this.expireTime = expireTime;
+    }
+
+    public Integer getNodeCount() {
+        return nodeCount;
+    }
+
+    public void setNodeCount(Integer nodeCount) {
+        this.nodeCount = nodeCount;
+    }
+
+    public Long getTotalTrafficBytes() {
+        return totalTrafficBytes;
+    }
+
+    public void setTotalTrafficBytes(Long totalTrafficBytes) {
+        this.totalTrafficBytes = totalTrafficBytes;
     }
 
     @Override

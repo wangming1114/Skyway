@@ -30,6 +30,12 @@
           <el-descriptions-item label="CPU">{{ detail.cpu || '-' }}</el-descriptions-item>
           <el-descriptions-item label="内存">{{ detail.memory || '-' }}</el-descriptions-item>
           <el-descriptions-item label="磁盘">{{ detail.disk || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="流量限制">{{ detail.trafficLimit != null && detail.trafficLimit > 0 ? formatTraffic(detail.trafficLimit) : '不限' }}</el-descriptions-item>
+          <el-descriptions-item label="续费金额">{{ detail.renewalAmount || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="到期时间">
+            <span v-if="!detail.expireTime">-</span>
+            <span v-else :class="{ 'expire-expired': isExpired(detail.expireTime) }">{{ parseTime(detail.expireTime) }}</span>
+          </el-descriptions-item>
           <el-descriptions-item label="创建时间">{{ parseTime(detail.createTime) }}</el-descriptions-item>
           <el-descriptions-item label="备注" :span="2">{{ detail.remark || '-' }}</el-descriptions-item>
         </el-descriptions>
@@ -154,6 +160,18 @@ onBeforeUnmount(() => {
   wsConnected.value = false
 })
 
+function formatTraffic(bytes) {
+  if (bytes == null || bytes === 0) return '0 B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+  const i = Math.max(0, Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1))
+  return (bytes / Math.pow(k, i)).toFixed(2) + ' ' + sizes[i]
+}
+function isExpired(expireTime) {
+  if (!expireTime) return false
+  return new Date(expireTime) < new Date()
+}
+
 function goBack() {
   router.push({ path: '/resource/vps', query: route.query })
 }
@@ -166,5 +184,9 @@ onMounted(() => {
 <style scoped lang="scss">
 .detail-section {
   margin-bottom: 16px;
+}
+.expire-expired {
+  color: var(--el-color-danger);
+  font-weight: 500;
 }
 </style>

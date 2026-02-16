@@ -62,6 +62,15 @@ export function getInstance(id) {
   })
 }
 
+/** 连接测试并拉取 CPU/内存/磁盘（用于新增/编辑时的连接测试按钮） */
+export function testConnection(data) {
+  return request({
+    url: '/resource/vps/instance/testConnection',
+    method: 'post',
+    data: data
+  })
+}
+
 export function addInstance(data) {
   return request({
     url: '/resource/vps/instance',

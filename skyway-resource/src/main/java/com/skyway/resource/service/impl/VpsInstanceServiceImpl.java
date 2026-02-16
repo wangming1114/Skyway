@@ -3,6 +3,7 @@ package com.skyway.resource.service.impl;
 import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.Queue;
 import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -13,6 +14,7 @@ import com.skyway.resource.domain.VpsInstance;
 import com.skyway.resource.mapper.VpsCategoryMapper;
 import com.skyway.resource.mapper.VpsInstanceMapper;
 import com.skyway.resource.mapper.ProxyNodeMapper;
+import com.skyway.resource.mapper.ProxyNodeTrafficMapper;
 import com.skyway.resource.service.IVpsInstanceService;
 
 /**
@@ -32,6 +34,9 @@ public class VpsInstanceServiceImpl implements IVpsInstanceService {
     @Autowired
     private ProxyNodeMapper proxyNodeMapper;
 
+    @Autowired
+    private ProxyNodeTrafficMapper proxyNodeTrafficMapper;
+
     @Override
     public List<VpsInstance> selectList(VpsInstance instance) {
         if (instance.getCategoryId() != null) {
@@ -39,7 +44,30 @@ public class VpsInstanceServiceImpl implements IVpsInstanceService {
             instance.setCategoryIds(categoryIds);
             instance.setCategoryId(null);
         }
-        return vpsInstanceMapper.selectList(instance);
+        List<VpsInstance> list = vpsInstanceMapper.selectList(instance);
+        if (list != null && !list.isEmpty()) {
+            for (VpsInstance row : list) {
+                if (row.getId() != null) {
+                    Map<String, Object> sum = proxyNodeTrafficMapper.selectSumByInstanceId(row.getId());
+                    long rx = toLong(sum != null ? sum.get("totalRx") : null, sum != null ? sum.get("totalrx") : null);
+                    long tx = toLong(sum != null ? sum.get("totalTx") : null, sum != null ? sum.get("totaltx") : null);
+                    row.setTotalTrafficBytes(rx + tx);
+                }
+            }
+        }
+        return list;
+    }
+
+    private static long toLong(Object a, Object b) {
+        if (a != null) {
+            if (a instanceof Number) return ((Number) a).longValue();
+            try { return Long.parseLong(String.valueOf(a)); } catch (NumberFormatException ignored) {}
+        }
+        if (b != null) {
+            if (b instanceof Number) return ((Number) b).longValue();
+            try { return Long.parseLong(String.valueOf(b)); } catch (NumberFormatException ignored) {}
+        }
+        return 0L;
     }
 
     /** 收集某分类及其所有子孙分类ID（兼容 MySQL 5.7，在内存中根据树结构计算） */
