@@ -7,10 +7,12 @@ import java.util.Queue;
 import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import com.skyway.common.exception.ServiceException;
 import com.skyway.resource.domain.VpsCategory;
 import com.skyway.resource.domain.VpsInstance;
 import com.skyway.resource.mapper.VpsCategoryMapper;
 import com.skyway.resource.mapper.VpsInstanceMapper;
+import com.skyway.resource.mapper.ProxyNodeMapper;
 import com.skyway.resource.service.IVpsInstanceService;
 
 /**
@@ -26,6 +28,9 @@ public class VpsInstanceServiceImpl implements IVpsInstanceService {
 
     @Autowired
     private VpsCategoryMapper vpsCategoryMapper;
+
+    @Autowired
+    private ProxyNodeMapper proxyNodeMapper;
 
     @Override
     public List<VpsInstance> selectList(VpsInstance instance) {
@@ -82,6 +87,9 @@ public class VpsInstanceServiceImpl implements IVpsInstanceService {
 
     @Override
     public int deleteById(Long id) {
+        if (proxyNodeMapper.countByInstanceId(id) > 0) {
+            throw new ServiceException("该实例下存在代理节点，无法删除，请先移除相关代理节点");
+        }
         return vpsInstanceMapper.deleteById(id);
     }
 }

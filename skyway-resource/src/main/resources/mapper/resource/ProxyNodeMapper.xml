@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="UTF-8" ?>
+<?xml version="1.0" encoding="UTF-8" ?>
 <!DOCTYPE mapper
 PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
@@ -50,6 +50,14 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         <include refid="selectProxyNodeVo"/>
         where instance_id = #{instanceId} and port = #{port}
         limit 1
+    </select>
+
+    <select id="countByInstanceId" resultType="int">
+        select count(1) from res_proxy_node where instance_id = #{instanceId}
+    </select>
+
+    <select id="countByCustomerId" resultType="int">
+        select count(1) from res_proxy_node where customer_id = #{customerId}
     </select>
 
     <insert id="insert" parameterType="com.skyway.resource.domain.ProxyNode" useGeneratedKeys="true" keyProperty="id">

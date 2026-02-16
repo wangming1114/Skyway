@@ -33,6 +33,16 @@ public interface ProxyNodeMapper {
     ProxyNode selectByInstanceIdAndPort(@Param("instanceId") Long instanceId, @Param("port") Integer port);
 
     /**
+     * 统计某实例下的代理节点数量（删除实例前校验用）
+     */
+    int countByInstanceId(Long instanceId);
+
+    /**
+     * 统计某客户下的代理节点数量（删除客户前校验用）
+     */
+    int countByCustomerId(Long customerId);
+
+    /**
      * 新增
      *
      * @param row 实体
