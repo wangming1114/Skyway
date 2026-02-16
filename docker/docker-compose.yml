@@ -83,9 +83,10 @@ services:
     volumes:
       - ./volumes/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./volumes/nginx/sites:/etc/nginx/http_vhost:ro
-      - ./volumes/nginx/admin:/usr/share/nginx/admin:ro
-      - ./volumes/nginx/c:/usr/share/nginx/c:ro
+      - ./volumes/nginx/admin:/usr/share/nginx/admin
+      - ./volumes/nginx/c:/usr/share/nginx/c
       - ./volumes/nginx/logs:/var/log/nginx
+    command: ["/bin/sh", "-c", "chmod -R 755 /usr/share/nginx/admin /usr/share/nginx/c 2>/dev/null; exec nginx -g 'daemon off;'"]
 
 networks:
   skyway_net:
