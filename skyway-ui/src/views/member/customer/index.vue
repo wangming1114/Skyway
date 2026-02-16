@@ -27,7 +27,7 @@
     </el-row>
 
     <el-table v-loading="loading" :data="customerList">
-      <el-table-column label="客户ID" align="center" prop="id" width="80" />
+      <el-table-column label="编号" align="center" prop="id" width="80" />
       <el-table-column label="用户名" align="center" prop="username" min-width="100" :show-overflow-tooltip="true" />
       <el-table-column label="邮箱" align="center" min-width="160" :show-overflow-tooltip="true">
         <template #default="scope">{{ scope.row.email || '-' }}</template>
@@ -203,11 +203,11 @@ function handleAdd() {
 }
 
 function handleUpdate(row) {
-  resetForm()
   getCustomer(row.id).then(res => {
     form.value = { ...res.data }
     title.value = '编辑客户'
     open.value = true
+    nextTick(() => proxy.$refs.formRef?.clearValidate())
   })
 }
 

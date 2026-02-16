@@ -15,6 +15,11 @@
           <el-tag size="small" :type="getNodeTypeTagColor(row.nodeType)">{{ row.nodeType }}</el-tag>
         </template>
       </el-table-column>
+      <el-table-column label="归属客户" width="120" align="center" show-overflow-tooltip>
+        <template #default="{ row }">
+          {{ customerOptions.find(c => c.id === row.customerId)?.username ?? row.customerId ?? '-' }}
+        </template>
+      </el-table-column>
       <el-table-column label="地址" prop="address" min-width="100" show-overflow-tooltip />
       <el-table-column label="端口" prop="port" width="80" align="center" />
       <el-table-column label="有效期" width="160" align="center">
@@ -498,6 +503,9 @@ function isExpired(expireTime) {
 onMounted(() => {
   emit('register-handler', handleWsMessage)
   getList()
+  listCustomer({ pageNum: 1, pageSize: 500 }).then(res => {
+    customerOptions.value = res.rows || []
+  }).catch(() => { customerOptions.value = [] })
 })
 
 onBeforeUnmount(() => {

@@ -11,7 +11,7 @@
       <div v-if="detail" class="detail-section">
         <el-descriptions title="基础信息" :column="2" border>
           <el-descriptions-item label="VPS名称">{{ detail.name }}</el-descriptions-item>
-          <el-descriptions-item label="VPS ID">{{ detail.id }}</el-descriptions-item>
+          <el-descriptions-item label="编号">{{ detail.id }}</el-descriptions-item>
           <el-descriptions-item label="状态">
             <dict-tag :options="res_instance_status" :value="detail.status" />
           </el-descriptions-item>

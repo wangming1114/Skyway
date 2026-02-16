@@ -8,7 +8,7 @@
         </span>
       </template>
       <el-descriptions :column="2" border v-if="customer.id">
-        <el-descriptions-item label="客户ID">{{ customer.id }}</el-descriptions-item>
+        <el-descriptions-item label="编号">{{ customer.id }}</el-descriptions-item>
         <el-descriptions-item label="用户名">{{ customer.username }}</el-descriptions-item>
         <el-descriptions-item label="邮箱">{{ customer.email || '-' }}</el-descriptions-item>
         <el-descriptions-item label="手机号">{{ customer.phone || '-' }}</el-descriptions-item>
@@ -39,6 +39,11 @@
             <el-table-column label="节点类型" prop="nodeType" width="160">
               <template #default="{ row }">
                 <el-tag size="small" :type="getNodeTypeTagColor(row.nodeType)">{{ row.nodeType }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="所属VPS" width="140" align="center" show-overflow-tooltip>
+              <template #default="{ row }">
+                {{ instanceOptions.find(i => i.id === row.instanceId)?.name ?? row.instanceId ?? '-' }}
               </template>
             </el-table-column>
             <el-table-column label="地址" prop="address" min-width="100" show-overflow-tooltip />
@@ -358,6 +363,9 @@ onMounted(() => {
     infoLoading.value = false
   }).catch(() => { infoLoading.value = false })
   loadBindings()
+  listInstance({ pageNum: 1, pageSize: 500 }).then(res => {
+    instanceOptions.value = res.rows || []
+  }).catch(() => { instanceOptions.value = [] })
 })
 </script>
 

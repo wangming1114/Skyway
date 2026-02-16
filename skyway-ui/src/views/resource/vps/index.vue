@@ -64,7 +64,7 @@
             </el-row>
 
             <el-table v-loading="loading" :data="instanceList">
-              <el-table-column label="VPS ID" align="center" prop="id" width="80" />
+              <el-table-column label="编号" align="center" prop="id" width="80" />
               <el-table-column label="名称" align="center" prop="name" min-width="120" :show-overflow-tooltip="true">
                 <template #default="scope">
                   <el-link type="primary" @click="goDetail(scope.row.id)">{{ scope.row.name }}</el-link>
@@ -81,6 +81,7 @@
                   <dict-tag :options="res_instance_status" :value="scope.row.status" />
                 </template>
               </el-table-column>
+              <el-table-column label="备注" align="center" prop="remark" min-width="120" show-overflow-tooltip />
               <el-table-column label="创建时间" align="center" prop="createTime" width="160">
                 <template #default="scope">
                   <span>{{ parseTime(scope.row.createTime) }}</span>
@@ -399,7 +400,6 @@ function handleEditCategory(data) {
     categoryForm.value = { ...res.data, type: '1' }
     categoryTitle.value = '编辑分类'
     categoryOpen.value = true
-    nextTick(() => proxy.resetForm('categoryRef'))
   })
 }
 
@@ -508,7 +508,6 @@ function handleEditInstance(row) {
     instanceForm.value = { ...res.data }
     instanceTitle.value = '编辑VPS'
     instanceOpen.value = true
-    nextTick(() => proxy.resetForm('instanceRef'))
   })
 }
 
