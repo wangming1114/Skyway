@@ -369,6 +369,7 @@ CREATE TABLE `res_instance`  (
   `memory` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '内存规格',
   `disk` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '磁盘规格',
   `status` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT 'running' COMMENT '状态(res_instance_status)',
+  `network_type` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '网络类型(res_instance_network_type)',
   `traffic_limit` bigint(20) NULL DEFAULT NULL COMMENT '流量限制(字节，NULL/0=不限制)',
   `renewal_amount` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL COMMENT '续费金额(如10/月、100/年)',
   `expire_time` datetime NULL DEFAULT NULL COMMENT '到期时间',
@@ -575,6 +576,11 @@ INSERT INTO `sys_dict_data` VALUES (31, 2, '节点', '2', 'res_category_type', '
 INSERT INTO `sys_dict_data` VALUES (32, 1, '运行中', 'running', 'res_instance_status', '', 'success', 'Y', '0', 'admin', '2026-02-13 15:16:14', '', NULL, '');
 INSERT INTO `sys_dict_data` VALUES (33, 2, '已停止', 'stopped', 'res_instance_status', '', 'info', 'N', '0', 'admin', '2026-02-13 15:16:14', '', NULL, '');
 INSERT INTO `sys_dict_data` VALUES (34, 3, '异常', 'abnormal', 'res_instance_status', '', 'danger', 'N', '0', 'admin', '2026-02-13 15:16:14', '', NULL, '');
+INSERT INTO `sys_dict_data` VALUES (37, 1, '163网络', '163', 'res_instance_network_type', '', 'default', 'Y', '0', 'admin', '2026-02-16 00:00:00', '', NULL, '');
+INSERT INTO `sys_dict_data` VALUES (38, 2, 'CN2', 'cn2', 'res_instance_network_type', '', 'primary', 'N', '0', 'admin', '2026-02-16 00:00:00', '', NULL, '');
+INSERT INTO `sys_dict_data` VALUES (39, 3, 'CN2 GIA', 'cn2gia', 'res_instance_network_type', '', 'primary', 'N', '0', 'admin', '2026-02-16 00:00:00', '', NULL, '');
+INSERT INTO `sys_dict_data` VALUES (40, 4, '9929 + cn2 + cmin2', '9929', 'res_instance_network_type', '', 'success', 'N', '0', 'admin', '2026-02-16 00:00:00', '', NULL, '');
+INSERT INTO `sys_dict_data` VALUES (41, 5, '其他', 'other', 'res_instance_network_type', '', 'info', 'N', '0', 'admin', '2026-02-16 00:00:00', '', NULL, '');
 INSERT INTO `sys_dict_data` VALUES (35, 1, '正常', '0', 'res_proxy_node_status', '', 'success', 'Y', '0', 'admin', '2026-02-14 06:57:11', '', NULL, '');
 INSERT INTO `sys_dict_data` VALUES (36, 2, '停用', '1', 'res_proxy_node_status', '', 'danger', 'N', '0', 'admin', '2026-02-14 06:57:12', '', NULL, '');
 
@@ -612,6 +618,7 @@ INSERT INTO `sys_dict_type` VALUES (10, '系统状态', 'sys_common_status', '0'
 INSERT INTO `sys_dict_type` VALUES (11, '资源分类类型', 'res_category_type', '0', 'admin', '2026-02-13 15:16:13', '', NULL, '分类/节点');
 INSERT INTO `sys_dict_type` VALUES (12, 'VPS实例状态', 'res_instance_status', '0', 'admin', '2026-02-13 15:16:13', '', NULL, '运行中/已停止/异常');
 INSERT INTO `sys_dict_type` VALUES (13, '代理节点状态', 'res_proxy_node_status', '0', 'admin', '2026-02-14 06:57:11', '', NULL, '正常/停用');
+INSERT INTO `sys_dict_type` VALUES (14, 'VPS网络类型', 'res_instance_network_type', '0', 'admin', '2026-02-16 00:00:00', '', NULL, '163/CN2/CN2 GIA等');
 
 -- ----------------------------
 -- Table structure for sys_job

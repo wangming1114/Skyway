@@ -15,6 +15,9 @@
           <el-descriptions-item label="状态">
             <dict-tag :options="res_instance_status" :value="detail.status" />
           </el-descriptions-item>
+          <el-descriptions-item label="网络类型">
+            <dict-tag :options="res_instance_network_type" :value="detail.networkType" />
+          </el-descriptions-item>
           <el-descriptions-item label="分类">{{ detail.categoryName || '-' }}</el-descriptions-item>
           <el-descriptions-item label="节点">{{ detail.nodeName || '-' }}</el-descriptions-item>
           <el-descriptions-item label="IP">{{ detail.ip || '-' }}</el-descriptions-item>
@@ -65,7 +68,7 @@ import ProxyNodePanel from './components/ProxyNodePanel.vue'
 import { getToken } from '@/utils/auth'
 
 const { proxy } = getCurrentInstance()
-const { res_instance_status } = proxy.useDict('res_instance_status')
+const { res_instance_status, res_instance_network_type } = proxy.useDict('res_instance_status', 'res_instance_network_type')
 const route = useRoute()
 const router = useRouter()
 

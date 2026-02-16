@@ -78,6 +78,11 @@
                   <dict-tag :options="res_instance_status" :value="scope.row.status" />
                 </template>
               </el-table-column>
+              <el-table-column label="网络类型" align="center" prop="networkType" width="140" show-overflow-tooltip>
+                <template #default="scope">
+                  <dict-tag :options="res_instance_network_type" :value="scope.row.networkType" />
+                </template>
+              </el-table-column>
               <el-table-column label="流量限制" align="center" width="100">
                 <template #default="scope">
                   {{ formatTrafficLimit(scope.row.trafficLimit) }}
@@ -174,6 +179,13 @@
                 check-strictly
                 style="width: 100%"
               />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="网络类型" prop="networkType">
+              <el-select v-model="instanceForm.networkType" placeholder="请选择网络类型" clearable style="width: 100%">
+                <el-option v-for="dict in res_instance_network_type" :key="dict.value" :label="dict.label" :value="dict.value" />
+              </el-select>
             </el-form-item>
           </el-col>
         </el-row>
@@ -276,7 +288,7 @@ import {
   testConnection
 } from '@/api/resource/vps'
 const { proxy } = getCurrentInstance()
-const { res_instance_status } = proxy.useDict('res_instance_status')
+const { res_instance_status, res_instance_network_type } = proxy.useDict('res_instance_status', 'res_instance_network_type')
 const appStore = useAppStore()
 const route = useRoute()
 const router = useRouter()
@@ -315,6 +327,7 @@ const instanceTitle = ref('')
 const instanceForm = ref({
   name: '',
   categoryId: undefined,
+  networkType: undefined,
   ip: '',
   sshPort: 22,
   sshUsername: '',
@@ -552,6 +565,7 @@ function handleAddInstance() {
     id: undefined,
     name: '',
     categoryId: queryParams.value.categoryId,
+    networkType: undefined,
     ip: '',
     sshPort: 22,
     sshUsername: '',
@@ -576,6 +590,7 @@ function handleEditInstance(row) {
     const d = res.data
     instanceForm.value = {
       ...d,
+      networkType: d.networkType ?? undefined,
       trafficLimitGb: d.trafficLimit != null && d.trafficLimit > 0
         ? Math.round(d.trafficLimit / (1024 * 1024 * 1024) * 100) / 100
         : undefined
