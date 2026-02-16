@@ -64,49 +64,36 @@
             </el-row>
 
             <el-table v-loading="loading" :data="instanceList">
-              <el-table-column label="编号" align="center" prop="id" width="80" />
-              <el-table-column label="名称" align="center" prop="name" min-width="120" :show-overflow-tooltip="true">
+              <el-table-column label="编号" align="center" prop="id" width="72" />
+              <el-table-column label="名称" align="center" prop="name" min-width="120">
                 <template #default="scope">
-                  <el-link type="primary" @click="goDetail(scope.row.id)">{{ scope.row.name }}</el-link>
+                  <el-link type="primary" @click="goDetail(scope.row.id)" class="cell-ellipsis-2" :title="scope.row.name">{{ scope.row.name }}</el-link>
                 </template>
               </el-table-column>
-              <el-table-column label="分类" align="center" prop="categoryName" width="100" :show-overflow-tooltip="true" />
-              <el-table-column label="节点数" align="center" prop="nodeCount" width="80" />
-              <el-table-column label="IP" align="center" prop="ip" width="120" />
-              <el-table-column label="状态" align="center" prop="status" width="90">
+              <el-table-column label="分类" align="center" prop="categoryName" width="90" show-overflow-tooltip />
+              <el-table-column label="节点数" align="center" prop="nodeCount" width="72" />
+              <el-table-column label="IP" align="center" prop="ip" min-width="136" show-overflow-tooltip />
+              <el-table-column label="状态" align="center" prop="status" width="88">
                 <template #default="scope">
                   <dict-tag :options="res_instance_status" :value="scope.row.status" />
                 </template>
               </el-table-column>
-              <el-table-column label="网络类型" align="center" prop="networkType" width="140" show-overflow-tooltip>
+              <el-table-column label="网络类型" align="center" prop="networkType" min-width="120" show-overflow-tooltip>
                 <template #default="scope">
                   <dict-tag :options="res_instance_network_type" :value="scope.row.networkType" />
                 </template>
               </el-table-column>
-              <el-table-column label="流量限制" align="center" width="100">
-                <template #default="scope">
-                  {{ formatTrafficLimit(scope.row.trafficLimit) }}
-                </template>
-              </el-table-column>
-              <el-table-column label="续费" align="center" prop="renewalAmount" width="100" show-overflow-tooltip />
-              <el-table-column label="到期时间" align="center" prop="expireTime" width="160">
-                <template #default="scope">
-                  <span v-if="!scope.row.expireTime">-</span>
-                  <span v-else :class="{ 'expire-expired': isExpired(scope.row.expireTime) }">{{ parseTime(scope.row.expireTime) }}</span>
-                </template>
-              </el-table-column>
-              <el-table-column label="累计流量" align="center" width="140" show-overflow-tooltip>
+              <el-table-column label="累计流量" align="center" min-width="100" show-overflow-tooltip>
                 <template #default="scope">
                   {{ scope.row.totalTrafficBytes != null ? formatTraffic(scope.row.totalTrafficBytes) : '-' }}
                 </template>
               </el-table-column>
-              <el-table-column label="备注" align="center" prop="remark" min-width="120" show-overflow-tooltip />
-              <el-table-column label="创建时间" align="center" prop="createTime" width="160">
+              <el-table-column label="备注" align="center" prop="remark" min-width="100">
                 <template #default="scope">
-                  <span>{{ parseTime(scope.row.createTime) }}</span>
+                  <span class="cell-ellipsis-2" :title="scope.row.remark">{{ scope.row.remark || '-' }}</span>
                 </template>
               </el-table-column>
-              <el-table-column label="操作" align="center" width="220" class-name="small-padding fixed-width" fixed="right">
+              <el-table-column label="操作" align="center" width="200" class-name="small-padding fixed-width" fixed="right">
                 <template #default="scope">
                   <div class="op-btns">
                     <el-button link type="primary" icon="Connection" @click="handleConnectServer(scope.row)" v-hasPermi="['resource:vps:list']">连接</el-button>
@@ -719,6 +706,16 @@ onMounted(() => {
 .expire-expired {
   color: var(--el-color-danger);
   font-weight: 500;
+}
+/* 最多 2 行后省略，悬停用 title 看全文 */
+.cell-ellipsis-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: break-all;
+  max-width: 100%;
 }
 .form-tip {
   font-size: 12px;
