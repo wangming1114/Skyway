@@ -14,7 +14,7 @@ services:
       MYSQL_USER: ${MYSQL_USER:-skyway}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-o5KjnPYxswsiURZHCPwd}
     ports:
-      - "3307:3306"
+      - "3306:3306"
     volumes:
       - ./volumes/database/mysql/data:/var/lib/mysql
       - ./volumes/database/mysql/conf.d:/etc/mysql/conf.d
