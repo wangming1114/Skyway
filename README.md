@@ -1,6 +1,6 @@
 <p align="center">
-  <img src="skyway-ui/public/favicon.svg" alt="Skyway" width="80" style="vertical-align: middle;">
-  <span style="font-size: 2em; font-weight: bold; margin-left: 12px; vertical-align: middle;">Skyway</span>
+  <img src="skyway-ui/public/favicon.svg" alt="Skyway" width="48" style="vertical-align: middle;">
+  <span style="font-size: 1.85em; font-weight: bold; margin-left: 10px; vertical-align: middle; letter-spacing: -0.02em;">Skyway</span>
 </p>
 <p align="center">生产级代理节点管控与一键部署平台</p>
 
