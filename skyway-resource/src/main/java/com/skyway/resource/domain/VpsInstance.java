@@ -62,6 +62,9 @@ public class VpsInstance extends BaseEntity {
     @Excel(name = "状态", readConverterExp = "running=运行中,stopped=已停止,abnormal=异常")
     private String status;
 
+    /** 网络类型（res_instance_network_type） */
+    private String networkType;
+
     /** 流量限制（字节，null 或 0 表示不限制） */
     private Long trafficLimit;
 
@@ -194,6 +197,15 @@ public class VpsInstance extends BaseEntity {
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    @Size(min = 0, max = 32, message = "网络类型长度不能超过32个字符")
+    public String getNetworkType() {
+        return networkType;
+    }
+
+    public void setNetworkType(String networkType) {
+        this.networkType = networkType;
     }
 
     public String getCategoryName() {

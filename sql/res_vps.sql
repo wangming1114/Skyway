@@ -31,6 +31,7 @@ create table res_instance (
   memory          varchar(50)   default null                comment '内存规格',
   disk            varchar(50)   default null                comment '磁盘规格',
   status          varchar(20)   default 'running'          comment '状态(res_instance_status)',
+  network_type    varchar(32)   default null               comment '网络类型(res_instance_network_type)',
   traffic_limit   bigint(20)    default null               comment '流量限制(字节，NULL/0=不限制)',
   renewal_amount  varchar(100)  default null               comment '续费金额(如10/月、100/年)',
   expire_time     datetime      default null                comment '到期时间',
@@ -52,6 +53,15 @@ insert into sys_dict_data values(31, 2, '节点', '2', 'res_category_type', '', 
 insert into sys_dict_data values(32, 1, '运行中', 'running', 'res_instance_status', '', 'success', 'Y', '0', 'admin', sysdate(), '', null, '');
 insert into sys_dict_data values(33, 2, '已停止', 'stopped', 'res_instance_status', '', 'info', 'N', '0', 'admin', sysdate(), '', null, '');
 insert into sys_dict_data values(34, 3, '异常', 'abnormal', 'res_instance_status', '', 'danger', 'N', '0', 'admin', sysdate(), '', null, '');
+
+-- 5.1、字典类型：VPS 网络类型
+insert into sys_dict_type values(14, 'VPS网络类型', 'res_instance_network_type', '0', 'admin', sysdate(), '', null, '163/CN2/CN2 GIA等');
+-- 5.2、字典数据 res_instance_network_type
+insert into sys_dict_data values(37, 1, '163网络', '163', 'res_instance_network_type', '', 'default', 'Y', '0', 'admin', sysdate(), '', null, '');
+insert into sys_dict_data values(38, 2, 'CN2', 'cn2', 'res_instance_network_type', '', 'primary', 'N', '0', 'admin', sysdate(), '', null, '');
+insert into sys_dict_data values(39, 3, 'CN2 GIA', 'cn2gia', 'res_instance_network_type', '', 'primary', 'N', '0', 'admin', sysdate(), '', null, '');
+insert into sys_dict_data values(40, 4, '9929 + cn2 + cmin2', '9929', 'res_instance_network_type', '', 'success', 'N', '0', 'admin', sysdate(), '', null, '');
+insert into sys_dict_data values(41, 5, '其他', 'other', 'res_instance_network_type', '', 'info', 'N', '0', 'admin', sysdate(), '', null, '');
 
 -- 6、菜单：资源管理（一级）
 insert into sys_menu values(200, '资源管理', 0, 5, 'resource', null, null, '', 1, 0, 'M', '0', '0', '', 'tree', 'admin', sysdate(), '', null, '资源管理目录');
@@ -77,6 +87,9 @@ insert into sys_menu values(206, 'VPS导出', 201, 5, '', null, null, '', 1, 0, 
 --   ADD COLUMN traffic_limit bigint(20) DEFAULT NULL COMMENT '流量限制(字节，NULL/0=不限制)',
 --   ADD COLUMN renewal_amount varchar(100) DEFAULT NULL COMMENT '续费金额(如10/月、100/年)',
 --   ADD COLUMN expire_time datetime DEFAULT NULL COMMENT '到期时间';
+
+-- 已有 res_instance 表时执行：网络类型
+-- ALTER TABLE res_instance ADD COLUMN network_type varchar(32) DEFAULT NULL COMMENT '网络类型(res_instance_network_type)';
 
 -- 9、res_proxy_node（代理节点表）
 drop table if exists res_proxy_node;

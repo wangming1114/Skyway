@@ -53,10 +53,11 @@ let resizeObserver = null
 let fitThrottleId = null
 let destroyed = false
 
-// 选中悬浮复制按钮
+// 选中悬浮复制按钮（复制后短暂不显示，避免打包后图标一直出现）
 const selBtnVisible = ref(false)
 const selBtnX = ref(0)
 const selBtnY = ref(0)
+let copyJustHappenedUntil = 0
 
 // 右键菜单
 const termCtxVisible = ref(false)
@@ -233,6 +234,50 @@ function initTerminal() {
   })
 }
 
+// ── 剪贴板（兼容无 clipboard API 的环境，如打包后非 HTTPS）──
+function writeClipboardText(text) {
+  if (!text) return Promise.resolve()
+  if (typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+    return navigator.clipboard.writeText(text).catch(() => fallbackWriteText(text))
+  }
+  return Promise.resolve(fallbackWriteText(text))
+}
+
+function fallbackWriteText(text) {
+  const ta = document.createElement('textarea')
+  ta.value = text
+  ta.style.position = 'fixed'
+  ta.style.left = '-9999px'
+  ta.style.top = '0'
+  document.body.appendChild(ta)
+  ta.select()
+  try {
+    document.execCommand('copy')
+  } finally {
+    document.body.removeChild(ta)
+  }
+}
+
+function readClipboardText() {
+  if (typeof navigator !== 'undefined' && navigator.clipboard && typeof navigator.clipboard.readText === 'function') {
+    return navigator.clipboard.readText()
+  }
+  return Promise.resolve('')
+}
+
+/** 无法读取剪贴板时，聚焦终端并静默模拟 Ctrl+V（非 HTTPS 下多数仍无效，不弹提示） */
+function fallbackPasteBySimulateCtrlV() {
+  if (!term) return
+  term.focus()
+  requestAnimationFrame(() => {
+    const target = document.activeElement || terminalRef.value
+    if (!target) return
+    const opts = { key: 'v', code: 'KeyV', keyCode: 86, ctrlKey: true, bubbles: true }
+    target.dispatchEvent(new KeyboardEvent('keydown', opts))
+    target.dispatchEvent(new KeyboardEvent('keyup', opts))
+  })
+}
+
 // ── 选中 & 右键功能 ──
 
 function onTermMouseDown() {
@@ -244,6 +289,7 @@ function onTermMouseUp(e) {
   // 鼠标松开后延迟一帧，让 xterm 完成选区更新再检测
   requestAnimationFrame(() => {
     if (!term) return
+    if (Date.now() < copyJustHappenedUntil) return
     const sel = term.getSelection()
     if (sel) {
       selBtnVisible.value = true
@@ -268,25 +314,30 @@ function onTermMouseUp(e) {
 function doCopy() {
   if (!term) return
   const sel = term.getSelection()
-  // 立即隐藏按钮，避免重复点击
   selBtnVisible.value = false
   termCtxVisible.value = false
+  copyJustHappenedUntil = Date.now() + 200
   if (sel) {
-    navigator.clipboard.writeText(sel).catch(() => {})
-    // 复制后清除选区，防止图标被 mouseup 等事件重新触发
+    writeClipboardText(sel).catch(() => {})
     term.clearSelection()
   }
 }
 
 async function doPaste() {
   termCtxVisible.value = false
+  if (!term) return
   try {
-    const text = await navigator.clipboard.readText()
-    if (text && term && ws && ws.readyState === WebSocket.OPEN) {
+    const text = await readClipboardText()
+    if (text && ws && ws.readyState === WebSocket.OPEN) {
       const enc = new TextEncoder()
       ws.send(enc.encode(text))
+    } else if (!text && term) {
+      // 无 clipboard API 时（如打包后非 HTTPS）：模拟 Ctrl+V 让浏览器执行粘贴
+      fallbackPasteBySimulateCtrlV()
     }
-  } catch (_) {}
+  } catch (_) {
+    if (term) fallbackPasteBySimulateCtrlV()
+  }
 }
 
 function doSelectAll() {

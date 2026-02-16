@@ -1,6 +1,6 @@
 <template>
   <div>
-    <template v-for="(item, index) in options">
+    <template v-for="(item, index) in safeOptions">
       <template v-if="isValueMatch(item.value)">
         <span
           v-if="(item.elTagType == 'default' || item.elTagType == '') && (item.elTagClass == '' || item.elTagClass == null)"
@@ -32,7 +32,7 @@ const props = defineProps({
   // 数据
   options: {
     type: Array,
-    default: null,
+    default: () => [],
   },
   // 当前的值
   value: [Number, String, Array],
@@ -47,6 +47,8 @@ const props = defineProps({
   }
 })
 
+const safeOptions = computed(() => Array.isArray(props.options) ? props.options : [])
+
 const values = computed(() => {
   if (props.value === null || typeof props.value === 'undefined' || props.value === '') return []
   if (typeof props.value === 'number' || typeof props.value === 'boolean') return [props.value]
@@ -56,11 +58,11 @@ const values = computed(() => {
 const unmatch = computed(() => {
   unmatchArray.value = []
   // 没有value不显示
-  if (props.value === null || typeof props.value === 'undefined' || props.value === '' || !Array.isArray(props.options) || props.options.length === 0) return false
+  if (props.value === null || typeof props.value === 'undefined' || props.value === '' || safeOptions.value.length === 0) return false
   // 传入值为数组
   let unmatch = false // 添加一个标志来判断是否有未匹配项
   values.value.forEach(item => {
-    if (!props.options.some(v => v.value == item)) {
+    if (!safeOptions.value.some(v => v.value == item)) {
       unmatchArray.value.push(item)
       unmatch = true // 如果有未匹配项，将标志设置为true
     }
@@ -76,7 +78,7 @@ function handleArray(array) {
 }
 
 function isValueMatch(itemValue) {
-  return this.values.some(val => val == itemValue)
+  return values.value.some(val => val == itemValue)
 }
 </script>
 
