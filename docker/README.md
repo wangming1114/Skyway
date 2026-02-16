@@ -1,5 +1,15 @@
 # Skyway-Vue Docker 部署
 
+## 敏感配置（勿提交）
+
+以下文件含密码等敏感信息，已加入 `.gitignore`，**请勿提交**：
+
+- `docker/volumes/skyway/config/application-prod.yml`
+- `docker/.env`
+- `skyway-admin/src/main/resources/application-druid.yml`（本地 IDE 运行用）
+
+首次部署或新克隆后：复制对应 `.example` 为上述文件名并填写实际值。本地已有这些文件则无需改动，可照常运行。
+
 ## 部署流程（按顺序）
 
 以下在**项目根目录** `Skyway-Vue` 下操作，除非注明在 `docker` 目录。

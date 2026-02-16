@@ -9,6 +9,17 @@ skyway:
   profile: /app/upload
 
 spring:
+  mail:
+    host: smtp.qq.com
+    port: 465
+    username: 1942152752@qq.com
+    password: ibqzghpihpqibgch
+    properties:
+      mail:
+        smtp:
+          auth: true
+          ssl:
+            enable: true
   redis:
     host: redis
     port: 6379

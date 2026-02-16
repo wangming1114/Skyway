@@ -70,12 +70,12 @@ spring:
     restart:
       # 热部署开关
       enabled: true
-  # 邮件配置（C 端邮箱验证码，QQ 邮箱 SMTP）
+  # 邮件配置
   mail:
     host: smtp.qq.com
     port: 465
-    username: 1942152752@qq.com
-    password: ibqzghpihpqibgch
+    username:
+    password:
     properties:
       mail:
         smtp:

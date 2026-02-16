@@ -8,6 +8,18 @@ skyway:
 
 # 数据源配置
 spring:
+  # 邮件配置（C 端邮箱验证码，QQ 邮箱 SMTP）
+  mail:
+    host: smtp.qq.com
+    port: 465
+    username: 1942152752@qq.com
+    password: ibqzghpihpqibgch
+    properties:
+      mail:
+        smtp:
+          auth: true
+          ssl:
+            enable: true
   # redis 配置
   redis:
     # 地址

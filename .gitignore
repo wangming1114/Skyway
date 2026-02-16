@@ -43,6 +43,10 @@ nbdist/
 # Docker 镜像仓库密码（勿提交）
 docker/.registry.env
 
+# 敏感配置（仅提交 .example，本地复制后使用）
+docker/volumes/skyway/config/application-prod.yml
+skyway-admin/src/main/resources/application-druid.yml
+
 # Docker 前端构建产物（部署时复制 skyway-ui/dist、skyway-c-ui/dist 到该目录）
 docker/volumes/nginx/admin/*
 !docker/volumes/nginx/admin/.gitkeep
