@@ -41,13 +41,23 @@
         </pane>
         <pane size="82">
           <el-col>
-            <el-form :model="queryParams" ref="queryRef" :inline="true" v-show="showSearch" label-width="68px">
+            <el-form :model="queryParams" ref="queryRef" :inline="true" v-show="showSearch" label-width="72px" class="query-form">
               <el-form-item label="关键字" prop="keyword">
-                <el-input v-model="queryParams.keyword" placeholder="名称/ID/IP" clearable style="width: 200px" @keyup.enter="handleQuery" />
+                <el-input v-model="queryParams.keyword" placeholder="名称、编号或 IP" clearable style="width: 180px" @keyup.enter="handleQuery" />
               </el-form-item>
               <el-form-item label="状态" prop="status">
-                <el-select v-model="queryParams.status" placeholder="状态" clearable style="width: 120px">
+                <el-select v-model="queryParams.status" placeholder="全部状态" clearable style="width: 110px">
                   <el-option v-for="dict in res_instance_status" :key="dict.value" :label="dict.label" :value="dict.value" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="网络类型" prop="networkType">
+                <el-select v-model="queryParams.networkType" placeholder="全部" clearable style="width: 120px">
+                  <el-option v-for="dict in res_instance_network_type" :key="dict.value" :label="dict.label" :value="dict.value" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="系统类型" prop="osType">
+                <el-select v-model="queryParams.osType" placeholder="全部" clearable style="width: 110px">
+                  <el-option v-for="t in osTypeOptions" :key="t.value" :label="t.label" :value="t.value" />
                 </el-select>
               </el-form-item>
               <el-form-item>
@@ -69,43 +79,69 @@
               未选择分类时显示全部 VPS；在左侧选择分类/节点可筛选列表。
             </el-alert>
 
-            <el-table v-loading="loading" :data="instanceList">
+            <el-table v-loading="loading" :data="instanceList" :row-class-name="() => 'vps-table-row'">
               <el-table-column label="编号" align="center" prop="id" width="72" />
-              <el-table-column label="名称" align="center" prop="name" min-width="120">
+              <el-table-column label="主机信息" align="left" prop="name" min-width="300" show-overflow-tooltip class-name="vps-name-column">
                 <template #default="scope">
-                  <el-link type="primary" @click="goDetail(scope.row.id)" class="cell-ellipsis-2" :title="scope.row.name">{{ scope.row.name }}</el-link>
+                  <div class="vps-row-wrap">
+                    <div class="vps-icon-box" :title="statusLabel(scope.row.status)">
+                      <img :src="serverIcon" class="vps-icon-box-icon" alt="" />
+                      <i v-if="scope.row.status != null" class="vps-status-badge" :class="'vps-status-badge--' + (scope.row.status || '')" />
+                    </div>
+                    <div class="vps-name-cell">
+                      <div class="vps-name-row">
+                        <el-link type="primary" :underline="false" @click="goDetail(scope.row.id)" class="vps-name-link" :title="displayName(scope.row)">{{ displayName(scope.row) }}</el-link>
+                      </div>
+                      <div class="vps-name-sub">
+                        <span v-if="scope.row.ip" class="vps-name-ip-wrap" :title="scope.row.ip">
+                          <span class="vps-name-ip">{{ scope.row.ip }}</span>
+                          <el-tooltip content="复制 IP" placement="top">
+                            <el-icon class="vps-name-ip-copy" @click.stop="copyIp(scope.row.ip)"><DocumentCopy /></el-icon>
+                          </el-tooltip>
+                        </span>
+                        <span v-if="scope.row.ip && hasOsInfo(scope.row)" class="vps-name-sep" />
+                        <span class="vps-name-os">
+                          <img v-if="scope.row.osType || scope.row.osVersion" :src="osIconUrl(scope.row.osType)" class="vps-os-icon" alt="" />
+                          <img v-else :src="osIconMap.other" class="vps-os-icon" alt="" />
+                          {{ osDisplayText(scope.row) || '未知系统' }}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
                 </template>
               </el-table-column>
-              <el-table-column label="分类" align="center" prop="categoryName" width="90" show-overflow-tooltip />
+              <el-table-column label="配置" align="left" min-width="320" show-overflow-tooltip>
+                <template #default="scope">
+                  <div class="vps-config-tags">
+                    <span v-if="scope.row.cpu" class="vps-config-tag vps-config-tag--cpu"><el-icon><Cpu /></el-icon>{{ scope.row.cpu }}</span>
+                    <span v-if="scope.row.memory" class="vps-config-tag vps-config-tag--memory"><el-icon><Coin /></el-icon>{{ scope.row.memory }}</span>
+                    <span v-if="scope.row.disk" class="vps-config-tag vps-config-tag--disk"><el-icon><Folder /></el-icon>{{ scope.row.disk }}</span>
+                    <span v-if="scope.row.bandwidth" class="vps-config-tag vps-config-tag--bandwidth"><el-icon><Lightning /></el-icon>{{ formatBandwidth(scope.row.bandwidth) }}</span>
+                    <span class="vps-config-tag vps-config-tag--traffic">
+                      <el-icon><RefreshRight /></el-icon>{{ configTrafficText(scope.row) }}
+                    </span>
+                    <span v-if="networkTypeLabel(scope.row.networkType)" class="vps-config-tag vps-config-tag--network"><el-icon><Link /></el-icon>{{ networkTypeLabel(scope.row.networkType) }}</span>
+                  </div>
+                </template>
+              </el-table-column>
+              <el-table-column label="分类" align="left" prop="categoryName" width="90" show-overflow-tooltip />
               <el-table-column label="节点数" align="center" prop="nodeCount" width="72" />
-              <el-table-column label="IP" align="center" prop="ip" min-width="136" show-overflow-tooltip />
-              <el-table-column label="状态" align="center" prop="status" width="88">
+              <el-table-column label="累计流量" align="center" prop="totalTrafficBytes" width="100" show-overflow-tooltip>
+                <template #default="scope">{{ scope.row.totalTrafficBytes != null ? formatTraffic(scope.row.totalTrafficBytes) : '-' }}</template>
+              </el-table-column>
+              <el-table-column label="到期时间" align="center" prop="expireTime" width="128" show-overflow-tooltip>
                 <template #default="scope">
-                  <dict-tag :options="res_instance_status" :value="scope.row.status" />
+                  <span v-if="!scope.row.expireTime">-</span>
+                  <span v-else :class="{ 'expire-expired': isExpired(scope.row.expireTime) }">{{ formatExpireTime(scope.row.expireTime) }}</span>
                 </template>
               </el-table-column>
-              <el-table-column label="网络类型" align="center" prop="networkType" min-width="120" show-overflow-tooltip>
-                <template #default="scope">
-                  <dict-tag :options="res_instance_network_type" :value="scope.row.networkType" />
-                </template>
-              </el-table-column>
-              <el-table-column label="累计流量" align="center" min-width="100" show-overflow-tooltip>
-                <template #default="scope">
-                  {{ scope.row.totalTrafficBytes != null ? formatTraffic(scope.row.totalTrafficBytes) : '-' }}
-                </template>
-              </el-table-column>
-              <el-table-column label="备注" align="center" prop="remark" min-width="100">
-                <template #default="scope">
-                  <span class="cell-ellipsis-2" :title="scope.row.remark">{{ scope.row.remark || '-' }}</span>
-                </template>
-              </el-table-column>
-              <el-table-column label="操作" align="center" width="200" class-name="small-padding fixed-width" fixed="right">
+              <el-table-column label="操作" align="center" width="200" class-name="small-padding fixed-width vps-op-cell" fixed="right">
                 <template #default="scope">
                   <div class="op-btns">
-                    <el-button link type="primary" icon="Connection" @click="handleConnectServer(scope.row)" v-hasPermi="['resource:vps:list']">连接</el-button>
-                    <el-button link type="primary" icon="View" @click="goDetail(scope.row.id)" v-hasPermi="['resource:vps:query']">详情</el-button>
+                    <el-button link icon="Connection" class="op-btn" @click="handleConnectServer(scope.row)" v-hasPermi="['resource:vps:list']">连接</el-button>
+                    <el-button link icon="View" class="op-btn" @click="goDetail(scope.row.id)" v-hasPermi="['resource:vps:query']">详情</el-button>
                     <el-dropdown trigger="click" @command="(cmd) => handleInstanceCommand(cmd, scope.row)" v-hasPermi="['resource:vps:edit', 'resource:vps:remove']">
-                      <el-button link type="primary" icon="DArrowRight" class="op-dropdown-trigger">更多</el-button>
+                      <el-button link icon="DArrowRight" class="op-btn op-dropdown-trigger">更多</el-button>
                       <template #dropdown>
                         <el-dropdown-menu>
                           <el-dropdown-item command="edit" icon="Edit" v-hasPermi="['resource:vps:edit']">编辑</el-dropdown-item>
@@ -181,6 +217,25 @@
               </el-select>
             </el-form-item>
           </el-col>
+          <el-col :span="12">
+            <el-form-item label="系统类型" prop="osType">
+              <el-select v-model="instanceForm.osType" placeholder="先选系统类型" clearable style="width: 100%" @change="onOsTypeChange">
+                <el-option v-for="t in osTypeOptions" :key="t.value" :label="t.label" :value="t.value" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="系统版本" prop="osVersion">
+              <el-select v-model="instanceForm.osVersion" placeholder="再选版本（可自动识别）" clearable filterable allow-create style="width: 100%">
+                <el-option v-for="v in osVersionOptionsForType" :key="v" :label="v" :value="v" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="带宽" prop="bandwidth">
+              <el-input v-model="instanceForm.bandwidth" placeholder="如 50M" maxlength="32" />
+            </el-form-item>
+          </el-col>
         </el-row>
         <el-divider content-position="left">连接信息</el-divider>
         <el-row :gutter="16">
@@ -209,7 +264,7 @@
         </el-row>
         <el-form-item label=" " :span="2">
           <el-button type="primary" plain :loading="testConnectionLoading" @click="handleTestConnection">
-            连接测试（自动回写 CPU/内存/磁盘）
+            连接测试（自动回写 CPU/内存/磁盘/系统类型与版本）
           </el-button>
         </el-form-item>
         <el-divider content-position="left">规格与备注</el-divider>
@@ -264,6 +319,31 @@
 </template>
 
 <script setup name="Vps">
+import { computed } from 'vue'
+import { Cpu, Coin, Folder, Lightning, RefreshRight, Connection, Link, DocumentCopy } from '@element-plus/icons-vue'
+import { parseTime } from '@/utils/skyway'
+import serverIcon from '@/assets/images/os/server.svg'
+import ubuntuIcon from '@/assets/images/os/ubuntu.svg'
+import centosIcon from '@/assets/images/os/centos.svg'
+import debianIcon from '@/assets/images/os/debian.svg'
+import alpineIcon from '@/assets/images/os/alpine.svg'
+import otherIcon from '@/assets/images/os/other.svg'
+
+const osIconMap = {
+  ubuntu: ubuntuIcon,
+  centos: centosIcon,
+  debian: debianIcon,
+  alpine: alpineIcon,
+  other: otherIcon
+}
+function osIconUrl(osType) {
+  return osIconMap[osType] || osIconMap.other
+}
+function osDisplayText(row) {
+  if (!row.osType && !row.osVersion) return ''
+  const parts = [osTypeLabel(row.osType), row.osVersion, 'x64'].filter(Boolean)
+  return parts.join('-')
+}
 import useAppStore from '@/store/modules/app'
 import { Splitpanes, Pane } from 'splitpanes'
 import 'splitpanes/dist/splitpanes.css'
@@ -317,10 +397,100 @@ const loading = ref(true)
 const showSearch = ref(true)
 const instanceOpen = ref(false)
 const instanceTitle = ref('')
+const osTypeOptions = [
+  { value: 'centos', label: 'CentOS' },
+  { value: 'ubuntu', label: 'Ubuntu' },
+  { value: 'debian', label: 'Debian' },
+  { value: 'alpine', label: 'Alpine' },
+  { value: 'other', label: '其他' }
+]
+const osVersionOptionsByType = {
+  centos: ['6', '7', '7.9', '8', '8.5', '9'],
+  ubuntu: ['18.04', '20.04', '22.04', '24.04', '25.04'],
+  debian: ['9', '10', '11', '12'],
+  alpine: ['3.18', '3.19'],
+  other: []
+}
+const osVersionOptionsForType = computed(() => {
+  const t = instanceForm.value.osType
+  return (t && osVersionOptionsByType[t]) ? osVersionOptionsByType[t] : []
+})
+function osTypeLabel(value) {
+  const o = osTypeOptions.find(t => t.value === value)
+  return o ? o.label : (value || '')
+}
+function statusLabel(value) {
+  const list = res_instance_status.value ?? res_instance_status
+  const arr = Array.isArray(list) ? list : []
+  return (arr.find(d => d.value === value) || {}).label || ''
+}
+function networkTypeLabel(value) {
+  const list = res_instance_network_type.value ?? res_instance_network_type
+  const arr = Array.isArray(list) ? list : []
+  return (arr.find(d => d.value === value) || {}).label || ''
+}
+function configTrafficText(row) {
+  const limit = row.trafficLimit
+  if (limit == null || limit === 0) return '月流量无限制'
+  return '月流量 ' + formatTraffic(limit)
+}
+function formatBandwidth(val) {
+  if (val == null || String(val).trim() === '') return ''
+  const s = String(val).trim()
+  if (/[MmGgKk]$/.test(s)) return s
+  return s + 'M'
+}
+function displayName(row) {
+  const name = (row && row.name) ? String(row.name).trim() : ''
+  const ip = (row && row.ip) ? String(row.ip).trim() : ''
+  if (!name || name === ip) return '未命名服务器 (Unnamed Server)'
+  return name
+}
+function hasOsInfo(row) {
+  return !!(row && (row.osType || row.osVersion))
+}
+function copyIp(ip) {
+  if (!ip) return
+  const text = String(ip).trim()
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(() => {
+      proxy.$modal.msgSuccess('IP 已复制')
+    }).catch(() => {
+      fallbackCopy(text)
+    })
+  } else {
+    fallbackCopy(text)
+  }
+}
+function fallbackCopy(text) {
+  try {
+    const ta = document.createElement('textarea')
+    ta.value = text
+    ta.style.position = 'fixed'
+    ta.style.opacity = '0'
+    document.body.appendChild(ta)
+    ta.select()
+    document.execCommand('copy')
+    document.body.removeChild(ta)
+    proxy.$modal.msgSuccess('IP 已复制')
+  } catch (e) {
+    proxy.$modal.msgError('复制失败')
+  }
+}
+function onOsTypeChange() {
+  const t = instanceForm.value.osType
+  const vers = (t && osVersionOptionsByType[t]) ? osVersionOptionsByType[t] : []
+  if (instanceForm.value.osVersion && !vers.includes(instanceForm.value.osVersion)) {
+    instanceForm.value.osVersion = ''
+  }
+}
 const instanceForm = ref({
   name: '',
   categoryId: undefined,
   networkType: undefined,
+  osType: '',
+  osVersion: '',
+  bandwidth: '',
   ip: '',
   sshPort: 22,
   sshUsername: '',
@@ -392,6 +562,8 @@ function handleTestConnection() {
       if (data.cpu) form.cpu = data.cpu
       if (data.memory) form.memory = data.memory
       if (data.disk) form.disk = data.disk
+      if (data.osType) form.osType = data.osType
+      if (data.osVersion) form.osVersion = data.osVersion
       proxy.$modal.msgSuccess(data.message || '连接成功，已回写规格')
     } else {
       proxy.$modal.msgError(data.message || '连接失败')
@@ -415,6 +587,8 @@ const queryParams = ref({
   pageSize: 10,
   keyword: undefined,
   status: undefined,
+  networkType: undefined,
+  osType: undefined,
   categoryId: undefined
 })
 
@@ -553,6 +727,8 @@ function resetQuery() {
   proxy.resetForm('queryRef')
   queryParams.value.keyword = undefined
   queryParams.value.status = undefined
+  queryParams.value.networkType = undefined
+  queryParams.value.osType = undefined
   queryParams.value.pageNum = 1
   if (categoryTreeRef.value) categoryTreeRef.value.setCurrentKey(null)
   queryParams.value.categoryId = undefined
@@ -565,6 +741,9 @@ function handleAddInstance() {
     name: '',
     categoryId: queryParams.value.categoryId,
     networkType: undefined,
+    osType: '',
+    osVersion: '',
+    bandwidth: '',
     ip: '',
     sshPort: 22,
     sshUsername: '',
@@ -654,6 +833,10 @@ function isExpired(expireTime) {
   if (!expireTime) return false
   return new Date(expireTime) < new Date()
 }
+function formatExpireTime(expireTime) {
+  if (!expireTime) return '-'
+  return parseTime(expireTime, '{y}-{m}-{d}')
+}
 
 function goDetail(id) {
   const q = queryParams.value
@@ -664,6 +847,8 @@ function goDetail(id) {
       pageSize: q.pageSize,
       keyword: q.keyword,
       status: q.status,
+      networkType: q.networkType,
+      osType: q.osType,
       categoryId: q.categoryId
     }
   })
@@ -671,11 +856,13 @@ function goDetail(id) {
 
 onMounted(() => {
   const q = route.query
-  if (q && (q.pageNum != null || q.keyword != null || q.status != null || q.categoryId != null)) {
+  if (q && (q.pageNum != null || q.keyword != null || q.status != null || q.networkType != null || q.osType != null || q.categoryId != null)) {
     if (q.pageNum != null) queryParams.value.pageNum = Number(q.pageNum) || 1
     if (q.pageSize != null) queryParams.value.pageSize = Number(q.pageSize) || 10
     if (q.keyword !== undefined) queryParams.value.keyword = q.keyword
     if (q.status !== undefined) queryParams.value.status = q.status
+    if (q.networkType !== undefined) queryParams.value.networkType = q.networkType
+    if (q.osType !== undefined) queryParams.value.osType = q.osType
     if (q.categoryId != null) queryParams.value.categoryId = q.categoryId ? Number(q.categoryId) : undefined
   }
   getCategoryTree()
@@ -729,9 +916,242 @@ onMounted(() => {
   word-break: break-all;
   max-width: 100%;
 }
+.query-form {
+  margin-bottom: 4px;
+}
 .form-tip {
   font-size: 12px;
   color: var(--el-text-color-secondary);
   margin-left: 8px;
+}
+.vps-row-wrap {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  padding: 4px 0;
+}
+.vps-icon-box {
+  position: relative;
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: var(--el-fill-color);
+  border: 1px solid var(--el-border-color-lighter);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+.vps-icon-box-icon {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+  display: block;
+}
+.vps-status-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--el-text-color-placeholder);
+  border: 2px solid var(--el-fill-color);
+  box-sizing: border-box;
+}
+.vps-status-badge--running {
+  background: var(--el-color-success);
+  border-color: var(--el-fill-color);
+}
+.vps-name-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+}
+.vps-name-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  min-width: 0;
+  width: 100%;
+}
+.vps-name-link {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  font-size: 14px;
+  line-height: 1.35;
+  text-align: left;
+}
+.vps-name-link .el-link__inner {
+  text-align: left;
+}
+.vps-name-link.el-link {
+  text-decoration: none;
+}
+.vps-name-link.el-link:hover {
+  text-decoration: none;
+}
+.vps-name-sub {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  width: 100%;
+  min-height: 22px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.vps-name-ip-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  max-width: 160px;
+}
+.vps-name-ip {
+  font-variant-numeric: tabular-nums;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vps-name-ip-copy {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--el-text-color-placeholder);
+  cursor: pointer;
+}
+.vps-name-ip-wrap:hover .vps-name-ip-copy {
+  color: var(--el-color-primary);
+}
+.vps-name-ip-copy:hover {
+  color: var(--el-color-primary);
+}
+.vps-name-sep {
+  flex-shrink: 0;
+  width: 1px;
+  height: 10px;
+  background: var(--el-border-color-lighter);
+}
+.vps-name-os {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+.vps-name-os .vps-os-icon {
+  width: 16px;
+  height: 16px;
+  min-width: 16px;
+  min-height: 16px;
+  object-fit: contain;
+}
+
+.vps-config-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.vps-config-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  line-height: 1.3;
+  padding: 4px 10px;
+  border-radius: 6px;
+  color: var(--el-text-color-primary);
+}
+.vps-config-tag .el-icon {
+  font-size: 14px;
+}
+.vps-config-tag--cpu {
+  background: rgba(64, 158, 255, 0.14);
+  color: var(--el-color-primary);
+}
+.vps-config-tag--memory {
+  background: rgba(103, 194, 58, 0.14);
+  color: var(--el-color-success);
+}
+.vps-config-tag--disk {
+  background: rgba(230, 162, 60, 0.2);
+  color: #b88230;
+}
+.vps-config-tag--bandwidth {
+  background: rgba(144, 147, 153, 0.2);
+  color: var(--el-text-color-regular);
+}
+.vps-config-tag--traffic {
+  background: rgba(103, 194, 58, 0.12);
+  color: var(--el-color-success);
+}
+.vps-config-tag--network {
+  background: rgba(102, 126, 234, 0.14);
+  color: #667eea;
+}
+
+.vps-os-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.vps-os-icon {
+  display: block;
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  min-height: 20px;
+  flex-shrink: 0;
+  object-fit: contain;
+  object-position: center;
+}
+
+/* 名称列增加内边距，提升行高与舒适度 */
+:deep(.el-table .el-table__cell.vps-name-column) {
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+/* 列表行 hover 高亮 */
+:deep(.el-table .vps-table-row:hover > td.el-table__cell) {
+  background-color: var(--el-fill-color-light);
+}
+/* 分割线调暗 */
+:deep(.el-table td.el-table__cell) {
+  border-bottom-color: var(--el-border-color-lighter);
+}
+:deep(.el-table th.el-table__cell) {
+  border-bottom-color: var(--el-border-color-lighter);
+}
+
+/* 操作区默认置灰，hover 变亮 */
+.op-btns .op-btn {
+  color: var(--el-text-color-secondary);
+}
+.op-btns .op-btn:hover {
+  color: var(--el-color-primary);
+}
+.op-btns .el-dropdown .op-btn {
+  color: var(--el-text-color-secondary);
+}
+.op-btns:hover .op-btn,
+.op-btns .op-btn:hover {
+  color: var(--el-color-primary);
 }
 </style>

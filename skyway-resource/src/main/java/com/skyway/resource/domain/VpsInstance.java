@@ -66,6 +66,18 @@ public class VpsInstance extends BaseEntity {
     @Excel(name = "网络类型")
     private String networkType;
 
+    /** 系统类型（centos, ubuntu, debian, alpine, other） */
+    @Excel(name = "系统类型")
+    private String osType;
+
+    /** 系统版本（如 7.9, 24.04） */
+    @Excel(name = "系统版本")
+    private String osVersion;
+
+    /** 带宽（如 50M） */
+    @Excel(name = "带宽")
+    private String bandwidth;
+
     /** 流量限制（字节，null 或 0 表示不限制） */
     @Excel(name = "流量限制(字节)")
     private Long trafficLimit;
@@ -212,6 +224,33 @@ public class VpsInstance extends BaseEntity {
 
     public void setNetworkType(String networkType) {
         this.networkType = networkType;
+    }
+
+    @Size(min = 0, max = 32, message = "系统类型长度不能超过32个字符")
+    public String getOsType() {
+        return osType;
+    }
+
+    public void setOsType(String osType) {
+        this.osType = osType;
+    }
+
+    @Size(min = 0, max = 64, message = "系统版本长度不能超过64个字符")
+    public String getOsVersion() {
+        return osVersion;
+    }
+
+    public void setOsVersion(String osVersion) {
+        this.osVersion = osVersion;
+    }
+
+    @Size(min = 0, max = 32, message = "带宽长度不能超过32个字符")
+    public String getBandwidth() {
+        return bandwidth;
+    }
+
+    public void setBandwidth(String bandwidth) {
+        this.bandwidth = bandwidth;
     }
 
     public String getCategoryName() {

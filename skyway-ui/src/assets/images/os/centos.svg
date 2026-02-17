@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">
+  <g transform="translate(12,12)">
+    <path fill="#262577" d="M0-8L2.5-2.5L8 0L2.5 2.5L0 8L-2.5 2.5L-8 0L-2.5-2.5Z"/>
+    <path fill="#A14F8C" d="M0-5.5L1.7-1.7L5.5 0L1.7 1.7L0 5.5L-1.7 1.7L-5.5 0L-1.7-1.7Z" transform="rotate(22.5)"/>
+    <path fill="#EFA724" d="M0-5.5L1.7-1.7L5.5 0L1.7 1.7L0 5.5L-1.7 1.7L-5.5 0L-1.7-1.7Z" transform="rotate(67.5)"/>
+    <path fill="#9CCD2A" d="M0-5.5L1.7-1.7L5.5 0L1.7 1.7L0 5.5L-1.7 1.7L-5.5 0L-1.7-1.7Z" transform="rotate(112.5)"/>
+    <path fill="#262577" d="M0-5.5L1.7-1.7L5.5 0L1.7 1.7L0 5.5L-1.7 1.7L-5.5 0L-1.7-1.7Z" transform="rotate(157.5)"/>
+  </g>
+</svg>

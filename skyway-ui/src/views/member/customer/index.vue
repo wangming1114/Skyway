@@ -35,6 +35,9 @@
       <el-table-column label="手机号" align="center" min-width="120" :show-overflow-tooltip="true">
         <template #default="scope">{{ scope.row.phone || '-' }}</template>
       </el-table-column>
+      <el-table-column label="微信号" align="center" min-width="100" :show-overflow-tooltip="true">
+        <template #default="scope">{{ scope.row.wechat || '-' }}</template>
+      </el-table-column>
       <el-table-column label="状态" align="center" width="80">
         <template #default="scope">
           <el-tag :type="scope.row.status === '0' ? 'success' : 'danger'">{{ scope.row.status === '0' ? '启用' : '禁用' }}</el-tag>

@@ -146,6 +146,8 @@ public class VpsSshCommandService {
         result.put("cpu", "");
         result.put("memory", "");
         result.put("disk", "");
+        result.put("osType", "");
+        result.put("osVersion", "");
         if (StringUtils.isEmpty(ip) || StringUtils.isEmpty(sshUsername)) {
             result.put("message", "请填写 IP 和 SSH 账号");
             return result;
@@ -191,6 +193,16 @@ public class VpsSshCommandService {
                     }
                 }
             }
+            try (Session s4 = ssh.startSession()) {
+                String osOut = execAndRead(s4, "cat /etc/os-release 2>/dev/null || cat /etc/redhat-release 2>/dev/null");
+                if (osOut != null && !osOut.trim().isEmpty()) {
+                    java.util.Map<String, String> os = parseOsRelease(osOut);
+                    if (!os.isEmpty()) {
+                        result.put("osType", os.getOrDefault("osType", ""));
+                        result.put("osVersion", os.getOrDefault("osVersion", ""));
+                    }
+                }
+            }
             result.put("success", true);
             result.put("message", "连接成功，已回写规格");
         } catch (Exception e) {
@@ -206,6 +218,45 @@ public class VpsSshCommandService {
             }
         }
         return result;
+    }
+
+    /**
+     * 解析 /etc/os-release 或 /etc/redhat-release 输出，返回 osType（centos/ubuntu/debian/alpine/other）和 osVersion。
+     */
+    private static java.util.Map<String, String> parseOsRelease(String output) {
+        java.util.Map<String, String> map = new java.util.HashMap<>();
+        if (output == null || output.isEmpty()) return map;
+        String id = null;
+        String versionId = null;
+        // /etc/os-release: ID=ubuntu, VERSION_ID="24.04"
+        if (output.contains("=")) {
+            for (String line : output.split("\n")) {
+                String lineTrim = line.trim();
+                if (lineTrim.startsWith("ID=")) {
+                    id = lineTrim.substring(3).trim().replaceAll("^\"|\"$", "").toLowerCase();
+                } else if (lineTrim.startsWith("VERSION_ID=")) {
+                    versionId = lineTrim.substring(11).trim().replaceAll("^\"|\"$", "");
+                }
+            }
+        } else {
+            // /etc/redhat-release: "CentOS Linux release 7.9.2009 (Core)"
+            String lower = output.toLowerCase();
+            if (lower.contains("centos") || lower.contains("rhel") || lower.contains("red hat") || lower.contains("rocky") || lower.contains("alma")) {
+                id = "centos";
+                java.util.regex.Pattern p = java.util.regex.Pattern.compile("(\\d+\\.\\d+)");
+                java.util.regex.Matcher m = p.matcher(output);
+                if (m.find()) versionId = m.group(1);
+            }
+        }
+        if (id != null) {
+            if ("rhel".equals(id) || "redhat".equals(id) || "rocky".equals(id) || "almalinux".equals(id)) id = "centos";
+            else if (!("ubuntu".equals(id) || "debian".equals(id) || "alpine".equals(id) || "centos".equals(id))) id = "other";
+            map.put("osType", id);
+        }
+        if (versionId != null && !versionId.isEmpty()) {
+            map.put("osVersion", versionId);
+        }
+        return map;
     }
 
     /** 将 df -h 的 Size（如 7.8G、50G、512M）四舍五入为整数后返回，如 7.8G -> 8G */

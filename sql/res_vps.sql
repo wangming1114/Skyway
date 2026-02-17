@@ -32,6 +32,9 @@ create table res_instance (
   disk            varchar(50)   default null                comment '磁盘规格',
   status          varchar(20)   default 'running'          comment '状态(res_instance_status)',
   network_type    varchar(32)   default null               comment '网络类型(res_instance_network_type)',
+  os_type         varchar(32)   default null               comment '系统类型(centos/ubuntu/debian/alpine/other)',
+  os_version      varchar(64)   default null               comment '系统版本(如 7.9, 24.04)',
+  bandwidth       varchar(32)   default null               comment '带宽(如 50M)',
   traffic_limit   bigint(20)    default null               comment '流量限制(字节，NULL/0=不限制)',
   renewal_amount  varchar(100)  default null               comment '续费金额(如10/月、100/年)',
   expire_time     datetime      default null                comment '到期时间',
@@ -90,6 +93,12 @@ insert into sys_menu values(206, 'VPS导出', 201, 5, '', null, null, '', 1, 0, 
 
 -- 已有 res_instance 表时执行：网络类型
 -- ALTER TABLE res_instance ADD COLUMN network_type varchar(32) DEFAULT NULL COMMENT '网络类型(res_instance_network_type)';
+
+-- 已有 res_instance 表时执行：系统类型、系统版本、带宽（若已有 os_version 可先改为 os_type 再加 os_version）
+-- ALTER TABLE res_instance ADD COLUMN os_type varchar(32) DEFAULT NULL COMMENT '系统类型(centos/ubuntu/debian/alpine/other)';
+-- ALTER TABLE res_instance ADD COLUMN os_version varchar(64) DEFAULT NULL COMMENT '系统版本(如 7.9, 24.04)';
+-- ALTER TABLE res_instance ADD COLUMN bandwidth varchar(32) DEFAULT NULL COMMENT '带宽(如 50M)';
+-- 若之前已加过 os_version 为 varchar(100)，可改为：ALTER TABLE res_instance MODIFY COLUMN os_version varchar(64) DEFAULT NULL;
 
 -- 9、res_proxy_node（代理节点表）
 drop table if exists res_proxy_node;

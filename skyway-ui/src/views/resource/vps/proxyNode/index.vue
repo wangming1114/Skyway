@@ -46,14 +46,19 @@
       </el-table-column>
       <el-table-column label="地址" prop="address" min-width="100" show-overflow-tooltip />
       <el-table-column label="端口" prop="port" width="72" align="center" />
-      <el-table-column label="所属实例" width="100" align="center">
+      <el-table-column label="所属实例" min-width="140" align="center" show-overflow-tooltip>
         <template #default="{ row }">
-          <el-link type="primary" @click="goVpsDetail(row.instanceId)" :underline="false">#{{ row.instanceId }}</el-link>
+          <el-link v-if="row.instanceId" type="primary" @click="goVpsDetail(row.instanceId)" :underline="false">
+            #{{ row.instanceId }} {{ instanceOptions.find(i => i.id === row.instanceId)?.name || '' }}
+          </el-link>
+          <span v-else>-</span>
         </template>
       </el-table-column>
-      <el-table-column label="归属客户" width="100" align="center">
+      <el-table-column label="归属客户" min-width="140" align="center" show-overflow-tooltip>
         <template #default="{ row }">
-          <el-link v-if="row.customerId" type="primary" @click="goCustomerDetail(row.customerId)" :underline="false">#{{ row.customerId }}</el-link>
+          <el-link v-if="row.customerId" type="primary" @click="goCustomerDetail(row.customerId)" :underline="false">
+            #{{ row.customerId }} {{ customerOptions.find(c => c.id === row.customerId)?.username || '' }}
+          </el-link>
           <span v-else>-</span>
         </template>
       </el-table-column>
