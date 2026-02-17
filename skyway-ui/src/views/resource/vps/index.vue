@@ -89,8 +89,37 @@
                       <i v-if="scope.row.status != null" class="vps-status-badge" :class="'vps-status-badge--' + (scope.row.status || '')" />
                     </div>
                     <div class="vps-name-cell">
-                      <div class="vps-name-row">
+                      <div
+                        class="vps-name-row vps-name-row--with-popover"
+                        @mouseenter="hoverCardRowId = scope.row.id; onHoverCardOpen()"
+                        @mouseleave="scheduleHoverCardHide(scope.row.id)"
+                      >
                         <el-link type="primary" :underline="false" @click="goDetail(scope.row.id)" class="vps-name-link" :title="displayName(scope.row)">{{ displayName(scope.row) }}</el-link>
+                        <el-popover
+                          :visible="hoverCardRowId === scope.row.id"
+                          placement="right-start"
+                          :width="380"
+                          :offset="12"
+                          trigger="manual"
+                          :show-after="0"
+                          popper-class="vps-hover-card-popover"
+                          :enterable="true"
+                        >
+                          <template #default>
+                            <div class="vps-hover-card-wrap" @mouseenter="hoverCardRowId = scope.row.id; onHoverCardOpen()" @mouseleave="scheduleHoverCardHide(scope.row.id)">
+                              <VpsHoverCard
+                                :row="scope.row"
+                                :display-name="displayName(scope.row)"
+                                :status-label="statusLabel"
+                                :network-type-label="networkTypeLabel"
+                                @connect="handleConnectServer"
+                              />
+                            </div>
+                          </template>
+                          <template #reference>
+                            <span class="vps-popover-anchor vps-popover-anchor--end" />
+                          </template>
+                        </el-popover>
                       </div>
                       <div class="vps-name-sub">
                         <span v-if="scope.row.ip" class="vps-name-ip-wrap" :title="scope.row.ip">
@@ -323,6 +352,7 @@ import { computed } from 'vue'
 import { Cpu, Coin, Folder, Lightning, RefreshRight, Connection, Link, DocumentCopy } from '@element-plus/icons-vue'
 import { parseTime } from '@/utils/skyway'
 import serverIcon from '@/assets/images/os/server.svg'
+import VpsHoverCard from './components/VpsHoverCard.vue'
 import ubuntuIcon from '@/assets/images/os/ubuntu.svg'
 import centosIcon from '@/assets/images/os/centos.svg'
 import debianIcon from '@/assets/images/os/debian.svg'
@@ -392,6 +422,25 @@ const categoryRules = {
 const categoryRef = ref(null)
 
 const instanceList = ref([])
+const hoverCardRowId = ref(null)
+let hoverCardHideTimer = null
+let lastHoverCardOpenAt = 0
+function clearHoverCardHide() {
+  if (hoverCardHideTimer) clearTimeout(hoverCardHideTimer)
+  hoverCardHideTimer = null
+}
+function onHoverCardOpen() {
+  lastHoverCardOpenAt = Date.now()
+  clearHoverCardHide()
+}
+function scheduleHoverCardHide(rowId) {
+  if (Date.now() - lastHoverCardOpenAt < 120) return
+  clearHoverCardHide()
+  const id = rowId ?? hoverCardRowId.value
+  hoverCardHideTimer = setTimeout(() => {
+    if (hoverCardRowId.value === id) hoverCardRowId.value = null
+  }, 280)
+}
 const total = ref(0)
 const loading = ref(true)
 const showSearch = ref(true)
@@ -978,9 +1027,21 @@ onMounted(() => {
   display: flex;
   flex-direction: row;
   align-items: center;
-  justify-content: flex-start;
-  min-width: 0;
-  width: 100%;
+}
+.vps-name-row--with-popover {
+  position: relative;
+}
+.vps-popover-anchor {
+  position: absolute;
+  top: 0;
+  width: 0;
+  height: 100%;
+  overflow: hidden;
+  pointer-events: none;
+}
+.vps-popover-anchor--end {
+  left: auto;
+  right: 0;
 }
 .vps-name-link {
   display: block;
@@ -1153,5 +1214,13 @@ onMounted(() => {
 .op-btns:hover .op-btn,
 .op-btns .op-btn:hover {
   color: var(--el-color-primary);
+}
+</style>
+
+<style lang="scss">
+.vps-hover-card-popover {
+  padding: 0;
+  border: none;
+  background: transparent;
 }
 </style>
