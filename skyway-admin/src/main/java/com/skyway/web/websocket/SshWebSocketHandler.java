@@ -224,6 +224,15 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
             Session newSession = null;
             Command cmd = null;
             try {
+                // 一键安装脚本依赖 bash 与 wget，无 bash 时提前提示
+                try (Session checkSession = ssh.startSession()) {
+                    String hasBash = execAndRead(checkSession, "command -v bash >/dev/null 2>&1 && echo yes || echo no");
+                    if (hasBash == null || !hasBash.trim().toLowerCase().startsWith("yes")) {
+                        sendExecError(wsSession, reqId, "一键安装需要服务器已安装 bash 与 wget；Alpine 可执行: apk add bash wget");
+                        sendExecEnd(wsSession, reqId, -1);
+                        return;
+                    }
+                }
                 newSession = ssh.startSession();
                 String toRun = "bash -c \"" + trimmed.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
                 cmd = newSession.exec(toRun);
@@ -351,7 +360,7 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                 // 2. 执行 printf '1\n18\n{port}\n' | sb
                 String runCmd = "printf '1\\n18\\n" + port + "\\n' | sb";
                 newSession = ssh.startSession();
-                String toRun = "bash -c \"" + runCmd.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
+                String toRun = "sh -c \"" + runCmd.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
                 cmd = newSession.exec(toRun);
 
                 InputStream stdout = cmd.getInputStream();
@@ -562,7 +571,7 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                 // 2. 执行 printf '4\n{index}\n\n' | sb，流式输出
                 String runCmd = "printf '4\\n" + index + "\\n\\n' | sb";
                 sbSession = ssh.startSession();
-                String toRun = "bash -c \"" + runCmd.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
+                String toRun = "sh -c \"" + runCmd.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
                 cmd = sbSession.exec(toRun);
 
                 byte[] buf = new byte[4096];

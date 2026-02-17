@@ -157,7 +157,7 @@ public class VpsSshCommandService {
             ssh = createSshClient(ip, port, sshUsername, pass);
             // SSHJ 的 Session 一次 exec 后通道即耗尽，每个命令需单独开 Session
             try (Session s1 = ssh.startSession()) {
-                String nprocOut = execAndRead(s1, "nproc 2>/dev/null || echo 0");
+                String nprocOut = execAndRead(s1, "nproc 2>/dev/null || grep -c ^processor /proc/cpuinfo 2>/dev/null || echo 0");
                 int cores = 0;
                 if (nprocOut != null && !nprocOut.trim().isEmpty()) {
                     try {
@@ -365,7 +365,7 @@ public class VpsSshCommandService {
             String runCmd = "printf '1\\n18\\n" + port + "\\n' | sb";
             String output;
             try (Session runSession = ssh.startSession()) {
-                String toRun = "bash -c \"" + runCmd.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
+                String toRun = "sh -c \"" + runCmd.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
                 output = execAndRead(runSession, toRun);
             }
             if (output == null) output = "";
@@ -446,7 +446,7 @@ public class VpsSshCommandService {
             if (index < 1) throw new IOException("未在服务器上找到配置: " + targetFile);
             String runCmd = "printf '4\\n" + index + "\\n\\n' | sb";
             try (Session sbSession = ssh.startSession()) {
-                String toRun = "bash -c \"" + runCmd.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
+                String toRun = "sh -c \"" + runCmd.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
                 execAndRead(sbSession, toRun);
             }
         } finally {
@@ -516,7 +516,7 @@ public class VpsSshCommandService {
         String cleanOut = "while nft delete rule inet node_traffic out tcp sport " + port + " counter accept 2>/dev/null; do :; done";
         String addIn = "nft add rule inet node_traffic in tcp dport " + port + " counter accept";
         String addOut = "nft add rule inet node_traffic out tcp sport " + port + " counter accept";
-        execAndRead(session, "bash -c '" + create + cleanIn + "; " + cleanOut + "; " + addIn + "; " + addOut + "'");
+        execAndRead(session, "sh -c '" + create + cleanIn + "; " + cleanOut + "; " + addIn + "; " + addOut + "'");
     }
 
     /**
@@ -534,7 +534,7 @@ public class VpsSshCommandService {
             }
             try (Session dataSession = ssh.startSession()) {
                 if (useNft) {
-                    String del = "bash -c 'while nft delete rule inet node_traffic in tcp dport " + port + " counter accept 2>/dev/null; do :; done; " +
+                    String del = "sh -c 'while nft delete rule inet node_traffic in tcp dport " + port + " counter accept 2>/dev/null; do :; done; " +
                         "while nft delete rule inet node_traffic out tcp sport " + port + " counter accept 2>/dev/null; do :; done'";
                     execAndRead(dataSession, del);
                 } else {
