@@ -1,5 +1,8 @@
 <template>
   <div class="app-container">
+    <el-alert type="info" :closable="false" show-icon class="mb8" style="margin-bottom: 12px">
+      也可在「会员管理 → 客户详情」中为指定客户新增或管理关联节点。
+    </el-alert>
     <el-form :model="queryParams" ref="queryRef" :inline="true" v-show="showSearch" label-width="80px">
       <el-form-item label="关键字" prop="nodeName">
         <el-input v-model="queryParams.nodeName" placeholder="节点名称" clearable style="width: 160px" @keyup.enter="handleQuery" />

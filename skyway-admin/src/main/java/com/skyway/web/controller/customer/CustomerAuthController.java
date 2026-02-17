@@ -19,11 +19,12 @@ import com.skyway.web.service.CustomerEmailCodeService;
 
 /**
  * C 端认证（发送验证码、注册、登录）
+ * 同时映射 /c-api/auth 与 /auth：nginx 将 /c-api/ 代理为 / 时后端收到 /auth/*
  *
  * @author ruoyi
  */
 @RestController
-@RequestMapping("/c-api/auth")
+@RequestMapping(value = { "/c-api/auth", "/auth" })
 public class CustomerAuthController extends BaseController {
 
     @Autowired

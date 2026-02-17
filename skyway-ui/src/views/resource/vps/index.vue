@@ -60,8 +60,14 @@
               <el-col :span="1.5">
                 <el-button type="primary" plain icon="Plus" @click="handleAddInstance" v-hasPermi="['resource:vps:add']">新增VPS</el-button>
               </el-col>
+              <el-col :span="1.5">
+                <el-button type="warning" plain icon="Download" @click="handleExport" v-hasPermi="['resource:vps:export']">导出</el-button>
+              </el-col>
               <right-toolbar v-model:showSearch="showSearch" @queryTable="getList" />
             </el-row>
+            <el-alert v-if="categoryOptions.length > 0 && queryParams.categoryId == null" type="info" :closable="false" show-icon class="mb8" style="margin-bottom: 12px">
+              未选择分类时显示全部 VPS；在左侧选择分类/节点可筛选列表。
+            </el-alert>
 
             <el-table v-loading="loading" :data="instanceList">
               <el-table-column label="编号" align="center" prop="id" width="72" />
@@ -535,6 +541,12 @@ function getList() {
 function handleQuery() {
   queryParams.value.pageNum = 1
   getList()
+}
+
+function handleExport() {
+  proxy.download('resource/vps/instance/export', {
+    ...queryParams.value
+  }, `VPS实例数据_${new Date().getTime()}.xlsx`)
 }
 
 function resetQuery() {

@@ -24,6 +24,7 @@ import com.skyway.member.domain.MbCustomer;
 import com.skyway.member.service.IMbCustomerService;
 import com.skyway.resource.domain.ProxyNode;
 import com.skyway.resource.service.IProxyNodeService;
+import java.util.regex.Pattern;
 
 /**
  * 会员中心 - 客户管理（mb_customer）
@@ -39,6 +40,9 @@ public class CustomerController extends BaseController {
 
     @Autowired
     private IProxyNodeService proxyNodeService;
+
+    private static final Pattern EMAIL_PATTERN = Pattern.compile("^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\\.[a-zA-Z0-9-.]+$");
+    private static final Pattern PHONE_PATTERN = Pattern.compile("^[0-9+\\s-]{7,20}$");
 
     /**
      * 客户列表（关键词、状态、分页，含 node_bind_count）
@@ -104,6 +108,12 @@ public class CustomerController extends BaseController {
         if (StringUtils.isEmpty(row.getEmail())) {
             return AjaxResult.error("邮箱不能为空");
         }
+        if (!EMAIL_PATTERN.matcher(row.getEmail().trim()).matches()) {
+            return AjaxResult.error("邮箱格式不正确");
+        }
+        if (StringUtils.isNotEmpty(row.getPhone()) && !PHONE_PATTERN.matcher(row.getPhone().trim()).matches()) {
+            return AjaxResult.error("手机号格式不正确（7-20 位数字、+、空格或减号）");
+        }
         if (StringUtils.isEmpty(row.getPassword())) {
             return AjaxResult.error("密码不能为空");
         }
@@ -133,6 +143,12 @@ public class CustomerController extends BaseController {
             if (!mbCustomerService.checkUsernameUnique(row)) {
                 return AjaxResult.error("用户名已存在");
             }
+        }
+        if (StringUtils.isNotEmpty(row.getEmail()) && !EMAIL_PATTERN.matcher(row.getEmail().trim()).matches()) {
+            return AjaxResult.error("邮箱格式不正确");
+        }
+        if (StringUtils.isNotEmpty(row.getPhone()) && !PHONE_PATTERN.matcher(row.getPhone().trim()).matches()) {
+            return AjaxResult.error("手机号格式不正确（7-20 位数字、+、空格或减号）");
         }
         row.setUpdateBy(getUsername());
         return toAjax(mbCustomerService.update(row));
@@ -166,12 +182,24 @@ public class CustomerController extends BaseController {
     }
 
     /**
-     * 删除客户
+     * 删除客户（支持单条 123 或批量 1,2,3）
      */
     @PreAuthorize("@ss.hasPermi('member:customer:remove')")
     @Log(title = "会员客户", businessType = BusinessType.DELETE)
     @DeleteMapping("/{ids}")
-    public AjaxResult remove(@PathVariable Long[] ids) {
-        return toAjax(mbCustomerService.deleteByIds(ids));
+    public AjaxResult remove(@PathVariable String ids) {
+        if (StringUtils.isEmpty(ids)) {
+            return AjaxResult.error("参数错误");
+        }
+        String[] parts = ids.split(",");
+        Long[] idArr = new Long[parts.length];
+        for (int i = 0; i < parts.length; i++) {
+            try {
+                idArr[i] = Long.parseLong(parts[i].trim());
+            } catch (NumberFormatException e) {
+                return AjaxResult.error("参数错误：无效的 id " + parts[i]);
+            }
+        }
+        return toAjax(mbCustomerService.deleteByIds(idArr));
     }
 }

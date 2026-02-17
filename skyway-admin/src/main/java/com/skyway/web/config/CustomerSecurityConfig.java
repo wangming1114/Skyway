@@ -26,14 +26,16 @@ public class CustomerSecurityConfig {
         return http
                 .requestMatcher(request -> {
                     String path = request.getRequestURI();
-                    return path != null && path.startsWith("/c-api/");
+                    return path != null && (path.startsWith("/c-api/") || path.startsWith("/auth/"));
                 })
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(requests -> requests
                         .antMatchers("/c-api/auth/sendEmailCode", "/c-api/auth/register", "/c-api/auth/login",
-                        "/c-api/auth/sendResetCode", "/c-api/auth/resetPassword").permitAll()
-                        .antMatchers("/c-api/**").authenticated())
+                                "/c-api/auth/sendResetCode", "/c-api/auth/resetPassword").permitAll()
+                        .antMatchers("/auth/sendEmailCode", "/auth/register", "/auth/login",
+                                "/auth/sendResetCode", "/auth/resetPassword").permitAll()
+                        .antMatchers("/c-api/**", "/auth/**").authenticated())
                 .addFilterBefore(customerJwtAuthenticationTokenFilter, UsernamePasswordAuthenticationFilter.class)
                 .build();
     }

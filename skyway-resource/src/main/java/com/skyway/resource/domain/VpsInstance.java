@@ -63,16 +63,20 @@ public class VpsInstance extends BaseEntity {
     private String status;
 
     /** 网络类型（res_instance_network_type） */
+    @Excel(name = "网络类型")
     private String networkType;
 
     /** 流量限制（字节，null 或 0 表示不限制） */
+    @Excel(name = "流量限制(字节)")
     private Long trafficLimit;
 
     /** 续费金额（如 10/月、100/年） */
+    @Excel(name = "续费金额")
     private String renewalAmount;
 
     /** 到期时间 */
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    @Excel(name = "到期时间", dateFormat = "yyyy-MM-dd HH:mm:ss")
     private Date expireTime;
 
     /** 已开通节点数（关联查询，不持久化） */
@@ -82,9 +86,11 @@ public class VpsInstance extends BaseEntity {
     private Long totalTrafficBytes;
 
     /** 分类名称（关联查询，不持久化） */
+    @Excel(name = "分类")
     private String categoryName;
 
     /** 节点名称（关联查询，不持久化） */
+    @Excel(name = "节点")
     private String nodeName;
 
     /** 关键字搜索（名称/ID/IP，不持久化） */

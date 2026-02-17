@@ -22,7 +22,6 @@
           <el-tag :type="customer.status === '0' ? 'success' : 'danger'">{{ customer.status === '0' ? '启用' : '禁用' }}</el-tag>
         </el-descriptions-item>
         <el-descriptions-item label="注册时间">{{ parseTime(customer.registerTime) || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="创建时间">{{ parseTime(customer.createTime) || '-' }}</el-descriptions-item>
         <el-descriptions-item label="最近登录时间">{{ parseTime(customer.lastLoginAt) || '-' }}</el-descriptions-item>
         <el-descriptions-item label="最近登录IP">{{ customer.lastLoginIp || '-' }}</el-descriptions-item>
         <el-descriptions-item label="备注" :span="2">{{ customer.remark || '-' }}</el-descriptions-item>
