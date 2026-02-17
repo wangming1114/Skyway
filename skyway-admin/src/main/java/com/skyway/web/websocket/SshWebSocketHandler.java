@@ -224,14 +224,14 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
             Session newSession = null;
             Command cmd = null;
             try {
-                // 一键安装脚本依赖 bash 与 wget，无 bash 时提前提示
-                try (Session checkSession = ssh.startSession()) {
-                    String hasBash = execAndRead(checkSession, "command -v bash >/dev/null 2>&1 && echo yes || echo no");
-                    if (hasBash == null || !hasBash.trim().toLowerCase().startsWith("yes")) {
-                        sendExecError(wsSession, reqId, "一键安装需要服务器已安装 bash 与 wget；Alpine 可执行: apk add bash wget");
-                        sendExecEnd(wsSession, reqId, -1);
-                        return;
-                    }
+                // 一键安装脚本依赖 bash 与 wget，缺失时自动安装（apk/dnf/yum/apt-get）
+                if (!ensurePackageForInstall(wsSession, reqId, ssh, "bash")) {
+                    sendExecEnd(wsSession, reqId, -1);
+                    return;
+                }
+                if (!ensurePackageForInstall(wsSession, reqId, ssh, "wget")) {
+                    sendExecEnd(wsSession, reqId, -1);
+                    return;
                 }
                 newSession = ssh.startSession();
                 String toRun = "bash -c \"" + trimmed.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
@@ -250,6 +250,9 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                 }
                 cmd.join(120, TimeUnit.SECONDS);
                 Integer exitStatus = cmd.getExitStatus();
+                if (exitStatus == null) {
+                    sendExecError(wsSession, reqId, "安装进程未返回退出码（可能超时或连接中断），请根据上方日志排查");
+                }
                 if (exitStatus == null) exitStatus = -1;
                 int finalCode = exitStatus;
                 // 某些脚本会在完成安装后返回非 0；安装命令场景下再做一次安装结果兜底检查
@@ -276,6 +279,54 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                 }
             }
         });
+    }
+
+    /**
+     * 一键安装前确保依赖已安装：若缺失则按 apk/dnf/yum/apt-get 自动安装，并将输出写入前端日志。
+     * @return true 表示已可用（原本就有或安装成功），false 表示仍不可用且已发送错误
+     */
+    private boolean ensurePackageForInstall(WebSocketSession wsSession, Object reqId, SSHClient ssh, String pkg) {
+        try (Session check = ssh.startSession()) {
+            String out = execAndRead(check, "command -v " + pkg + " >/dev/null 2>&1 && echo yes || echo no");
+            if (out != null && out.trim().toLowerCase().startsWith("yes")) {
+                return true;
+            }
+        } catch (IOException e) {
+            log.debug("ensurePackage check {}: {}", pkg, e.getMessage());
+            sendExecError(wsSession, reqId, "检查 " + pkg + " 时出错: " + e.getMessage());
+            return false;
+        }
+        String installCmd = "command -v " + pkg + " >/dev/null 2>&1 && exit 0;"
+            + " if command -v apk >/dev/null 2>&1; then echo '[自动安装 " + pkg + "] apk...'; apk add --no-cache " + pkg + " 2>&1; fi;"
+            + " if command -v dnf >/dev/null 2>&1; then echo '[自动安装 " + pkg + "] dnf...'; dnf install -y " + pkg + " 2>&1; fi;"
+            + " if command -v yum >/dev/null 2>&1; then echo '[自动安装 " + pkg + "] yum...'; yum install -y " + pkg + " 2>&1; fi;"
+            + " if command -v apt-get >/dev/null 2>&1; then echo '[自动安装 " + pkg + "] apt-get...'; apt-get update -qq 2>&1; apt-get install -y " + pkg + " 2>&1; fi;"
+            + " exit 0";
+        try (Session installSession = ssh.startSession()) {
+            String installOut = execAndRead(installSession, "sh -c " + quoteSh(installCmd));
+            if (installOut != null && !installOut.isEmpty()) {
+                sendExecOutput(wsSession, reqId, installOut.trim() + "\n", false);
+            }
+        } catch (IOException e) {
+            log.debug("ensurePackage install {}: {}", pkg, e.getMessage());
+            sendExecError(wsSession, reqId, "自动安装 " + pkg + " 时出错: " + e.getMessage());
+            return false;
+        }
+        try (Session recheck = ssh.startSession()) {
+            String again = execAndRead(recheck, "command -v " + pkg + " >/dev/null 2>&1 && echo yes || echo no");
+            if (again != null && again.trim().toLowerCase().startsWith("yes")) {
+                return true;
+            }
+        } catch (IOException e) {
+            log.debug("ensurePackage recheck {}: {}", pkg, e.getMessage());
+        }
+        sendExecError(wsSession, reqId, "无法自动安装 " + pkg + "（需要 root 或具备安装权限的账号），请手动安装后重试");
+        return false;
+    }
+
+    private static String quoteSh(String s) {
+        if (s == null) return "''";
+        return "'" + s.replace("'", "'\"'\"'") + "'";
     }
 
     private void sendExecOutput(WebSocketSession wsSession, Object reqId, String data, boolean stderr) {

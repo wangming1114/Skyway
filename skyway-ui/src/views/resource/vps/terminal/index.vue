@@ -86,6 +86,7 @@
         <div v-if="installRunning" class="install-status">安装中…</div>
         <div v-else-if="installExitCode != null" :class="['install-status', installExitCode === 0 ? 'success' : 'fail']">
           {{ installExitCode === 0 ? '安装完成' : '安装失败 (exit ' + installExitCode + ')，请查看下方日志' }}
+          <div v-if="installExitCode !== 0 && installErrorMessage" class="install-status-msg">{{ installErrorMessage }}</div>
         </div>
         <pre ref="installLogRef" class="install-log">{{ installLog }}</pre>
       </div>
@@ -148,6 +149,7 @@ const installLog = ref('')
 const installLogRef = ref(null)
 const installRunning = ref(false)
 const installExitCode = ref(null)
+const installErrorMessage = ref('')
 let installReqId = 1
 
 function onWsConnectedChange(connected) {
@@ -190,6 +192,7 @@ function openInstallDrawer() {
     installLog.value = ''
     installRunning.value = true
     installExitCode.value = null
+    installErrorMessage.value = ''
     installDrawerVisible.value = true
     nextTick(() => {
       sendJson({
@@ -219,6 +222,9 @@ function isInstallSuccessByLog(log) {
 
 function onExecEnd(msg) {
   if (msg.reqId !== installReqId) return
+  if (msg.type === 'exec_error' && msg.message) {
+    installErrorMessage.value = String(msg.message)
+  }
   installRunning.value = false
   const code = msg.code != null ? msg.code : (msg.type === 'exec_error' ? -1 : null)
   const success = code === 0 || (code === 1 && isInstallSuccessByLog(installLog.value))
@@ -303,6 +309,11 @@ onBeforeUnmount(() => {
 }
 .install-status.fail {
   color: var(--el-color-danger);
+}
+.install-status-msg {
+  margin-top: 6px;
+  font-size: 13px;
+  opacity: 0.95;
 }
 .install-log {
   flex: 1;
