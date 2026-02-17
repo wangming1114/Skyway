@@ -8,6 +8,7 @@
       <Pane :size="15" :min-size="10" :max-size="25" class="pane-left">
         <div class="pane-inner scroll-thin">
           <ServerMonitorPanel
+            :ip="instanceIp"
             :send-sysinfo="sendSysinfo"
             :sysinfo-data="sysinfoData"
             :visible="!!instanceId"

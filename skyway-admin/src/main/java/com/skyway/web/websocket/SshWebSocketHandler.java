@@ -848,7 +848,17 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
         return sftp;
     }
 
-    /** 每条命令使用独立 Session 执行，避免同一 Session 多次 exec 导致 channel exhausted */
+    /** 单次 Session 单次 exec 批量拉取系统信息，减少往返延迟 */
+    private static final String SYSINFO_SCRIPT =
+        "echo ___SECTION_UPTIME___; uptime 2>/dev/null || true; "
+        + "echo ___SECTION_PROC_UPTIME___; cat /proc/uptime 2>/dev/null || true; "
+        + "echo ___SECTION_FREE___; free -m 2>/dev/null || true; "
+        + "echo ___SECTION_DF___; df -h 2>/dev/null | head -20 || true; "
+        + "echo ___SECTION_LOAD___; cat /proc/loadavg 2>/dev/null || true; "
+        + "echo ___SECTION_STAT___; cat /proc/stat 2>/dev/null | grep '^cpu ' || true; "
+        + "echo ___SECTION_PROC___; (ps -eo rss,pcpu,comm --no-headers 2>/dev/null || ps aux 2>/dev/null) | head -30; "
+        + "echo ___SECTION_NET___; cat /proc/net/dev 2>/dev/null || true";
+
     private void handleSysinfo(WebSocketSession wsSession, JSONObject obj) {
         Object sshObj = wsSession.getAttributes().get("sshClient");
         if (!(sshObj instanceof SSHClient)) return;
@@ -856,61 +866,71 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
         executor.execute(() -> {
             try {
                 Map<String, Object> data = new HashMap<>();
-                String uptimeOut = null;
+                String raw;
                 try (Session s = ssh.startSession()) {
-                    uptimeOut = execAndRead(s, "uptime 2>/dev/null || echo ''");
+                    raw = execAndRead(s, "sh -c " + quoteSh(SYSINFO_SCRIPT));
                 }
-                data.put("uptime", uptimeOut != null ? uptimeOut.trim() : "");
-                // 读取 /proc/uptime 获取精确秒数
-                String procUptime = null;
-                try (Session s = ssh.startSession()) {
-                    procUptime = execAndRead(s, "cat /proc/uptime 2>/dev/null || echo ''");
+                if (raw == null) raw = "";
+                Map<String, String> sections = new HashMap<>();
+                String[] parts = raw.split("___SECTION_");
+                for (int i = 1; i < parts.length; i++) {
+                    String seg = parts[i];
+                    int idx = seg.indexOf("___");
+                    if (idx < 0) continue;
+                    String name = seg.substring(0, idx).trim();
+                    String content = idx + 3 < seg.length() ? seg.substring(idx + 3).trim() : "";
+                    sections.put(name, content);
                 }
-                if (procUptime != null && !procUptime.trim().isEmpty()) {
+                String uptimeOut = sections.get("UPTIME");
+                String procUptime = sections.get("PROC_UPTIME");
+                String memOut = sections.get("FREE");
+                String dfOut = sections.get("DF");
+                String loadOut = sections.get("LOAD");
+                String statOut = sections.get("STAT");
+                String procOut = sections.get("PROC");
+                String netOut = sections.get("NET");
+                data.put("uptime", uptimeOut != null ? uptimeOut : "");
+                if (procUptime != null && !procUptime.isEmpty()) {
                     try {
-                        double secs = Double.parseDouble(procUptime.trim().split("\\s+")[0]);
+                        double secs = Double.parseDouble(procUptime.split("\\s+")[0]);
                         long totalSec = (long) secs;
-                        long days = totalSec / 86400;
-                        long hours = (totalSec % 86400) / 3600;
-                        long mins = (totalSec % 3600) / 60;
                         data.put("uptimeSec", totalSec);
-                        data.put("uptimeDays", days);
-                        data.put("uptimeHours", hours);
-                        data.put("uptimeMinutes", mins);
+                        data.put("uptimeDays", totalSec / 86400);
+                        data.put("uptimeHours", (totalSec % 86400) / 3600);
+                        data.put("uptimeMinutes", (totalSec % 3600) / 60);
                     } catch (NumberFormatException ignored) {}
                 }
-                String memOut = null;
-                try (Session s = ssh.startSession()) {
-                    memOut = execAndRead(s, "free -m 2>/dev/null || echo ''");
-                }
-                data.put("memory", memOut != null ? memOut.trim() : "");
-                String dfOut = null;
-                try (Session s = ssh.startSession()) {
-                    dfOut = execAndRead(s, "df -h 2>/dev/null | head -20 || echo ''");
-                }
-                data.put("disk", dfOut != null ? dfOut.trim() : "");
-                String loadOut = null;
-                try (Session s = ssh.startSession()) {
-                    loadOut = execAndRead(s, "cat /proc/loadavg 2>/dev/null || echo ''");
-                }
-                data.put("loadavg", loadOut != null ? loadOut.trim() : "");
-                String statOut = null;
-                try (Session s = ssh.startSession()) {
-                    statOut = execAndRead(s, "cat /proc/stat 2>/dev/null | grep '^cpu ' || echo ''");
-                }
+                data.put("memory", memOut != null ? memOut : "");
+                data.put("disk", dfOut != null ? dfOut : "");
+                data.put("loadavg", loadOut != null ? loadOut : "");
                 parseSysinfoStructured(data, uptimeOut, memOut, dfOut, loadOut, statOut);
+                parseSysinfoProcesses(data, procOut);
+                parseSysinfoNetwork(data, netOut);
                 JSONObject resp = new JSONObject();
                 resp.put("type", "sysinfo");
                 resp.put("data", data);
                 if (wsSession.isOpen()) {
-                    wsSession.sendMessage(new TextMessage(resp.toJSONString()));
+                    try {
+                        wsSession.sendMessage(new TextMessage(resp.toJSONString()));
+                    } catch (IllegalStateException sendEx) {
+                        String msg = sendEx.getMessage() != null ? sendEx.getMessage() : "";
+                        if (msg.contains("BINARY_PARTIAL_WRITING") || msg.contains("InvalidState")) {
+                            log.debug("sysinfo send skipped (session busy): {}", msg);
+                            return;
+                        }
+                        throw sendEx;
+                    }
                 }
             } catch (Exception e) {
                 log.debug("sysinfo exec error: {}", e.getMessage());
                 try {
+                    String errMsg = e.getMessage() != null ? e.getMessage() : "";
+                    if (errMsg.contains("BINARY_PARTIAL_WRITING") || errMsg.contains("InvalidState")) {
+                        return;
+                    }
                     JSONObject err = new JSONObject();
                     err.put("type", "sysinfo");
-                    err.put("data", new JSONObject().fluentPut("error", e.getMessage()));
+                    err.put("data", new JSONObject().fluentPut("error", errMsg));
                     if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(err.toJSONString()));
                 } catch (Exception ignored) {}
             }
@@ -932,8 +952,9 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
         if (memory != null && !memory.isEmpty()) {
             String[] lines = memory.split("\n");
             for (String line : lines) {
-                if (line.trim().startsWith("Mem:")) {
-                    String[] tokens = line.trim().split("\\s+");
+                String t = line.trim();
+                if (t.startsWith("Mem:")) {
+                    String[] tokens = t.split("\\s+");
                     if (tokens.length >= 3) {
                         try {
                             long total = Long.parseLong(tokens[1]);
@@ -945,7 +966,21 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                             }
                         } catch (NumberFormatException ignored) {}
                     }
-                    break;
+                } else if (t.startsWith("Swap:")) {
+                    String[] tokens = t.split("\\s+");
+                    if (tokens.length >= 3) {
+                        try {
+                            long total = Long.parseLong(tokens[1]);
+                            long used = Long.parseLong(tokens[2]);
+                            data.put("swapTotalMb", total);
+                            data.put("swapUsedMb", used);
+                            if (total > 0) {
+                                data.put("swapPercent", Math.round(used * 100.0 / total));
+                            } else {
+                                data.put("swapPercent", 0);
+                            }
+                        } catch (NumberFormatException ignored) {}
+                    }
                 }
             }
         }
@@ -997,6 +1032,79 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                 data.put("disks", disks);
             }
         }
+    }
+
+    /** 解析 ps 输出为 processes: [{ rssMb, cpuPct, comm }]，兼容 ps -eo 与 ps aux */
+    private void parseSysinfoProcesses(Map<String, Object> data, String procOut) {
+        if (procOut == null || procOut.isEmpty()) return;
+        String[] lines = procOut.split("\\n");
+        List<Map<String, Object>> list = new ArrayList<>();
+        boolean isPsAux = false;
+        for (String line : lines) {
+            String t = line.trim();
+            if (t.isEmpty()) continue;
+            if (t.startsWith("USER") && t.contains("PID")) {
+                isPsAux = true;
+                continue;
+            }
+            if (isPsAux) {
+                String[] tokens = t.split("\\s+", 11);
+                if (tokens.length >= 10) {
+                    try {
+                        int rssK = Integer.parseInt(tokens[5]);
+                        double cpu = Double.parseDouble(tokens[2]);
+                        String comm = tokens.length >= 11 ? tokens[10] : "";
+                        Map<String, Object> row = new HashMap<>();
+                        row.put("rssMb", rssK / 1024);
+                        row.put("cpuPct", Math.round(cpu * 10) / 10.0);
+                        row.put("comm", comm);
+                        list.add(row);
+                    } catch (NumberFormatException ignored) {}
+                }
+            } else {
+                String[] tokens = t.split("\\s+", 3);
+                if (tokens.length >= 3) {
+                    try {
+                        int rssK = Integer.parseInt(tokens[0]);
+                        double cpu = Double.parseDouble(tokens[1]);
+                        Map<String, Object> row = new HashMap<>();
+                        row.put("rssMb", rssK / 1024);
+                        row.put("cpuPct", Math.round(cpu * 10) / 10.0);
+                        row.put("comm", tokens[2]);
+                        list.add(row);
+                    } catch (NumberFormatException ignored) {}
+                }
+            }
+        }
+        if (!list.isEmpty()) data.put("processes", list);
+    }
+
+    /** 解析 /proc/net/dev 为 interfaces: [{ name, rxBytes, txBytes }] */
+    private void parseSysinfoNetwork(Map<String, Object> data, String netOut) {
+        if (netOut == null || netOut.isEmpty()) return;
+        String[] lines = netOut.split("\\n");
+        List<Map<String, Object>> list = new ArrayList<>();
+        for (int i = 2; i < lines.length; i++) {
+            String line = lines[i];
+            int colon = line.indexOf(':');
+            if (colon < 0) continue;
+            String name = line.substring(0, colon).trim();
+            if ("lo".equals(name)) continue;
+            String rest = line.substring(colon + 1).trim();
+            String[] tokens = rest.split("\\s+");
+            if (tokens.length >= 10) {
+                try {
+                    long rx = Long.parseLong(tokens[0]);
+                    long tx = Long.parseLong(tokens[8]);
+                    Map<String, Object> row = new HashMap<>();
+                    row.put("name", name);
+                    row.put("rxBytes", rx);
+                    row.put("txBytes", tx);
+                    list.add(row);
+                } catch (NumberFormatException ignored) {}
+            }
+        }
+        if (!list.isEmpty()) data.put("interfaces", list);
     }
 
     /** Put file attributes (size, mtime, mode, uid, gid, directory, name) into response for local list updates */

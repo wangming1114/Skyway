@@ -11,6 +11,7 @@
     <div class="ssh-layout">
       <div class="ssh-left">
         <ServerMonitorPanel
+          :ip="instanceIp"
           :send-sysinfo="sendSysinfo"
           :sysinfo-data="sysinfoData"
           :visible="dialogVisible && !!instanceId"
@@ -48,7 +49,8 @@ import SftpFilePanel from './SftpFilePanel.vue'
 const props = defineProps({
   visible: { type: Boolean, default: false },
   instanceId: { type: Number, default: null },
-  instanceName: { type: String, default: '' }
+  instanceName: { type: String, default: '' },
+  instanceIp: { type: String, default: '' }
 })
 
 const emit = defineEmits(['update:visible'])
