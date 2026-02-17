@@ -2,7 +2,7 @@
   <div class="vps-terminal-page">
     <div class="page-header">
       <el-button link icon="Back" @click="goBack">返回</el-button>
-      <span class="page-title">连接服务器 - {{ instanceName || 'VPS' }}</span>
+      <span class="page-title">{{ instanceName || 'VPS' }}{{ instanceIp ? ' - ' + instanceIp : '' }}</span>
     </div>
     <Splitpanes class="ssh-split">
       <Pane :size="15" :min-size="10" :max-size="25" class="pane-left">
@@ -94,8 +94,10 @@
 </template>
 
 <script setup name="VpsTerminal">
-import { ref, computed, onBeforeUnmount, nextTick } from 'vue'
+import { ref, computed, watch, onBeforeUnmount, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import useSettingsStore from '@/store/modules/settings'
+import useTagsViewStore from '@/store/modules/tagsView'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Splitpanes, Pane } from 'splitpanes'
 import 'splitpanes/dist/splitpanes.css'
@@ -109,13 +111,31 @@ const INSTALL_CMD = 'bash <(wget -qO- -o- https://github.com/233boy/sing-box/raw
 const route = useRoute()
 const router = useRouter()
 
-const instanceId = computed(() => {
-  const id = route.params.id
-  if (id == null || id === '') return null
-  const n = Number(id)
-  return Number.isInteger(n) && n > 0 ? n : null
-})
-const instanceName = computed(() => (route.query.name != null ? String(route.query.name) : ''))
+// 仅在本页为终端路由时从 route 更新，避免 keep-alive 下切到非终端时 route 变成别页导致 instanceId 清空、终端被 cleanup 重连
+const lastTerminalState = ref({ id: null, name: '', ip: '' })
+watch(
+  () =>
+    route.name === 'VpsTerminal'
+      ? {
+          id: route.params.id,
+          name: route.query.name,
+          ip: route.query.ip
+        }
+      : null,
+  (payload) => {
+    if (payload == null) return
+    const n = payload.id != null && payload.id !== '' ? Number(payload.id) : NaN
+    lastTerminalState.value = {
+      id: Number.isInteger(n) && n > 0 ? n : null,
+      name: payload.name != null ? String(payload.name) : '',
+      ip: payload.ip != null ? String(payload.ip) : ''
+    }
+  },
+  { immediate: true }
+)
+const instanceId = computed(() => lastTerminalState.value.id)
+const instanceName = computed(() => lastTerminalState.value.name)
+const instanceIp = computed(() => lastTerminalState.value.ip)
 
 const terminalRef = ref(null)
 const sysinfoData = ref(null)
@@ -218,6 +238,26 @@ function onInstallDrawerClosed() {
 function goBack() {
   router.push({ path: '/resource/vps' })
 }
+
+// 切换实例时清空左侧/下方数据，避免串台
+watch(instanceId, () => {
+  sysinfoData.value = null
+  sftpMessage.value = null
+  wsConnected.value = false
+})
+
+// 仅在本页为终端路由时更新标题，避免 keep-alive 下切到非终端时用当前 route 把别的标签改成「VPS」
+watch(
+  () => (route.name === 'VpsTerminal' ? [instanceName.value, instanceIp.value, route.path] : null),
+  (payload) => {
+    if (payload == null) return
+    const [name, ip, path] = payload
+    const displayTitle = [name || 'VPS', ip].filter(Boolean).join(' - ') || '连接服务器'
+    useSettingsStore().setTitle(displayTitle)
+    useTagsViewStore().updateVisitedView({ path, title: displayTitle })
+  },
+  { immediate: true }
+)
 
 onBeforeUnmount(() => {
   sysinfoData.value = null

@@ -331,6 +331,7 @@ async function doPaste() {
     if (text && ws && ws.readyState === WebSocket.OPEN) {
       const enc = new TextEncoder()
       ws.send(enc.encode(text))
+      term.focus()
     } else if (!text && term) {
       // 无 clipboard API 时（如打包后非 HTTPS）：模拟 Ctrl+V 让浏览器执行粘贴
       fallbackPasteBySimulateCtrlV()

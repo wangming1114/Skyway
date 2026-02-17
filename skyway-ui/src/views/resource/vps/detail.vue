@@ -134,7 +134,7 @@ function openConnect() {
     router.push({
       name: 'VpsTerminal',
       params: { id: detail.value.id },
-      query: { name: detail.value.name || '' }
+      query: { name: detail.value.name || '', ip: detail.value.ip || '' }
     })
   }
 }

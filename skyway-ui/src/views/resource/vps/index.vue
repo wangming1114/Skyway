@@ -406,7 +406,7 @@ function handleConnectServer(row) {
   router.push({
     name: 'VpsTerminal',
     params: { id: row.id },
-    query: { name: row.name || '' }
+    query: { name: row.name || '', ip: row.ip || '' }
   })
 }
 
