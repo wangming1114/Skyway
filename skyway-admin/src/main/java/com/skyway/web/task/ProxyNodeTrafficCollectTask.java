@@ -45,6 +45,15 @@ public class ProxyNodeTrafficCollectTask {
         for (Map.Entry<Long, List<ProxyNode>> e : byInstance.entrySet()) {
             Long instanceId = e.getKey();
             List<ProxyNode> nodesOnInstance = e.getValue();
+            // 先为本实例所有节点确保流量规则存在（CentOS 等首次无链时先建链再读，避免一直读到空）
+            for (ProxyNode node : nodesOnInstance) {
+                if (node.getPort() == null || node.getPort() <= 0) continue;
+                try {
+                    vpsSshCommandService.ensureTrafficRulesForPort(instanceId, node.getPort());
+                } catch (Exception ex) {
+                    log.warn("ensureTrafficRulesForPort instanceId={} port={} failed: {}", instanceId, node.getPort(), ex.getMessage());
+                }
+            }
             Map<Integer, TrafficPair> counters = null;
             try {
                 counters = vpsSshCommandService.readTrafficCounters(instanceId);
@@ -57,9 +66,7 @@ public class ProxyNodeTrafficCollectTask {
                     Integer port = ce.getKey();
                     TrafficPair pair = ce.getValue();
                     ProxyNode node = proxyNodeService.getByInstanceIdAndPort(instanceId, port);
-                    if (node == null) {
-                        continue;
-                    }
+                    if (node == null) continue;
                     try {
                         proxyNodeTrafficService.recordTrafficSnapshot(node.getId(), now, pair.rx, pair.tx);
                         recorded.add(node.getId());
@@ -76,59 +83,12 @@ public class ProxyNodeTrafficCollectTask {
                     }
                 }
             } else {
-                // 未读到计数器：可能 VPS 上尚未创建流量统计规则，先按节点端口补齐规则，再读一次计数器（从 0 开始）
                 for (ProxyNode node : nodesOnInstance) {
-                    if (node.getPort() == null || node.getPort() <= 0) continue;
+                    if (node.getId() == null) continue;
                     try {
-                        vpsSshCommandService.ensureTrafficRulesForPort(instanceId, node.getPort());
+                        proxyNodeTrafficService.recordTrafficSnapshot(node.getId(), now, 0L, 0L);
                     } catch (Exception ex) {
-                        log.warn("ensureTrafficRulesForPort instanceId={} port={} failed: {}", instanceId, node.getPort(), ex.getMessage());
-                    }
-                }
-                // 补齐规则后立即再读一次，避免下一轮才从 0 开始累积
-                try {
-                    Map<Integer, TrafficPair> retryCounters = vpsSshCommandService.readTrafficCounters(instanceId);
-                    if (retryCounters != null && !retryCounters.isEmpty()) {
-                        Set<Long> recorded = new HashSet<>();
-                        for (Map.Entry<Integer, TrafficPair> ce : retryCounters.entrySet()) {
-                            Integer port = ce.getKey();
-                            TrafficPair pair = ce.getValue();
-                            ProxyNode node = proxyNodeService.getByInstanceIdAndPort(instanceId, port);
-                            if (node == null) continue;
-                            try {
-                                proxyNodeTrafficService.recordTrafficSnapshot(node.getId(), now, pair.rx, pair.tx);
-                                recorded.add(node.getId());
-                            } catch (Exception ex) {
-                                log.warn("recordTrafficSnapshot nodeId={} failed: {}", node.getId(), ex.getMessage());
-                            }
-                        }
-                        for (ProxyNode node : nodesOnInstance) {
-                            if (node.getId() == null || recorded.contains(node.getId())) continue;
-                            try {
-                                proxyNodeTrafficService.recordTrafficSnapshot(node.getId(), now, 0L, 0L);
-                            } catch (Exception ex) {
-                                log.warn("recordTrafficSnapshot nodeId={} (no counter) failed: {}", node.getId(), ex.getMessage());
-                            }
-                        }
-                    } else {
-                        for (ProxyNode node : nodesOnInstance) {
-                            if (node.getId() == null) continue;
-                            try {
-                                proxyNodeTrafficService.recordTrafficSnapshot(node.getId(), now, 0L, 0L);
-                            } catch (Exception ex) {
-                                log.warn("recordTrafficSnapshot nodeId={} (no counters) failed: {}", node.getId(), ex.getMessage());
-                            }
-                        }
-                    }
-                } catch (Exception ex) {
-                    log.warn("collect traffic retry read instanceId={} failed: {}", instanceId, ex.getMessage());
-                    for (ProxyNode node : nodesOnInstance) {
-                        if (node.getId() == null) continue;
-                        try {
-                            proxyNodeTrafficService.recordTrafficSnapshot(node.getId(), now, 0L, 0L);
-                        } catch (Exception ex2) {
-                            log.warn("recordTrafficSnapshot nodeId={} failed: {}", node.getId(), ex2.getMessage());
-                        }
+                        log.warn("recordTrafficSnapshot nodeId={} (no counters) failed: {}", node.getId(), ex.getMessage());
                     }
                 }
             }

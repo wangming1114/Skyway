@@ -462,10 +462,18 @@ public class VpsSshCommandService {
     }
 
     // ---------- 流量统计：iptables/nft 按端口计数 ----------
+    /** CentOS 等系统 iptables 常在 /sbin，SSH 非登录 shell 的 PATH 可能不包含，此处统一加上 */
+    private static final String PATH_PREFIX = "PATH=/usr/sbin:/sbin:$PATH; ";
     private static final String CHAIN_IN = "NODE_TRAFFIC_IN";
     private static final String CHAIN_OUT = "NODE_TRAFFIC_OUT";
-    private static final Pattern IPTABLES_LINE = Pattern.compile("\\s*(\\d+)\\s+(\\d+)\\s+.*\\s+tcp\\s+.*dpt:(\\d+)");
-    private static final Pattern IPTABLES_LINE_OUT = Pattern.compile("\\s*(\\d+)\\s+(\\d+)\\s+.*\\s+tcp\\s+.*spt:(\\d+)");
+    // 兼容 Ubuntu 与 CentOS：前两列为 pkts/bytes，端口为 dpt:PORT 或 dpt: PORT（允许空格）
+    private static final Pattern IPTABLES_LINE = Pattern.compile("^\\s*(\\d+)\\s+(\\d+)\\s+.*?dpt:\\s*(\\d+)");
+    private static final Pattern IPTABLES_LINE_OUT = Pattern.compile("^\\s*(\\d+)\\s+(\\d+)\\s+.*?spt:\\s*(\\d+)");
+    // 部分环境行首为 target（ACCEPT），pkts/bytes 紧跟其后：ACCEPT  0  0  tcp ... dpt:PORT
+    private static final Pattern IPTABLES_LINE_ACCEPT_IN = Pattern.compile("ACCEPT\\s+(\\d+)\\s+(\\d+)\\s+.*?dpt:\\s*(\\d+)");
+    private static final Pattern IPTABLES_LINE_ACCEPT_OUT = Pattern.compile("ACCEPT\\s+(\\d+)\\s+(\\d+)\\s+.*?spt:\\s*(\\d+)");
+    private static final Pattern IPTABLES_PORT_ONLY_IN = Pattern.compile("dpt:\\s*(\\d+)");
+    private static final Pattern IPTABLES_PORT_ONLY_OUT = Pattern.compile("spt:\\s*(\\d+)");
 
     public static final class TrafficPair {
         public long rx;
@@ -483,8 +491,11 @@ public class VpsSshCommandService {
             ssh = createSshClient(instanceId);
             boolean useNft;
             try (Session detectSession = ssh.startSession()) {
-                String detect = execAndRead(detectSession, "command -v iptables >/dev/null 2>&1 && echo iptables; command -v nft >/dev/null 2>&1 && echo nft");
-                useNft = detect != null && detect.trim().contains("nft");
+                String detect = execAndRead(detectSession, "sh -c '" + PATH_PREFIX + "command -v iptables >/dev/null 2>&1 && echo iptables; command -v nft >/dev/null 2>&1 && echo nft'");
+                boolean hasIptables = detect != null && detect.contains("iptables");
+                boolean hasNft = detect != null && detect.contains("nft");
+                // 两者都存在时优先 iptables（CentOS 8/Ubuntu 上兼容更好）；仅 nft 时用 nft
+                useNft = hasNft && !hasIptables;
             }
             try (Session dataSession = ssh.startSession()) {
                 if (useNft) {
@@ -501,10 +512,25 @@ public class VpsSshCommandService {
     private void ensureTrafficRulesIptables(Session session, int port) throws IOException {
         String addIn = "iptables -C " + CHAIN_IN + " -p tcp --dport " + port + " -j ACCEPT 2>/dev/null || iptables -A " + CHAIN_IN + " -p tcp --dport " + port + " -j ACCEPT";
         String addOut = "iptables -C " + CHAIN_OUT + " -p tcp --sport " + port + " -j ACCEPT 2>/dev/null || iptables -A " + CHAIN_OUT + " -p tcp --sport " + port + " -j ACCEPT";
-        execAndRead(session, "iptables -N " + CHAIN_IN + " 2>/dev/null; iptables -N " + CHAIN_OUT + " 2>/dev/null; " +
-            "iptables -C INPUT -p tcp -j " + CHAIN_IN + " 2>/dev/null || iptables -A INPUT -p tcp -j " + CHAIN_IN + "; " +
-            "iptables -C OUTPUT -p tcp -j " + CHAIN_OUT + " 2>/dev/null || iptables -A OUTPUT -p tcp -j " + CHAIN_OUT + "; " +
-            addIn + "; " + addOut);
+        // 先删再插到链首；PATH 保证 CentOS 能找到 iptables；整段 2>&1 便于收错；先试 sudo -n，失败再试直接执行
+        String block = "( " + PATH_PREFIX +
+            "iptables -N " + CHAIN_IN + " 2>/dev/null; iptables -N " + CHAIN_OUT + " 2>/dev/null; " +
+            "iptables -D INPUT -p tcp -j " + CHAIN_IN + " 2>/dev/null; iptables -I INPUT 1 -p tcp -j " + CHAIN_IN + "; " +
+            "iptables -D OUTPUT -p tcp -j " + CHAIN_OUT + " 2>/dev/null; iptables -I OUTPUT 1 -p tcp -j " + CHAIN_OUT + "; " +
+            addIn + "; " + addOut + " ) 2>&1";
+        String out = execAndRead(session, "sudo -n sh -c " + quoteSh(block));
+        boolean usedFallback = out != null && (out.contains("password") || out.contains("sudo:") || out.contains("not allowed"));
+        if (usedFallback) {
+            out = execAndRead(session, "sh -c " + quoteSh(block));
+        }
+        if (out != null && !out.isEmpty() && (out.contains("Permission denied") || out.contains("Operation not permitted"))) {
+            log.warn("ensureTrafficRulesIptables port={} failed (need root or sudo): {}", port, out.trim().split("\\r?\\n")[0]);
+        }
+    }
+
+    private static String quoteSh(String s) {
+        if (s == null) return "''";
+        return "'" + s.replace("'", "'\"'\"'") + "'";
     }
 
     private void ensureTrafficRulesNft(Session session, int port) throws IOException {
@@ -529,8 +555,10 @@ public class VpsSshCommandService {
             ssh = createSshClient(instanceId);
             boolean useNft;
             try (Session detectSession = ssh.startSession()) {
-                String detect = execAndRead(detectSession, "command -v nft >/dev/null 2>&1 && echo nft; command -v iptables >/dev/null 2>&1 && echo iptables");
-                useNft = detect != null && detect.trim().startsWith("nft");
+                String detect = execAndRead(detectSession, "sh -c '" + PATH_PREFIX + "command -v iptables >/dev/null 2>&1 && echo iptables; command -v nft >/dev/null 2>&1 && echo nft'");
+                boolean hasIptables = detect != null && detect.contains("iptables");
+                boolean hasNft = detect != null && detect.contains("nft");
+                useNft = hasNft && !hasIptables;
             }
             try (Session dataSession = ssh.startSession()) {
                 if (useNft) {
@@ -538,8 +566,7 @@ public class VpsSshCommandService {
                         "while nft delete rule inet node_traffic out tcp sport " + port + " counter accept 2>/dev/null; do :; done'";
                     execAndRead(dataSession, del);
                 } else {
-                    execAndRead(dataSession, "iptables -D " + CHAIN_IN + " -p tcp --dport " + port + " -j ACCEPT 2>/dev/null; " +
-                        "iptables -D " + CHAIN_OUT + " -p tcp --sport " + port + " -j ACCEPT 2>/dev/null");
+                    execAndRead(dataSession, "sh -c '" + PATH_PREFIX + "iptables -D " + CHAIN_IN + " -p tcp --dport " + port + " -j ACCEPT 2>/dev/null; iptables -D " + CHAIN_OUT + " -p tcp --sport " + port + " -j ACCEPT 2>/dev/null 2>&1'");
                 }
             }
         } finally {
@@ -558,8 +585,10 @@ public class VpsSshCommandService {
             ssh = createSshClient(instanceId);
             boolean useNft;
             try (Session detectSession = ssh.startSession()) {
-                String detect = execAndRead(detectSession, "command -v nft >/dev/null 2>&1 && echo nft; command -v iptables >/dev/null 2>&1 && echo iptables");
-                useNft = detect != null && detect.trim().startsWith("nft");
+                String detect = execAndRead(detectSession, "sh -c '" + PATH_PREFIX + "command -v iptables >/dev/null 2>&1 && echo iptables; command -v nft >/dev/null 2>&1 && echo nft'");
+                boolean hasIptables = detect != null && detect.contains("iptables");
+                boolean hasNft = detect != null && detect.contains("nft");
+                useNft = hasNft && !hasIptables;
             }
             try (Session dataSession = ssh.startSession()) {
                 if (useNft) {
@@ -576,33 +605,81 @@ public class VpsSshCommandService {
         return result;
     }
 
+    private static final String CHAIN_DELIM = "___CHAIN_OUT___";
     private void readTrafficCountersIptables(Session session, Map<Integer, TrafficPair> result) throws IOException {
-        String inOut = execAndRead(session, "iptables -L " + CHAIN_IN + " -v -n -x 2>/dev/null");
-        String outOut = execAndRead(session, "iptables -L " + CHAIN_OUT + " -v -n -x 2>/dev/null");
+        // 单次命令同时拉两条链，避免同一 session 第二次 exec 失败导致 outOut=null（见 debug 日志 after_exec outNull:true）
+        String cmd = "sh -c '" + PATH_PREFIX + "iptables -L " + CHAIN_IN + " -v -n -x 2>&1; echo " + CHAIN_DELIM + "; iptables -L " + CHAIN_OUT + " -v -n -x 2>&1'";
+        String combined = execAndRead(session, cmd);
+        String inOut = null;
+        String outOut = null;
+        if (combined != null && combined.contains(CHAIN_DELIM)) {
+            int idx = combined.indexOf(CHAIN_DELIM);
+            inOut = combined.substring(0, idx).trim();
+            outOut = combined.substring(idx + CHAIN_DELIM.length()).trim();
+        } else if (combined != null && combined.contains("Permission denied")) {
+            cmd = "sh -c '" + PATH_PREFIX + "sudo -n iptables -L " + CHAIN_IN + " -v -n -x 2>&1; echo " + CHAIN_DELIM + "; sudo -n iptables -L " + CHAIN_OUT + " -v -n -x 2>&1'";
+            combined = execAndRead(session, cmd);
+            if (combined != null && combined.contains(CHAIN_DELIM)) {
+                int idx = combined.indexOf(CHAIN_DELIM);
+                inOut = combined.substring(0, idx).trim();
+                outOut = combined.substring(idx + CHAIN_DELIM.length()).trim();
+            }
+        } else if (combined != null) {
+            inOut = combined.trim();
+        }
+        String inFirst = inOut != null && inOut.length() > 0 ? inOut.split("\\r?\\n")[0].trim() : null;
+        String outFirst = outOut != null && outOut.length() > 0 ? outOut.split("\\r?\\n")[0].trim() : null;
+        boolean inNoChain = inOut != null && (inOut.contains("No chain") || inOut.contains("does not exist"));
+        boolean outNoChain = outOut != null && (outOut.contains("No chain") || outOut.contains("does not exist"));
+        if (inOut != null && inNoChain && result.isEmpty()) {
+            log.debug("readTrafficCountersIptables: chains missing (ensureTrafficRules may have failed), inOut snippet: {}", inFirst);
+        }
         if (inOut != null) {
             for (String line : inOut.split("\\r?\\n")) {
+                int port = -1;
+                long bytes = 0L;
                 Matcher m = IPTABLES_LINE.matcher(line);
                 if (m.find()) {
-                    int port = Integer.parseInt(m.group(3));
-                    long bytes = Long.parseLong(m.group(2));
-                    result.computeIfAbsent(port, p -> new TrafficPair(0, 0)).rx = bytes;
+                    port = Integer.parseInt(m.group(3));
+                    bytes = Long.parseLong(m.group(2));
+                } else {
+                    m = IPTABLES_LINE_ACCEPT_IN.matcher(line);
+                    if (m.find()) {
+                        port = Integer.parseInt(m.group(3));
+                        bytes = Long.parseLong(m.group(2));
+                    } else {
+                        m = IPTABLES_PORT_ONLY_IN.matcher(line);
+                        if (m.find()) port = Integer.parseInt(m.group(1));
+                    }
                 }
+                if (port > 0) result.computeIfAbsent(port, p -> new TrafficPair(0, 0)).rx = bytes;
             }
         }
         if (outOut != null) {
             for (String line : outOut.split("\\r?\\n")) {
+                int port = -1;
+                long bytes = 0L;
                 Matcher m = IPTABLES_LINE_OUT.matcher(line);
                 if (m.find()) {
-                    int port = Integer.parseInt(m.group(3));
-                    long bytes = Long.parseLong(m.group(2));
-                    result.computeIfAbsent(port, p -> new TrafficPair(0, 0)).tx = bytes;
+                    port = Integer.parseInt(m.group(3));
+                    bytes = Long.parseLong(m.group(2));
+                } else {
+                    m = IPTABLES_LINE_ACCEPT_OUT.matcher(line);
+                    if (m.find()) {
+                        port = Integer.parseInt(m.group(3));
+                        bytes = Long.parseLong(m.group(2));
+                    } else {
+                        m = IPTABLES_PORT_ONLY_OUT.matcher(line);
+                        if (m.find()) port = Integer.parseInt(m.group(1));
+                    }
                 }
+                if (port > 0) result.computeIfAbsent(port, p -> new TrafficPair(0, 0)).tx = bytes;
             }
         }
     }
 
     private void readTrafficCountersNft(Session session, Map<Integer, TrafficPair> result) throws IOException {
-        String full = execAndRead(session, "nft list table inet node_traffic 2>/dev/null");
+        String full = execAndRead(session, "nft list table inet node_traffic 2>&1");
         if (full == null) return;
         // 兼容 "counter packets N bytes N" 与 "counter bytes N packets N" 两种 nft 输出顺序
         Pattern nftRule = Pattern.compile("tcp (dport|sport) (\\d+) .*? bytes (\\d+)");
