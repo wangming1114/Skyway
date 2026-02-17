@@ -174,7 +174,7 @@ public class VpsSshCommandService {
                         try {
                             int totalMb = Integer.parseInt(parts[1]);
                             if (totalMb >= 1024) {
-                                result.put("memory", (totalMb / 1024) + "G");
+                                result.put("memory", Math.round(totalMb / 1024.0) + "G");
                             } else {
                                 result.put("memory", totalMb + "M");
                             }
@@ -187,7 +187,7 @@ public class VpsSshCommandService {
                 if (dfOut != null && dfOut.trim().length() > 0) {
                     String[] parts = dfOut.trim().split("\\s+");
                     if (parts.length >= 2) {
-                        result.put("disk", parts[1].trim());
+                        result.put("disk", formatDiskSizeRounded(parts[1].trim()));
                     }
                 }
             }
@@ -206,6 +206,34 @@ public class VpsSshCommandService {
             }
         }
         return result;
+    }
+
+    /** 将 df -h 的 Size（如 7.8G、50G、512M）四舍五入为整数后返回，如 7.8G -> 8G */
+    private static String formatDiskSizeRounded(String size) {
+        if (size == null || size.isEmpty()) return size;
+        String s = size.trim().toUpperCase();
+        if (s.endsWith("G")) {
+            try {
+                double val = Double.parseDouble(s.substring(0, s.length() - 1).trim());
+                return Math.round(val) + "G";
+            } catch (NumberFormatException ignored) {}
+        } else if (s.endsWith("M")) {
+            try {
+                double val = Double.parseDouble(s.substring(0, s.length() - 1).trim());
+                return Math.round(val) + "M";
+            } catch (NumberFormatException ignored) {}
+        } else if (s.endsWith("T")) {
+            try {
+                double val = Double.parseDouble(s.substring(0, s.length() - 1).trim());
+                return Math.round(val) + "T";
+            } catch (NumberFormatException ignored) {}
+        } else if (s.endsWith("K")) {
+            try {
+                double val = Double.parseDouble(s.substring(0, s.length() - 1).trim());
+                return Math.round(val) + "K";
+            } catch (NumberFormatException ignored) {}
+        }
+        return size;
     }
 
     /** 连接测试用：带超时（8 秒），避免账号错误或网络不通时长时间卡住 */
