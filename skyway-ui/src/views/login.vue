@@ -504,6 +504,7 @@ onMounted(() => {
 
     .field__input :deep(.el-input__inner) {
       --el-input-placeholder-color: #94a3b8; /* Slate-400 */
+      color: #0f172a; /* 输入文字正常深色，避免验证码等显示为灰 */
     }
 
     /* 覆盖浏览器自动填充/回显的默认高亮，打包后与开发环境一致 */
