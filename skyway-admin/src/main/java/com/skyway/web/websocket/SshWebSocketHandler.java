@@ -510,6 +510,7 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
         Integer port = obj.getInteger("port");
         String expireTimeStr = obj.getString("expireTime");
         Long customerId = obj.getLong("customerId");
+        String remark = obj.getString("remark");
 
         if (customerId == null) {
             sendExecError(wsSession, reqId, "请选择归属客户");
@@ -614,6 +615,7 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                 parsed.setCustomId(customerIdStr);
                 parsed.setExpireTime(expireDate);
                 parsed.setStatus("0");
+                if (remark != null && !remark.trim().isEmpty()) parsed.setRemark(remark.trim());
                 try {
                     proxyNodeService.insert(parsed);
                     try {
@@ -931,6 +933,7 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
         o.put("url", node.getUrl());
         o.put("expireTime", node.getExpireTime() != null ? new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(node.getExpireTime()) : null);
         o.put("status", node.getStatus());
+        o.put("remark", node.getRemark());
         return o;
     }
 

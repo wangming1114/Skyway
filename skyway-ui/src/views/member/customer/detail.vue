@@ -74,6 +74,15 @@
                 </span>
               </template>
             </el-table-column>
+            <el-table-column label="备注" min-width="100" show-overflow-tooltip>
+              <template #default="{ row }">
+                <span v-if="hasEditPermi" class="remark-cell-editable" @click.stop="openRemarkEdit(row)">
+                  <span class="remark-cell-text">{{ row.remark || '点击添加备注' }}</span>
+                  <el-icon class="remark-cell-icon"><Edit /></el-icon>
+                </span>
+                <span v-else>{{ row.remark || '-' }}</span>
+              </template>
+            </el-table-column>
             <el-table-column label="操作" width="220" align="center">
               <template #default="{ row }">
                 <el-button link type="primary" size="small" @click="handleNodeDetail(row)">详情</el-button>
@@ -109,6 +118,9 @@
                   />
                   <el-checkbox v-model="addNodePermanent" @change="v => v && (addNodeForm.expireTime = null)">永久有效</el-checkbox>
                 </div>
+              </el-form-item>
+              <el-form-item label="备注">
+                <el-input v-model="addNodeForm.remark" type="textarea" :rows="2" placeholder="选填" maxlength="500" show-word-limit clearable />
               </el-form-item>
             </el-form>
             <template #footer>
@@ -163,6 +175,14 @@
               <el-button @click="nodeDetailVisible = false">关 闭</el-button>
             </template>
           </el-dialog>
+
+          <el-dialog title="修改备注" v-model="remarkEditVisible" width="420px" append-to-body destroy-on-close @closed="remarkEditRow = null">
+            <el-input v-model="remarkEditValue" type="textarea" :rows="3" placeholder="选填" maxlength="500" show-word-limit />
+            <template #footer>
+              <el-button @click="remarkEditVisible = false">取消</el-button>
+              <el-button type="primary" :loading="remarkSaving" @click="submitRemarkEdit">确定</el-button>
+            </template>
+          </el-dialog>
         </el-tab-pane>
       </el-tabs>
     </el-card>
@@ -170,15 +190,18 @@
 </template>
 
 <script setup name="MemberCustomerDetail">
+import useUserStore from '@/store/modules/user'
 import { getCustomer, getCustomerBindings } from '@/api/member/customer'
 import { listInstance, addProxyNodeOnInstance, updateProxyNode, delProxyNode, getProxyNodeTraffic } from '@/api/resource/vps'
 import { parseTime } from '@/utils/skyway'
-import { DocumentCopy, Loading } from '@element-plus/icons-vue'
+import { DocumentCopy, Loading, Edit } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
 const { proxy } = getCurrentInstance()
 const { res_proxy_node_status } = proxy.useDict('res_proxy_node_status')
+const userStore = useUserStore()
+const hasEditPermi = computed(() => (userStore.permissions || []).some(p => p === '*:*:*' || p === 'resource:vps:edit'))
 
 const customerId = computed(() => Number(route.params.customerId))
 const customer = ref({})
@@ -191,7 +214,7 @@ const addNodeVisible = ref(false)
 const addNodeSubmitting = ref(false)
 const addNodePermanent = ref(true)
 const instanceOptions = ref([])
-const addNodeForm = reactive({ instanceId: undefined, port: undefined, expireTime: null })
+const addNodeForm = reactive({ instanceId: undefined, port: undefined, expireTime: null, remark: '' })
 const addNodeFormRef = ref(null)
 const addNodeFormRules = {
   instanceId: [{ required: true, message: '请选择服务器', trigger: 'change' }],
@@ -209,6 +232,11 @@ const nodeDetailConfig = computed(() => {
 const statusLoadingId = ref(null)
 const deleteLoadingId = ref(null)
 const trafficMap = ref({})
+
+const remarkEditVisible = ref(false)
+const remarkEditRow = ref(null)
+const remarkEditValue = ref('')
+const remarkSaving = ref(false)
 
 const listQuery = ref({})
 
@@ -241,6 +269,7 @@ function handleAddNode() {
   addNodeForm.instanceId = undefined
   addNodeForm.port = undefined
   addNodeForm.expireTime = null
+  addNodeForm.remark = ''
   addNodePermanent.value = true
   addNodeVisible.value = true
   listInstance({ pageNum: 1, pageSize: 500 }).then(res => {
@@ -256,7 +285,8 @@ function submitAddNode() {
     addProxyNodeOnInstance(addNodeForm.instanceId, {
       customerId: customerId.value,
       port: addNodeForm.port,
-      expireTime: addNodePermanent.value ? null : addNodeForm.expireTime
+      expireTime: addNodePermanent.value ? null : addNodeForm.expireTime,
+      remark: (addNodeForm.remark || '').trim() || undefined
     }).then(() => {
       proxy.$modal.msgSuccess('节点已添加')
       addNodeVisible.value = false
@@ -264,6 +294,27 @@ function submitAddNode() {
     }).catch(e => {
       proxy.$modal.msgError(e.msg || e.message || '添加失败')
     }).finally(() => { addNodeSubmitting.value = false })
+  })
+}
+
+function openRemarkEdit(row) {
+  remarkEditRow.value = row
+  remarkEditValue.value = row.remark || ''
+  remarkEditVisible.value = true
+}
+
+function submitRemarkEdit() {
+  if (remarkEditRow.value == null) return
+  const id = remarkEditRow.value.id
+  const remark = (remarkEditValue.value || '').trim()
+  remarkSaving.value = true
+  updateProxyNode({ id, remark }).then(() => {
+    remarkEditRow.value.remark = remark
+    if (currentNode.value?.id === id) currentNode.value.remark = remark
+    proxy.$modal.msgSuccess('备注已更新')
+    remarkEditVisible.value = false
+  }).catch(() => {}).finally(() => {
+    remarkSaving.value = false
   })
 }
 
@@ -378,4 +429,26 @@ onMounted(() => {
 .status-cell { display: inline-flex; align-items: center; gap: 6px; }
 .status-loading { font-size: 14px; margin-right: 2px; }
 .text-placeholder { color: var(--el-text-color-placeholder); }
+.remark-cell-editable {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.remark-cell-text {
+  color: var(--el-text-color-primary);
+}
+.remark-cell-icon {
+  font-size: 14px;
+  color: var(--el-text-color-placeholder);
+  opacity: 0;
+  flex-shrink: 0;
+}
+.remark-cell-editable:hover .remark-cell-text {
+  color: var(--el-color-primary);
+}
+.remark-cell-editable:hover .remark-cell-icon {
+  opacity: 1;
+  color: var(--el-color-primary);
+}
 </style>

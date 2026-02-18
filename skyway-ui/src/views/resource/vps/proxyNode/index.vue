@@ -89,6 +89,15 @@
           </span>
         </template>
       </el-table-column>
+      <el-table-column label="备注" min-width="100" show-overflow-tooltip>
+        <template #default="{ row }">
+          <span v-if="hasEditPermi" class="remark-cell-editable" @click.stop="openRemarkEdit(row)">
+            <span class="remark-cell-text">{{ row.remark || '点击添加备注' }}</span>
+            <el-icon class="remark-cell-icon"><Edit /></el-icon>
+          </span>
+          <span v-else>{{ row.remark || '-' }}</span>
+        </template>
+      </el-table-column>
       <el-table-column label="操作" width="220" align="center" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" size="small" @click="handleDetail(row)">详情</el-button>
@@ -145,18 +154,29 @@
         <el-button @click="detailVisible = false">关 闭</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog title="修改备注" v-model="remarkEditVisible" width="420px" append-to-body destroy-on-close @closed="remarkEditRow = null">
+      <el-input v-model="remarkEditValue" type="textarea" :rows="3" placeholder="选填" maxlength="500" show-word-limit />
+      <template #footer>
+        <el-button @click="remarkEditVisible = false">取消</el-button>
+        <el-button type="primary" :loading="remarkSaving" @click="submitRemarkEdit">确定</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup name="ProxyNodeList">
+import useUserStore from '@/store/modules/user'
 import { listProxyNode, updateProxyNode, delProxyNode, listInstance, getProxyNodeTraffic } from '@/api/resource/vps'
 import { listCustomer } from '@/api/member/customer'
 import { parseTime } from '@/utils/skyway'
-import { DocumentCopy, Loading } from '@element-plus/icons-vue'
+import { DocumentCopy, Loading, Edit } from '@element-plus/icons-vue'
 
 const { proxy } = getCurrentInstance()
 const { res_proxy_node_status } = proxy.useDict('res_proxy_node_status')
 const router = useRouter()
+const userStore = useUserStore()
+const hasEditPermi = computed(() => (userStore.permissions || []).some(p => p === '*:*:*' || p === 'resource:vps:edit'))
 
 const nodeTypeOptions = [{ value: 'VLESS-REALITY', label: 'VLESS-REALITY' }]
 
@@ -187,6 +207,10 @@ const detailConfig = computed(() => {
   try { return JSON.parse(detailData.value.configJson) } catch { return null }
 })
 
+const remarkEditVisible = ref(false)
+const remarkEditRow = ref(null)
+const remarkEditValue = ref('')
+const remarkSaving = ref(false)
 const queryRef = ref(null)
 
 function getList() {
@@ -286,6 +310,26 @@ function copyToClipboard(text) {
   })
 }
 
+function openRemarkEdit(row) {
+  remarkEditRow.value = row
+  remarkEditValue.value = row.remark || ''
+  remarkEditVisible.value = true
+}
+
+function submitRemarkEdit() {
+  if (remarkEditRow.value == null) return
+  const id = remarkEditRow.value.id
+  const remark = (remarkEditValue.value || '').trim()
+  remarkSaving.value = true
+  updateProxyNode({ id, remark }).then(() => {
+    remarkEditRow.value.remark = remark
+    proxy.$modal.msgSuccess('备注已更新')
+    remarkEditVisible.value = false
+  }).catch(() => {}).finally(() => {
+    remarkSaving.value = false
+  })
+}
+
 function handleStatusChange(row) {
   const text = row.status === '0' ? '启用' : '停用'
   proxy.$modal.confirm(`确认要${text}节点"${row.nodeName}"吗？`).then(() => {
@@ -342,4 +386,26 @@ onMounted(() => {
 .status-cell { display: inline-flex; align-items: center; gap: 6px; }
 .status-loading { font-size: 14px; margin-right: 2px; }
 .text-placeholder { color: var(--el-text-color-placeholder); }
+.remark-cell-editable {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.remark-cell-text {
+  color: var(--el-text-color-primary);
+}
+.remark-cell-icon {
+  font-size: 14px;
+  color: var(--el-text-color-placeholder);
+  opacity: 0;
+  flex-shrink: 0;
+}
+.remark-cell-editable:hover .remark-cell-text {
+  color: var(--el-color-primary);
+}
+.remark-cell-editable:hover .remark-cell-icon {
+  opacity: 1;
+  color: var(--el-color-primary);
+}
 </style>

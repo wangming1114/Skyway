@@ -49,6 +49,15 @@
           </span>
         </template>
       </el-table-column>
+      <el-table-column label="备注" min-width="100" show-overflow-tooltip>
+        <template #default="{ row }">
+          <span v-if="hasEditPermi" class="remark-cell-editable" @click.stop="openRemarkEdit(row)">
+            <span class="remark-cell-text">{{ row.remark || '点击添加备注' }}</span>
+            <el-icon class="remark-cell-icon"><Edit /></el-icon>
+          </span>
+          <span v-else>{{ row.remark || '-' }}</span>
+        </template>
+      </el-table-column>
       <el-table-column label="操作" width="200" align="center">
         <template #default="{ row }">
           <el-button link type="primary" size="small" @click="handleDetail(row)">详情</el-button>
@@ -96,6 +105,9 @@
             />
             <el-checkbox v-model="addFormPermanent" @change="v => v && (addForm.expireTime = null)">永久有效</el-checkbox>
           </div>
+        </el-form-item>
+        <el-form-item label="备注" prop="remark">
+          <el-input v-model="addForm.remark" type="textarea" :rows="2" placeholder="选填，便于区分节点" maxlength="200" show-word-limit clearable />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -170,17 +182,28 @@
         <el-button @click="detailVisible = false">关 闭</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog title="修改备注" v-model="remarkEditVisible" width="420px" append-to-body destroy-on-close @closed="remarkEditRow = null">
+      <el-input v-model="remarkEditValue" type="textarea" :rows="3" placeholder="选填" maxlength="500" show-word-limit />
+      <template #footer>
+        <el-button @click="remarkEditVisible = false">取消</el-button>
+        <el-button type="primary" :loading="remarkSaving" @click="submitRemarkEdit">确定</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import useUserStore from '@/store/modules/user'
 import { listProxyNode, updateProxyNode, getProxyNodeTraffic } from '@/api/resource/vps'
 import { listCustomer } from '@/api/member/customer'
-import { DocumentCopy, Loading } from '@element-plus/icons-vue'
+import { DocumentCopy, Loading, Edit } from '@element-plus/icons-vue'
 
 const { proxy } = getCurrentInstance()
 const { res_proxy_node_status } = proxy.useDict('res_proxy_node_status')
+const userStore = useUserStore()
+const hasEditPermi = computed(() => (userStore.permissions || []).some(p => p === '*:*:*' || p === 'resource:vps:edit'))
 
 const props = defineProps({
   instanceId: { type: Number, required: true },
@@ -256,13 +279,18 @@ const EXEC_TIMEOUT_MS = 90000
 const addDialogVisible = ref(false)
 const addFormRef = ref(null)
 const customerOptions = ref([])
-const addForm = reactive({ customerId: undefined, nodeType: 'VLESS-REALITY', port: undefined, expireTime: null })
+const addForm = reactive({ customerId: undefined, nodeType: 'VLESS-REALITY', port: undefined, expireTime: null, remark: '' })
 const addFormPermanent = ref(true)
 const addFormRules = {
   customerId: [{ required: true, message: '请选择归属客户', trigger: 'change' }],
   nodeType: [{ required: true, message: '请选择协议类型', trigger: 'change' }],
   port: [{ required: true, message: '请输入端口', trigger: 'blur' }]
 }
+
+const remarkEditVisible = ref(false)
+const remarkEditRow = ref(null)
+const remarkEditValue = ref('')
+const remarkSaving = ref(false)
 
 const addLogDrawerVisible = ref(false)
 const execLogTitle = ref('添加节点 - 执行日志')
@@ -292,6 +320,7 @@ function handleAdd() {
   addForm.nodeType = 'VLESS-REALITY'
   addForm.port = undefined
   addForm.expireTime = null
+  addForm.remark = ''
   addFormPermanent.value = true
   addDialogVisible.value = true
   listCustomer({ pageNum: 1, pageSize: 500 }).then(res => {
@@ -320,6 +349,7 @@ function submitAddForm() {
       customerId: addForm.customerId,
       port: addForm.port,
       expireTime: addFormPermanent.value ? null : addForm.expireTime,
+      remark: addForm.remark ? String(addForm.remark).trim() : undefined,
       reqId: addNodeReqId
     })
     if (sent === false) {
@@ -380,6 +410,26 @@ watch(() => props.wsConnected, (connected) => {
     proxy.$modal.msgWarning('连接已断开，请等待自动重连或刷新页面')
   }
 })
+
+function openRemarkEdit(row) {
+  remarkEditRow.value = row
+  remarkEditValue.value = row.remark || ''
+  remarkEditVisible.value = true
+}
+
+function submitRemarkEdit() {
+  if (remarkEditRow.value == null) return
+  const id = remarkEditRow.value.id
+  const remark = (remarkEditValue.value || '').trim()
+  remarkSaving.value = true
+  updateProxyNode({ id, remark }).then(() => {
+    remarkEditRow.value.remark = remark
+    proxy.$modal.msgSuccess('备注已更新')
+    remarkEditVisible.value = false
+  }).catch(() => {}).finally(() => {
+    remarkSaving.value = false
+  })
+}
 
 function handleStatusChange(row) {
   const text = row.status === '0' ? '启用' : '停用'
@@ -599,5 +649,27 @@ watch(() => props.instanceId, () => {
   float: right;
   color: var(--el-text-color-placeholder);
   font-size: 12px;
+}
+.remark-cell-editable {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.remark-cell-text {
+  color: var(--el-text-color-primary);
+}
+.remark-cell-icon {
+  font-size: 14px;
+  color: var(--el-text-color-placeholder);
+  opacity: 0;
+  flex-shrink: 0;
+}
+.remark-cell-editable:hover .remark-cell-text {
+  color: var(--el-color-primary);
+}
+.remark-cell-editable:hover .remark-cell-icon {
+  opacity: 1;
+  color: var(--el-color-primary);
 }
 </style>

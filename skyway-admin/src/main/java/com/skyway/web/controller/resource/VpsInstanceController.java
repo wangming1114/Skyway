@@ -146,6 +146,8 @@ public class VpsInstanceController extends BaseController {
         Object customerIdObj = body.get("customerId");
         Object portObj = body.get("port");
         String expireTimeStr = body != null && body.get("expireTime") != null ? body.get("expireTime").toString() : null;
+        String remark = body != null && body.get("remark") != null ? body.get("remark").toString().trim() : null;
+        if (remark != null && remark.isEmpty()) remark = null;
         if (customerIdObj == null) {
             return AjaxResult.error("请选择归属客户");
         }
@@ -169,6 +171,7 @@ public class VpsInstanceController extends BaseController {
         try {
             ProxyNode node = vpsSshCommandService.addProxyNodeOnInstance(instanceId, customerId, port, expireTimeStr);
             node.setCreateBy(getUsername());
+            if (remark != null) node.setRemark(remark);
             proxyNodeService.insert(node);
             try {
                 vpsSshCommandService.ensureTrafficRulesForPort(instanceId, node.getPort() != null ? node.getPort() : port);
