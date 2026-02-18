@@ -41,6 +41,17 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         order by create_time desc
     </select>
 
+    <select id="count" parameterType="com.skyway.resource.domain.ProxyNode" resultType="int">
+        select count(1) from res_proxy_node
+        <where>
+            <if test="instanceId != null"> and instance_id = #{instanceId} </if>
+            <if test="customerId != null"> and customer_id = #{customerId} </if>
+            <if test="nodeType != null and nodeType != ''"> and node_type = #{nodeType} </if>
+            <if test="status != null and status != ''"> and status = #{status} </if>
+            <if test="nodeName != null and nodeName != ''"> and node_name like concat('%', #{nodeName}, '%') </if>
+        </where>
+    </select>
+
     <select id="selectById" parameterType="Long" resultMap="ProxyNodeResult">
         <include refid="selectProxyNodeVo"/>
         where id = #{id}

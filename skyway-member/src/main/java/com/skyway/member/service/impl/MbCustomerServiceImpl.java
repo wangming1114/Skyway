@@ -30,6 +30,11 @@ public class MbCustomerServiceImpl implements IMbCustomerService {
     }
 
     @Override
+    public int count(MbCustomer query) {
+        return mbCustomerMapper.count(query);
+    }
+
+    @Override
     public MbCustomer getById(Long id) {
         return mbCustomerMapper.selectById(id);
     }

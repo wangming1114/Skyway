@@ -58,6 +58,16 @@ public class VpsInstanceServiceImpl implements IVpsInstanceService {
         return list;
     }
 
+    @Override
+    public int count(VpsInstance instance) {
+        if (instance.getCategoryId() != null) {
+            List<Long> categoryIds = collectDescendantIds(instance.getCategoryId());
+            instance.setCategoryIds(categoryIds);
+            instance.setCategoryId(null);
+        }
+        return vpsInstanceMapper.count(instance);
+    }
+
     private static long toLong(Object a, Object b) {
         if (a != null) {
             if (a instanceof Number) return ((Number) a).longValue();

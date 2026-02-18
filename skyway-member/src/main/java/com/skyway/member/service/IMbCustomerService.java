@@ -12,6 +12,9 @@ public interface IMbCustomerService {
 
     List<MbCustomer> selectList(MbCustomer query);
 
+    /** 统计条数（条件同 selectList） */
+    int count(MbCustomer query);
+
     MbCustomer getById(Long id);
 
     int insert(MbCustomer row);

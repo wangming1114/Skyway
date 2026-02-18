@@ -62,6 +62,24 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         order by i.create_time desc
     </select>
 
+    <select id="count" parameterType="com.skyway.resource.domain.VpsInstance" resultType="int">
+        select count(1) from res_instance i
+        <where>
+            <if test="keyword != null and keyword != ''">
+                and (i.name like concat('%', #{keyword}, '%') or cast(i.id as char) like concat('%', #{keyword}, '%') or (i.ip is not null and i.ip like concat('%', #{keyword}, '%')))
+            </if>
+            <if test="categoryIds != null and categoryIds.size() > 0">
+                and i.category_id in
+                <foreach collection="categoryIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+            </if>
+            <if test="categoryId != null and (categoryIds == null or categoryIds.size() == 0)"> and i.category_id = #{categoryId} </if>
+            <if test="nodeId != null"> and i.node_id = #{nodeId} </if>
+            <if test="status != null and status != ''"> and i.status = #{status} </if>
+            <if test="networkType != null and networkType != ''"> and i.network_type = #{networkType} </if>
+            <if test="osType != null and osType != ''"> and i.os_type = #{osType} </if>
+        </where>
+    </select>
+
     <select id="selectById" parameterType="Long" resultMap="VpsInstanceResult">
         <include refid="selectVpsInstanceVo"/>
         where i.id = #{id}

@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="UTF-8" ?>
+<?xml version="1.0" encoding="UTF-8" ?>
 <!DOCTYPE mapper
 PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
@@ -44,6 +44,18 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             <if test="status != null and status != ''"> and c.status = #{status} </if>
         </where>
         order by c.create_time desc
+    </select>
+
+    <select id="count" parameterType="com.skyway.member.domain.MbCustomer" resultType="int">
+        select count(1) from mb_customer c
+        <where>
+            <if test="keyword != null and keyword != ''">
+                and (c.username like concat('%', #{keyword}, '%') or c.phone like concat('%', #{keyword}, '%'))
+            </if>
+            <if test="username != null and username != ''"> and c.username like concat('%', #{username}, '%') </if>
+            <if test="phone != null and phone != ''"> and c.phone like concat('%', #{phone}, '%') </if>
+            <if test="status != null and status != ''"> and c.status = #{status} </if>
+        </where>
     </select>
 
     <select id="selectById" parameterType="Long" resultMap="MbCustomerResult">

@@ -28,6 +28,11 @@ public class ProxyNodeServiceImpl implements IProxyNodeService {
     }
 
     @Override
+    public int count(ProxyNode proxyNode) {
+        return proxyNodeMapper.count(proxyNode);
+    }
+
+    @Override
     public ProxyNode getById(Long id) {
         return proxyNodeMapper.selectById(id);
     }

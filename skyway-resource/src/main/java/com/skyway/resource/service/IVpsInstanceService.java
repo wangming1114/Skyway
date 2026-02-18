@@ -18,6 +18,9 @@ public interface IVpsInstanceService {
      */
     List<VpsInstance> selectList(VpsInstance instance);
 
+    /** 统计条数（条件同 selectList） */
+    int count(VpsInstance instance);
+
     /**
      * 根据ID查询（含 categoryName、nodeName）
      *

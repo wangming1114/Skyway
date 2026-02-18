@@ -19,6 +19,9 @@ public interface ProxyNodeMapper {
      */
     List<ProxyNode> selectList(ProxyNode proxyNode);
 
+    /** 统计条数（条件同 selectList） */
+    int count(ProxyNode proxyNode);
+
     /**
      * 根据ID查询
      *

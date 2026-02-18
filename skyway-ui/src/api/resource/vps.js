@@ -94,6 +94,14 @@ export function delInstance(id) {
   })
 }
 
+// ========== 仪表盘 ==========
+export function getDashboardSummary() {
+  return request({
+    url: '/resource/vps/dashboard/summary',
+    method: 'get'
+  })
+}
+
 // ========== 代理节点 ==========
 export function listProxyNode(query) {
   return request({
