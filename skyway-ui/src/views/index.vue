@@ -600,3 +600,38 @@ onUnmounted(() => {
 .text-muted { color: var(--el-text-color-placeholder); }
 .expire-expired { color: var(--el-color-danger); font-weight: 500; }
 </style>
+
+<style lang="scss">
+/* 首页黑夜主题：随 html.dark 切换 */
+html.dark .app-container.dashboard {
+  background: var(--el-bg-color);
+}
+html.dark .app-container.dashboard .el-card {
+  background: var(--el-bg-color-overlay);
+  border-color: var(--el-border-color);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2), 0 4px 8px rgba(0, 0, 0, 0.15);
+  &:hover {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25), 0 8px 16px rgba(0, 0, 0, 0.2);
+  }
+}
+html.dark .app-container.dashboard .el-card__header {
+  border-bottom-color: var(--el-border-color);
+}
+html.dark .app-container.dashboard .chart-placeholder,
+html.dark .app-container.dashboard .chart-half-wrap {
+  background: var(--el-bg-color);
+  border-color: var(--el-border-color);
+}
+html.dark .app-container.dashboard .el-table {
+  --el-table-header-bg-color: var(--el-bg-color);
+  --el-table-border-color: var(--el-border-color);
+}
+html.dark .app-container.dashboard .el-table--striped .el-table__body tr.el-table__row--striped td {
+  background: var(--el-bg-color-overlay);
+}
+html.dark .app-container.dashboard .table-empty,
+html.dark .app-container.dashboard .table-footer {
+  background: var(--el-bg-color-overlay);
+  color: var(--el-text-color-secondary);
+}
+</style>
