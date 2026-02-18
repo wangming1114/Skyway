@@ -6,6 +6,7 @@ NGINX_ADMIN="$ROOT/docker/volumes/nginx/admin"
 
 echo "[管理端] 正在打包 skyway-ui ..."
 cd "$ROOT/skyway-ui"
+npm install
 npm run build:prod
 
 echo "[管理端] 复制到 docker/volumes/nginx/admin ..."

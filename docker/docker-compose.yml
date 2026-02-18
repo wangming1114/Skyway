@@ -45,6 +45,7 @@ services:
       - skyway_net
 
   skyway-admin:
+    container_name: skyway-admin
     image: crpi-kf13onfj0v8f6jax.cn-shanghai.personal.cr.aliyuncs.com/ming121/skyway-admin:latest
     restart: always
     env_file: .env

@@ -6,6 +6,7 @@ NGINX_C="$ROOT/docker/volumes/nginx/c"
 
 echo "[C端] 正在打包 skyway-c-ui ..."
 cd "$ROOT/skyway-c-ui"
+npm install
 npm run build
 
 echo "[C端] 复制到 docker/volumes/nginx/c ..."

@@ -1,7 +1,7 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # skyway-admin 使用 buildx 构建并推送到阿里云
-# 在项目根目录执行：./bin/buildx-build.sh
-# 首次：复制 docker/.example 为 docker/.registry.env 并填入密码
+# 在项目根目录执行：bash bin/buildx-build.sh
+# 首次：复制 docker/.registry.env.example 为 docker/.registry.env 并填入密码
 
 set -e
 SCRIPT_DIR="$(dirname "$0")"
