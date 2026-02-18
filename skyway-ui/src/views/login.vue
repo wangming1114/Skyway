@@ -3,12 +3,10 @@
     <!-- 左侧视觉区 -->
     <div class="login-visual">
       <img
-        src="https://images.unsplash.com/photo-1497366216548-37526070297c?auto=format&fit=crop&q=80&w=1600"
+        src="/login-bg-tech3.png"
         alt=""
         class="login-visual__img"
       />
-      <div class="login-visual__overlay login-visual__overlay--multiply"></div>
-      <div class="login-visual__overlay login-visual__overlay--gradient"></div>
 
       <div class="login-visual__content">
         <div class="login-visual__logo">
@@ -28,28 +26,10 @@
           <h1 class="login-visual__title">全球网络运营中心</h1>
           <p class="login-visual__subtitle">Global Network Operation Center</p>
 
-          <div class="login-visual__features">
-            <div class="feature">
-              <div class="feature__icon feature__icon--blue"><Connection class="icon" /></div>
-              <div>
-                <h3 class="feature__title">全网节点集中管控</h3>
-                <p class="feature__desc">实时监控全球 124+ 边缘节点状态</p>
-              </div>
-            </div>
-            <div class="feature">
-              <div class="feature__icon feature__icon--purple"><Monitor class="icon" /></div>
-              <div>
-                <h3 class="feature__title">智能路由策略配置</h3>
-                <p class="feature__desc">毫秒级自动切换最优传输链路</p>
-              </div>
-            </div>
-            <div class="feature">
-              <div class="feature__icon feature__icon--green"><Document class="icon" /></div>
-              <div>
-                <h3 class="feature__title">企业级安全审计</h3>
-                <p class="feature__desc">全链路加密日志与访问控制溯源</p>
-              </div>
-            </div>
+          <div class="monitor-badges">
+            <span class="monitor-badge"><span class="monitor-dot monitor-dot--green"></span> 全网节点 124+ 在线</span>
+            <span class="monitor-badge"><span class="monitor-dot monitor-dot--yellow"></span> 智能路由 毫秒级切换</span>
+            <span class="monitor-badge"><span class="monitor-dot monitor-dot--blue"></span> 全链路加密与审计</span>
           </div>
         </div>
 
@@ -159,7 +139,7 @@
 </template>
 
 <script setup>
-import { User, Lock, CircleCheck, Connection, Monitor, Document, RefreshRight } from '@element-plus/icons-vue'
+import { User, Lock, CircleCheck, RefreshRight } from '@element-plus/icons-vue'
 import { getCodeImg } from '@/api/login'
 import Cookies from 'js-cookie'
 import { encrypt, decrypt } from '@/utils/jsencrypt'
@@ -271,7 +251,7 @@ onMounted(() => {
   width: 50%;
   position: relative;
   overflow: hidden;
-  background: #0f172a;
+  background: #e2e8f0;
 
   @media (min-width: 1024px) {
     display: block;
@@ -284,23 +264,8 @@ onMounted(() => {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  opacity: 0.9;
-}
-
-.login-visual__overlay {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-
-  /* 深蓝遮罩，平滑过渡，保证文字可读 */
-  &--multiply {
-    background: rgba(30, 58, 138, 0.28);
-    mix-blend-mode: multiply;
-  }
-
-  &--gradient {
-    background: linear-gradient(to top, rgba(15, 23, 42, 0.82) 0%, rgba(15, 23, 42, 0.2) 45%, transparent 100%);
-  }
+  object-position: 5% center; /* 与 C 端 auth-visual 背景偏移一致 */
+  opacity: 1;
 }
 
 .login-visual__content {
@@ -326,11 +291,11 @@ onMounted(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.2);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(15, 23, 42, 0.08);
   border-radius: 6px;
   backdrop-filter: blur(8px);
-  color: #fff;
+  color: #2563eb;
 
   svg {
     width: 1.25rem;
@@ -342,12 +307,12 @@ onMounted(() => {
   font-weight: 700;
   font-size: 1.25rem;
   letter-spacing: 0.02em;
-  color: #fff;
+  color: #0f172a;
 }
 
 .login-visual__logo-sub {
   font-weight: 400;
-  opacity: 0.85;
+  opacity: 0.7;
 }
 
 .login-visual__main {
@@ -358,7 +323,7 @@ onMounted(() => {
 .login-visual__title {
   font-size: 1.875rem;
   font-weight: 700;
-  color: #fff;
+  color: #0f172a;
   letter-spacing: -0.025em;
   line-height: 1.2;
   margin: 0 0 0.5rem 0;
@@ -366,76 +331,55 @@ onMounted(() => {
 
 .login-visual__subtitle {
   font-size: 1rem;
-  font-weight: 300;
-  letter-spacing: 0.2em;
-  color: rgba(191, 219, 254, 0.92);
-  margin: 0 0 1.5rem 0;
-}
-
-.login-visual__features {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.feature {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  padding: 0.75rem;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  transition: background 0.25s ease, border-color 0.25s ease;
-
-  &:hover {
-    background: rgba(255, 255, 255, 0.08);
-    border-color: rgba(255, 255, 255, 0.12);
-  }
-}
-
-.feature__icon {
-  width: 2.5rem;
-  height: 2.5rem;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 6px;
-
-  .icon {
-    width: 1.25rem;
-    height: 1.25rem;
-  }
-
-  &--blue .icon { color: #93c5fd; }
-  &--purple .icon { color: #c4b5fd; }
-  &--green .icon { color: #86efac; }
-}
-
-.feature__title {
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: #fff;
-  margin: 0 0 0.125rem 0;
-}
-
-.feature__desc {
-  font-size: 0.75rem;
-  color: rgba(191, 219, 254, 0.6);
+  color: #475569;
+  line-height: 1.6;
   margin: 0;
 }
 
+/* 左侧标签：与 C 端形式一致（圆点 + 一行文案），内容偏管理端 */
+.monitor-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  margin-top: 24px;
+}
+
+.monitor-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-family: ui-monospace, 'SF Mono', monospace;
+  font-size: 11px;
+  font-weight: 500;
+  color: #15803d;
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  border-radius: 6px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.monitor-badge:nth-child(2) { color: #0369a1; border-color: rgba(3, 105, 161, 0.2); }
+.monitor-badge:nth-child(3) { color: #6d28d9; border-color: rgba(109, 40, 217, 0.2); }
+
+.monitor-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.monitor-dot--green { background: #22c55e; }
+.monitor-dot--yellow { background: #eab308; }
+.monitor-dot--blue { background: #0ea5e9; }
+
 .login-visual__footer {
   padding-top: 2rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: 1px solid rgba(15, 23, 42, 0.12);
   display: flex;
   align-items: center;
   font-size: 0.75rem;
-  color: rgba(255, 255, 255, 0.6);
+  color: #475569;
   font-family: ui-monospace, monospace;
 }
 
