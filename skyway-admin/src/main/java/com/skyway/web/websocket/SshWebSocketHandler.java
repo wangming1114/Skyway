@@ -43,6 +43,8 @@ import java.util.Base64;
 import java.util.Date;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.text.SimpleDateFormat;
@@ -194,6 +196,15 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                 return;
             }
             if (type != null && type.startsWith("sftp_")) {
+                if ("sftp_download_cancel".equals(type)) {
+                    Object reqId = obj.get("_id");
+                    if (reqId != null) {
+                        @SuppressWarnings("unchecked")
+                        Set<Object> set = (Set<Object>) wsSession.getAttributes().computeIfAbsent("downloadCancelledReqIds", k -> ConcurrentHashMap.newKeySet());
+                        set.add(reqId);
+                    }
+                    return;
+                }
                 if ("sftp_upload_chunk_bin".equals(type)) {
                     String pathVal = obj.getString("path");
                     String path = pathVal != null ? pathVal.trim() : "/";
@@ -1419,24 +1430,64 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                     if (reqId != null) resp.put("reqId", reqId);
                     if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(resp.toJSONString()));
                 } else if ("sftp_download".equals(type)) {
-                    // 通过 RemoteFile 直接读取文件字节
-                    ByteArrayOutputStream bout = new ByteArrayOutputStream();
-                    try (RemoteFile rf = sftp.open(path)) {
-                        InputStream rfis = rf.new ReadAheadRemoteFileInputStream(16);
-                        byte[] buf = new byte[8192];
-                        int n;
-                        while ((n = rfis.read(buf)) != -1) {
-                            bout.write(buf, 0, n);
+                    // 流式下载：按块从 SFTP 读取并推给前端，不在 Skyway 内存中保留完整文件
+                    long size;
+                    try {
+                        FileAttributes attrs = sftp.stat(path);
+                        if (attrs.getMode().getType() == FileMode.Type.DIRECTORY) {
+                            sendSftpError(wsSession, type, "不能下载目录", reqId);
+                            return;
                         }
-                        rfis.close();
+                        size = attrs.getSize();
+                    } catch (IOException e) {
+                        sendSftpError(wsSession, type, e.getMessage() != null ? e.getMessage() : "文件不存在或无法读取", reqId);
+                        return;
                     }
-                    String base64 = Base64.getEncoder().encodeToString(bout.toByteArray());
-                    JSONObject resp = new JSONObject();
-                    resp.put("type", "sftp_download");
-                    resp.put("path", path);
-                    resp.put("base64", base64);
-                    if (reqId != null) resp.put("reqId", reqId);
-                    if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(resp.toJSONString()));
+                    String name = path.substring(path.lastIndexOf('/') + 1);
+                    JSONObject startResp = new JSONObject();
+                    startResp.put("type", "sftp_download_start");
+                    startResp.put("path", path);
+                    startResp.put("name", name);
+                    startResp.put("size", size);
+                    if (reqId != null) startResp.put("reqId", reqId);
+                    synchronized (wsSession) {
+                        if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(startResp.toJSONString()));
+                    }
+                    final int chunkSize = 256 * 1024;
+                    byte[] buf = new byte[chunkSize];
+                    long offset = 0;
+                    boolean cancelled = false;
+                    @SuppressWarnings("unchecked")
+                    Set<Object> cancelledSet = (Set<Object>) wsSession.getAttributes().get("downloadCancelledReqIds");
+                    try (RemoteFile rf = sftp.open(path);
+                         InputStream rfis = rf.new ReadAheadRemoteFileInputStream(8)) {
+                        int n;
+                        while ((n = rfis.read(buf)) != -1 && wsSession.isOpen()) {
+                            if (cancelledSet != null && reqId != null && cancelledSet.contains(reqId)) {
+                                cancelled = true;
+                                break;
+                            }
+                            byte[] chunk = n == buf.length ? buf : java.util.Arrays.copyOf(buf, n);
+                            String base64 = Base64.getEncoder().encodeToString(chunk);
+                            JSONObject chunkResp = new JSONObject();
+                            chunkResp.put("type", "sftp_download_chunk");
+                            chunkResp.put("offset", offset);
+                            chunkResp.put("base64", base64);
+                            if (reqId != null) chunkResp.put("reqId", reqId);
+                            synchronized (wsSession) {
+                                if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(chunkResp.toJSONString()));
+                            }
+                            offset += n;
+                        }
+                    }
+                    if (cancelledSet != null && reqId != null) cancelledSet.remove(reqId);
+                    JSONObject endResp = new JSONObject();
+                    endResp.put("type", "sftp_download_end");
+                    endResp.put("cancelled", cancelled);
+                    if (reqId != null) endResp.put("reqId", reqId);
+                    synchronized (wsSession) {
+                        if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(endResp.toJSONString()));
+                    }
                 } else if ("sftp_upload".equals(type)) {
                     String base64 = objFinal.getString("base64");
                     if (base64 == null || base64.isEmpty()) {

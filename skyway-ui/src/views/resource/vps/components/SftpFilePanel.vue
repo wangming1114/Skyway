@@ -53,6 +53,11 @@
             <el-progress :percentage="uploadProgress" :stroke-width="6" style="flex:1" />
             <el-button size="small" type="danger" plain style="margin-left:8px" @click="cancelUpload">取消</el-button>
           </div>
+          <div v-if="downloadProgress != null" class="upload-progress-bar download-progress-bar">
+            <span class="upload-progress-label">📥 {{ downloadFileName }} {{ downloadProgress }}%</span>
+            <el-progress :percentage="downloadProgress" :stroke-width="6" style="flex:1" />
+            <el-button size="small" type="danger" plain style="margin-left:8px" @click="cancelDownload">取消</el-button>
+          </div>
           <div class="file-list scroll-thin" @contextmenu="onBlankContextMenu">
             <el-table
               ref="tableRef"
@@ -306,6 +311,10 @@ const pathInputValue = ref('')
 const pathInputRef = ref(null)
 const uploadProgress = ref(null)
 const uploadFileName = ref('')
+const downloadProgress = ref(null)
+const downloadFileName = ref('')
+/** 当前进行中的下载 reqId，用于取消 */
+const currentDownloadReqId = ref(null)
 const uploadRef = ref(null)
 /** 右击「上传到此处」时设为目标目录，beforeUpload 使用后清空 */
 const uploadTargetPath = ref(null)
@@ -316,6 +325,8 @@ const UPLOAD_CHUNK_THRESHOLD = 1024 * 1024
 /** 与后端 SFT0CHNK 一致，用于区分终端按键与上传分片 */
 const SFTP_CHUNK_MAGIC = new TextEncoder().encode('SFT0CHNK')
 const pendingWaits = {}
+/** 流式下载：reqId -> { name, path, size, chunks: Uint8Array[] } */
+const downloadPending = {}
 
 function clearLoadingTimeout() {
   if (loadingTimeoutId != null) {
@@ -530,23 +541,62 @@ function onSftpMessage(msg) {
       }))
       currentPath.value = msg.path || currentPath.value
     }
-  } else if (msg.type === 'sftp_download') {
-    if (msg.error) ElMessage.error(msg.error)
-    else {
+  } else if (msg.type === 'sftp_download_start') {
+    const reqId = msg.reqId
+    if (reqId != null) {
+      downloadPending[reqId] = { name: msg.name || 'download', path: msg.path, size: msg.size || 0, chunks: [] }
+      downloadProgress.value = 0
+      downloadFileName.value = msg.name || 'download'
+      currentDownloadReqId.value = reqId
+    }
+  } else if (msg.type === 'sftp_download_chunk') {
+    const reqId = msg.reqId
+    const state = reqId != null ? downloadPending[reqId] : null
+    if (state) {
       try {
         const bin = atob(msg.base64 || '')
         const arr = new Uint8Array(bin.length)
         for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i)
-        const blob = new Blob([arr])
+        state.chunks.push(arr)
+        if (state.size > 0) {
+          const received = state.chunks.reduce((s, c) => s + c.length, 0)
+          downloadProgress.value = Math.min(100, Math.round(100 * received / state.size))
+        }
+      } catch (e) {
+        delete downloadPending[reqId]
+        downloadProgress.value = null
+        ElMessage.error('下载解码失败')
+      }
+    }
+  } else if (msg.type === 'sftp_download_end') {
+    const reqId = msg.reqId
+    const state = reqId != null ? downloadPending[reqId] : null
+    if (reqId != null) delete downloadPending[reqId]
+    currentDownloadReqId.value = null
+    if (msg.cancelled) {
+      downloadProgress.value = null
+      return
+    }
+    downloadProgress.value = 100
+    setTimeout(() => { downloadProgress.value = null }, 500)
+    if (state && state.chunks.length) {
+      try {
+        const blob = new Blob(state.chunks)
         const a = document.createElement('a')
         a.href = URL.createObjectURL(blob)
-        a.download = (msg.path || 'download').split('/').pop()
+        a.download = state.name
         a.click()
         URL.revokeObjectURL(a.href)
+        ElMessage.success('下载完成')
       } catch (e) {
         ElMessage.error('下载失败')
       }
     }
+  } else if (msg.type === 'sftp_download') {
+    if (msg.reqId != null) delete downloadPending[msg.reqId]
+    currentDownloadReqId.value = null
+    downloadProgress.value = null
+    if (msg.error) ElMessage.error(msg.error)
   } else if (msg.type === 'sftp_upload') {
     if (msg.error) ElMessage.error(msg.error)
     else {
@@ -916,6 +966,16 @@ function cancelUpload() {
   send('sftp_upload_cancel', { path: '' })
   ElMessage.warning('上传已取消')
   uploadProgress.value = null
+}
+
+function cancelDownload() {
+  const reqId = currentDownloadReqId.value
+  if (reqId == null || !props.sendJson) return
+  props.sendJson({ type: 'sftp_download_cancel', _id: reqId })
+  delete downloadPending[reqId]
+  currentDownloadReqId.value = null
+  downloadProgress.value = null
+  ElMessage.warning('下载已取消')
 }
 
 /** 右击菜单触发的上传：打开文件选择器 */
