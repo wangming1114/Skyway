@@ -42,7 +42,7 @@
             <span class="toolbar-spacer" />
             <el-tooltip content="新建文件夹" placement="top"><el-button size="small" :icon="FolderAdd" :disabled="!connected" @click="openNewFolder" /></el-tooltip>
             <el-tooltip content="新建文件" placement="top"><el-button size="small" :icon="DocumentAdd" :disabled="!connected" @click="openNewFile" /></el-tooltip>
-            <el-upload :show-file-list="false" :before-upload="beforeUpload" :http-request="() => {}">
+            <el-upload ref="uploadRef" :show-file-list="false" :before-upload="beforeUpload" :http-request="() => {}">
               <el-tooltip content="上传" placement="top"><el-button size="small" :icon="Upload" :disabled="!connected" /></el-tooltip>
             </el-upload>
             <el-tooltip v-if="copiedPath" content="粘贴" placement="top"><el-button size="small" :icon="DocumentCopy" @click="openPaste" /></el-tooltip>
@@ -124,6 +124,7 @@
             {{ ctxMenuRow.directory ? '📂 打开' : '📝 编辑' }}
           </div>
           <div v-if="!ctxMenuRow.directory" class="ctx-item" @click="ctxAction(() => downloadFile(ctxMenuRow))">📥 下载</div>
+          <div v-if="ctxMenuRow.directory" class="ctx-item" @click="ctxAction(() => triggerUploadToFolder(ctxMenuRow))">📤 上传到此处</div>
           <div class="ctx-divider"></div>
           <div class="ctx-item" @click="ctxAction(() => openRenameFor(ctxMenuRow))">✏️ 重命名</div>
           <div class="ctx-item" @click="ctxAction(() => copyPathFor(ctxMenuRow))">📋 复制</div>
@@ -139,6 +140,7 @@
         <template v-else>
           <div class="ctx-item" @click="ctxAction(() => openNewFolder())">📁 新建文件夹</div>
           <div class="ctx-item" @click="ctxAction(() => openNewFile())">📄 新建文件</div>
+          <div class="ctx-item" @click="ctxAction(() => triggerUpload())">📤 上传</div>
           <div v-if="copiedPath" class="ctx-item" @click="ctxAction(() => openPaste())">📌 粘贴到此处</div>
           <div class="ctx-item" @click="ctxAction(() => loadList(currentPath))">🔄 刷新</div>
         </template>
@@ -303,8 +305,12 @@ const pathInputValue = ref('')
 const pathInputRef = ref(null)
 const uploadProgress = ref(null)
 const uploadFileName = ref('')
+const uploadRef = ref(null)
+/** 右击「上传到此处」时设为目标目录，beforeUpload 使用后清空 */
+const uploadTargetPath = ref(null)
 let uploadCancelled = false
-const CHUNK_SIZE = 256 * 1024
+/** SSHJ SFTP 单次写入约 32KB 限制，过大会导致 EOF while reading packet，故分片不超过 32KB */
+const CHUNK_SIZE = 32 * 1024
 const UPLOAD_CHUNK_THRESHOLD = 1024 * 1024
 const pendingWaits = {}
 
@@ -899,8 +905,27 @@ function cancelUpload() {
   uploadProgress.value = null
 }
 
-async function doChunkedUpload(file) {
-  const basePath = currentPath.value.endsWith('/') ? currentPath.value : currentPath.value + '/'
+/** 右击菜单触发的上传：打开文件选择器 */
+function triggerUpload() {
+  if (!props.connected) return
+  nextTick(() => {
+    const el = uploadRef.value?.$el
+    const input = el?.querySelector?.('input[type=file]')
+    if (input) input.click()
+  })
+}
+
+/** 右击文件夹「上传到此处」：设为目标目录后打开文件选择器 */
+function triggerUploadToFolder(row) {
+  if (!row?.directory || !props.connected) return
+  uploadTargetPath.value = row.path
+  triggerUpload()
+}
+
+async function doChunkedUpload(file, basePathOverride) {
+  const basePath = (basePathOverride || currentPath.value).endsWith('/')
+    ? (basePathOverride || currentPath.value)
+    : (basePathOverride || currentPath.value) + '/'
   uploadProgress.value = 0
   uploadFileName.value = file.name
   uploadCancelled = false
@@ -945,9 +970,11 @@ async function doChunkedUpload(file) {
 
 function beforeUpload(file) {
   if (!props.sendJson || !props.connected) return false
-  const basePath = currentPath.value.endsWith('/') ? currentPath.value : currentPath.value + '/'
+  const rawPath = uploadTargetPath.value || currentPath.value
+  const basePath = rawPath.endsWith('/') ? rawPath : rawPath + '/'
+  uploadTargetPath.value = null
   if (file.size > UPLOAD_CHUNK_THRESHOLD) {
-    doChunkedUpload(file)
+    doChunkedUpload(file, basePath)
     return false
   }
   const reader = new FileReader()
