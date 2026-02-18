@@ -2,8 +2,11 @@ package com.skyway.resource.service.impl;
 
 import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
+import java.util.Collections;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import com.alibaba.fastjson2.JSON;
@@ -51,6 +54,21 @@ public class ProxyNodeServiceImpl implements IProxyNodeService {
     @Override
     public ProxyNode getByInstanceIdAndPort(Long instanceId, Integer port) {
         return proxyNodeMapper.selectByInstanceIdAndPort(instanceId, port);
+    }
+
+    @Override
+    public Integer recommendPort(Long instanceId) {
+        if (instanceId == null) {
+            return 10000;
+        }
+        List<Integer> used = proxyNodeMapper.selectPortsByInstanceId(instanceId);
+        Set<Integer> usedSet = new HashSet<>(used != null ? used : Collections.emptyList());
+        for (int p = 10000; p <= 65535; p++) {
+            if (!usedSet.contains(p)) {
+                return p;
+            }
+        }
+        return 10000;
     }
 
     @Override

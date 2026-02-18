@@ -53,6 +53,14 @@ public interface IProxyNodeService {
     ProxyNode getByInstanceIdAndPort(Long instanceId, Integer port);
 
     /**
+     * 推荐可用端口：从 10000 起连续查找第一个未被该实例占用的端口
+     *
+     * @param instanceId 实例ID
+     * @return 推荐端口（10000~65535），若无可用则返回 10000
+     */
+    Integer recommendPort(Long instanceId);
+
+    /**
      * 新增（自动生成分享链接）
      *
      * @param row 实体

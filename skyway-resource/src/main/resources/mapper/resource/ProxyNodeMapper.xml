@@ -75,6 +75,10 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         limit 1
     </select>
 
+    <select id="selectPortsByInstanceId" resultType="int">
+        select port from res_proxy_node where instance_id = #{instanceId} and port is not null order by port
+    </select>
+
     <select id="countByInstanceId" resultType="int">
         select count(1) from res_proxy_node where instance_id = #{instanceId}
     </select>

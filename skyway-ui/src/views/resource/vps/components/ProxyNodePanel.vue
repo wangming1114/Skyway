@@ -198,7 +198,7 @@
 <script setup>
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import useUserStore from '@/store/modules/user'
-import { listProxyNode, updateProxyNode, delProxyNode, getProxyNodeTraffic } from '@/api/resource/vps'
+import { listProxyNode, updateProxyNode, delProxyNode, getProxyNodeTraffic, getRecommendPort } from '@/api/resource/vps'
 import { listCustomer } from '@/api/member/customer'
 import { DocumentCopy, Loading, Edit, Delete } from '@element-plus/icons-vue'
 
@@ -325,6 +325,9 @@ function handleAdd() {
   addForm.remark = ''
   addFormPermanent.value = true
   addDialogVisible.value = true
+  getRecommendPort(props.instanceId).then(res => {
+    if (res.data != null) addForm.port = res.data
+  }).catch(() => {})
   listCustomer({ pageNum: 1, pageSize: 500 }).then(res => {
     customerOptions.value = res.rows || []
   }).catch(() => { customerOptions.value = [] })

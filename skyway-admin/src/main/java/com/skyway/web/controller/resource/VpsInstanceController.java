@@ -80,6 +80,16 @@ public class VpsInstanceController extends BaseController {
     }
 
     /**
+     * 推荐可用端口：从 10000 起连续查找第一个未被该实例占用的端口（用于客户/VPS 详情中添加节点时预填）
+     */
+    @PreAuthorize("@ss.hasPermi('resource:vps:add')")
+    @GetMapping("/{instanceId}/recommendPort")
+    public AjaxResult recommendPort(@PathVariable Long instanceId) {
+        Integer port = proxyNodeService.recommendPort(instanceId);
+        return success(port);
+    }
+
+    /**
      * 连接测试并拉取 CPU/内存/磁盘规格（不写库，用于新增/编辑时的「连接测试」按钮）
      */
     @PreAuthorize("@ss.hasPermi('resource:vps:add')")

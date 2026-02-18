@@ -149,6 +149,14 @@ export function delProxyNode(ids) {
   })
 }
 
+/** 推荐可用端口（从 10000 起连续、未占用的端口，用于添加节点时预填） */
+export function getRecommendPort(instanceId) {
+  return request({
+    url: '/resource/vps/instance/' + instanceId + '/recommendPort',
+    method: 'get'
+  })
+}
+
 /** 在指定实例上添加代理节点（HTTP 同步，用于客户详情等无 WebSocket 场景） */
 export function addProxyNodeOnInstance(instanceId, data) {
   return request({

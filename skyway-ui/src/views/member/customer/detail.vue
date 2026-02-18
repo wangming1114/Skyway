@@ -98,7 +98,7 @@
           <el-dialog title="新增节点" v-model="addNodeVisible" width="460px" append-to-body>
             <el-form ref="addNodeFormRef" :model="addNodeForm" :rules="addNodeFormRules" label-width="90px">
               <el-form-item label="服务器" prop="instanceId">
-                <el-select v-model="addNodeForm.instanceId" placeholder="请选择服务器" style="width: 100%" filterable>
+                <el-select v-model="addNodeForm.instanceId" placeholder="请选择服务器" style="width: 100%" filterable @change="onAddNodeInstanceChange">
                   <el-option v-for="i in instanceOptions" :key="i.id" :label="i.name + ' (' + (i.ip || '') + ')'" :value="i.id" />
                 </el-select>
               </el-form-item>
@@ -194,7 +194,7 @@
 <script setup name="MemberCustomerDetail">
 import useUserStore from '@/store/modules/user'
 import { getCustomer, getCustomerBindings } from '@/api/member/customer'
-import { listInstance, addProxyNodeOnInstance, updateProxyNode, delProxyNode, getProxyNodeTraffic } from '@/api/resource/vps'
+import { listInstance, addProxyNodeOnInstance, updateProxyNode, delProxyNode, getProxyNodeTraffic, getRecommendPort } from '@/api/resource/vps'
 import { parseTime } from '@/utils/skyway'
 import { DocumentCopy, Loading, Edit, Delete } from '@element-plus/icons-vue'
 
@@ -280,6 +280,16 @@ function handleAddNode() {
     instanceOptions.value = res.rows || []
   }).catch(() => { instanceOptions.value = [] })
   nextTick(() => addNodeFormRef.value?.clearValidate())
+}
+
+function onAddNodeInstanceChange(instanceId) {
+  if (instanceId != null) {
+    getRecommendPort(instanceId).then(res => {
+      if (res.data != null) addNodeForm.port = res.data
+    }).catch(() => {})
+  } else {
+    addNodeForm.port = undefined
+  }
 }
 
 function submitAddNode() {
