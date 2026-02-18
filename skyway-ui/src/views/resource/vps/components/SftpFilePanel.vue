@@ -310,8 +310,8 @@ const uploadRef = ref(null)
 /** 右击「上传到此处」时设为目标目录，beforeUpload 使用后清空 */
 const uploadTargetPath = ref(null)
 let uploadCancelled = false
-/** 二进制上传时分片 512KB，无 base64 膨胀；后端按 32KB 分段写 SFTP */
-const CHUNK_SIZE = 512 * 1024
+/** 二进制上传时分片 1MB（含 8 字节 magic 须小于后端 MaxBinaryMessageBufferSize），无 base64 膨胀；后端按 32KB 分段写 SFTP */
+const CHUNK_SIZE = 1024 * 1024
 const UPLOAD_CHUNK_THRESHOLD = 1024 * 1024
 /** 与后端 SFT0CHNK 一致，用于区分终端按键与上传分片 */
 const SFTP_CHUNK_MAGIC = new TextEncoder().encode('SFT0CHNK')
@@ -936,7 +936,7 @@ function triggerUploadToFolder(row) {
 }
 
 /** 分片上传时允许 N 个块同时 in-flight，减少 RTT 等待 */
-const UPLOAD_PIPELINE = 4
+const UPLOAD_PIPELINE = 8
 
 async function doChunkedUpload(file, basePathOverride) {
   const basePath = (basePathOverride || currentPath.value).endsWith('/')
