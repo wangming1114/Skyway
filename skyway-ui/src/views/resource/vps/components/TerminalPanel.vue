@@ -41,7 +41,7 @@ const props = defineProps({
   instanceId: { type: Number, required: true },
   visible: { type: Boolean, default: false }
 })
-const emit = defineEmits(['sysinfo', 'sftp', 'connected-change', 'exec-output', 'exec-end'])
+const emit = defineEmits(['sysinfo', 'sftp', 'connected-change', 'exec-output', 'exec-end', 'goecs-menu'])
 
 const terminalRef = ref(null)
 const status = ref('idle') // idle | connecting | connected | error
@@ -109,6 +109,9 @@ function connect() {
           return
         } else if (obj.type === 'exec_end' || obj.type === 'exec_error') {
           emit('exec-end', obj)
+          return
+        } else if (obj.type === 'goecs_menu' && Array.isArray(obj.options)) {
+          emit('goecs-menu', obj.options)
           return
         }
       } catch (_) {}

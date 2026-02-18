@@ -64,6 +64,14 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
     private static final String ALLOWED_EXEC_INSTALL_SINGBOX =
             "bash <(wget -qO- -o- https://github.com/233boy/sing-box/raw/main/install.sh)";
 
+    /** 一键三网回程检查：兼容无 curl 时用 wget（Alpine 等） */
+    private static final String PREDEFINED_EXEC_BACKTRACE =
+            "(curl -sSf https://raw.githubusercontent.com/zhanghanyun/backtrace/main/install.sh 2>/dev/null || wget -qO- https://raw.githubusercontent.com/zhanghanyun/backtrace/main/install.sh 2>/dev/null) | sh";
+
+    /** 一键融合怪脚本：安装后通过 echo option | goecs 传入选项（0-10） */
+    private static final String PREDEFINED_EXEC_GOECS_BASE =
+            "export noninteractive=true && curl -LsSf https://raw.githubusercontent.com/oneclickvirt/ecs/master/goecs.sh -o goecs.sh && chmod +x goecs.sh && ./goecs.sh install";
+
     @Autowired
     private IVpsInstanceService vpsInstanceService;
 
@@ -170,6 +178,10 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                 handleExec(wsSession, obj);
                 return;
             }
+            if ("get_goecs_menu".equals(type)) {
+                handleGetGoecsMenu(wsSession);
+                return;
+            }
             if ("add_proxy_node".equals(type)) {
                 handleAddProxyNode(wsSession, obj);
                 return;
@@ -194,48 +206,103 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
     }
 
     /**
-     * 处理 exec 类型消息：仅允许预置的 sing-box 安装命令，在独立 Session 中执行并流式回传 stdout/stderr。
+     * 处理 exec 类型消息：仅允许预置命令。支持 command（兼容 sing-box）或 commandId（backtrace / goecs）。
      */
     private void handleExec(WebSocketSession wsSession, JSONObject obj) {
+        Object reqId = obj.get("reqId");
+        String commandId = obj.getString("commandId");
         String command = obj.getString("command");
-        if (StringUtils.isEmpty(command)) {
-            sendExecError(wsSession, obj.get("reqId"), "缺少 command");
+        String toRun = null;
+        String execKind = null; // "singbox" | "backtrace" | "goecs"
+
+        if (StringUtils.isNotEmpty(commandId)) {
+            if ("backtrace".equals(commandId)) {
+                toRun = PREDEFINED_EXEC_BACKTRACE;
+                execKind = "backtrace";
+            } else if ("goecs".equals(commandId)) {
+                int option = 1;
+                Object optObj = obj.get("option");
+                if (optObj != null) {
+                    if (optObj instanceof Number) {
+                        option = ((Number) optObj).intValue();
+                    } else {
+                        try {
+                            option = Integer.parseInt(optObj.toString().trim());
+                        } catch (NumberFormatException e) {
+                            option = 1;
+                        }
+                    }
+                    if (option < 0 || option > 10) option = 1;
+                }
+                toRun = PREDEFINED_EXEC_GOECS_BASE + " && echo " + option + " | goecs";
+                execKind = "goecs";
+            } else {
+                sendExecError(wsSession, reqId, "不支持的 commandId: " + commandId);
+                return;
+            }
+        } else if (StringUtils.isNotEmpty(command)) {
+            String trimmed = command.trim();
+            if (trimmed.contains(";") || trimmed.contains("&&") || trimmed.contains("||")
+                    || trimmed.contains("\n") || trimmed.contains("\r")) {
+                sendExecError(wsSession, reqId, "不允许的命令格式");
+                return;
+            }
+            if (ALLOWED_EXEC_INSTALL_SINGBOX.equals(trimmed)) {
+                toRun = trimmed;
+                execKind = "singbox";
+            } else {
+                sendExecError(wsSession, reqId, "仅支持预置的 sing-box 安装命令");
+                return;
+            }
+        } else {
+            sendExecError(wsSession, reqId, "缺少 command 或 commandId");
             return;
         }
-        // 禁止多命令拼接与注入，仅允许预置安装命令
-        String trimmed = command.trim();
-        if (trimmed.contains(";") || trimmed.contains("&&") || trimmed.contains("||")
-                || trimmed.contains("\n") || trimmed.contains("\r")) {
-            sendExecError(wsSession, obj.get("reqId"), "不允许的命令格式");
-            return;
-        }
-        if (!ALLOWED_EXEC_INSTALL_SINGBOX.equals(trimmed)) {
-            sendExecError(wsSession, obj.get("reqId"), "仅支持预置的 sing-box 安装命令");
-            return;
-        }
+
         Object sshObj = wsSession.getAttributes().get("sshClient");
         if (!(sshObj instanceof SSHClient)) {
-            sendExecError(wsSession, obj.get("reqId"), "SSH 未连接");
+            sendExecError(wsSession, reqId, "SSH 未连接");
             return;
         }
-        Object reqId = obj.get("reqId");
         SSHClient ssh = (SSHClient) sshObj;
+        final String finalToRun = toRun;
+        final String finalKind = execKind;
         executor.execute(() -> {
             Session newSession = null;
             Command cmd = null;
             try {
-                // 一键安装脚本依赖 bash 与 wget，缺失时自动安装（apk/dnf/yum/apt-get）
                 if (!ensurePackageForInstall(wsSession, reqId, ssh, "bash")) {
                     sendExecEnd(wsSession, reqId, -1);
                     return;
                 }
-                if (!ensurePackageForInstall(wsSession, reqId, ssh, "wget")) {
-                    sendExecEnd(wsSession, reqId, -1);
-                    return;
+                if ("singbox".equals(finalKind)) {
+                    if (!ensurePackageForInstall(wsSession, reqId, ssh, "wget")) {
+                        sendExecEnd(wsSession, reqId, -1);
+                        return;
+                    }
+                } else if ("backtrace".equals(finalKind)) {
+                    boolean hasCurl = checkCommandExists(ssh, "curl");
+                    boolean hasWget = checkCommandExists(ssh, "wget");
+                    if (!hasCurl && !hasWget) {
+                        if (!ensurePackageForInstall(wsSession, reqId, ssh, "curl")) {
+                            if (!ensurePackageForInstall(wsSession, reqId, ssh, "wget")) {
+                                sendExecError(wsSession, reqId, "需要 curl 或 wget，自动安装失败");
+                                sendExecEnd(wsSession, reqId, -1);
+                                return;
+                            }
+                        }
+                    }
+                } else if ("goecs".equals(finalKind)) {
+                    if (!ensurePackageForInstall(wsSession, reqId, ssh, "curl")) {
+                        sendExecEnd(wsSession, reqId, -1);
+                        return;
+                    }
                 }
+
                 newSession = ssh.startSession();
-                String toRun = "bash -c \"" + trimmed.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
-                cmd = newSession.exec(toRun);
+                String escaped = finalToRun.replace("\\", "\\\\").replace("\"", "\\\"");
+                String runCmd = "bash -c \"" + escaped + "\"";
+                cmd = newSession.exec(runCmd);
                 InputStream stdout = cmd.getInputStream();
                 InputStream stderr = cmd.getErrorStream();
                 byte[] buf = new byte[4096];
@@ -248,15 +315,15 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                     String data = new String(buf, 0, n, StandardCharsets.UTF_8);
                     sendExecOutput(wsSession, reqId, data, true);
                 }
-                cmd.join(120, TimeUnit.SECONDS);
+                int timeoutSeconds = "goecs".equals(finalKind) ? 300 : 120;
+                cmd.join(timeoutSeconds, TimeUnit.SECONDS);
                 Integer exitStatus = cmd.getExitStatus();
                 if (exitStatus == null) {
-                    sendExecError(wsSession, reqId, "安装进程未返回退出码（可能超时或连接中断），请根据上方日志排查");
+                    sendExecError(wsSession, reqId, "进程未返回退出码（可能超时或连接中断），请根据上方日志排查");
                 }
                 if (exitStatus == null) exitStatus = -1;
                 int finalCode = exitStatus;
-                // 某些脚本会在完成安装后返回非 0；安装命令场景下再做一次安装结果兜底检查
-                if (finalCode != 0 && ALLOWED_EXEC_INSTALL_SINGBOX.equals(trimmed) && isSingBoxInstalled(ssh)) {
+                if (finalCode != 0 && "singbox".equals(finalKind) && isSingBoxInstalled(ssh)) {
                     finalCode = 0;
                 }
                 sendExecEnd(wsSession, reqId, finalCode);
@@ -279,6 +346,66 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                 }
             }
         });
+    }
+
+    private boolean checkCommandExists(SSHClient ssh, String name) {
+        try (Session s = ssh.startSession()) {
+            String out = execAndRead(s, "command -v " + name + " >/dev/null 2>&1 && echo yes || echo no");
+            return out != null && out.trim().toLowerCase().startsWith("yes");
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
+    private static final Pattern GOECS_MENU_LINE = Pattern.compile("^\\s*(\\d+)\\.\\s+(.+)$");
+
+    /**
+     * 在服务器上执行 echo 0 | goecs，解析菜单输出并回传选项列表（type: goecs_menu）。
+     * 若 goecs 未安装或执行失败，回传空数组，前端保留默认选项。
+     */
+    private void handleGetGoecsMenu(WebSocketSession wsSession) {
+        Object sshObj = wsSession.getAttributes().get("sshClient");
+        if (!(sshObj instanceof SSHClient)) {
+            sendGoecsMenu(wsSession, new java.util.ArrayList<>());
+            return;
+        }
+        SSHClient ssh = (SSHClient) sshObj;
+        executor.execute(() -> {
+            java.util.List<JSONObject> options = new java.util.ArrayList<>();
+            try (Session session = ssh.startSession()) {
+                String raw = execAndRead(session, "sh -c " + quoteSh("echo 0 | goecs 2>&1"));
+                if (raw != null && !raw.isEmpty()) {
+                    String cleaned = stripAnsi(raw);
+                    for (String line : cleaned.split("\\r?\\n")) {
+                        Matcher m = GOECS_MENU_LINE.matcher(line.trim());
+                        if (m.matches()) {
+                            int value = Integer.parseInt(m.group(1));
+                            String label = m.group(2).trim();
+                            if (value >= 0 && value <= 10) {
+                                JSONObject item = new JSONObject();
+                                item.put("value", value);
+                                item.put("label", label);
+                                options.add(item);
+                            }
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                log.debug("get_goecs_menu: {}", e.getMessage());
+            }
+            sendGoecsMenu(wsSession, options);
+        });
+    }
+
+    private void sendGoecsMenu(WebSocketSession wsSession, java.util.List<JSONObject> options) {
+        try {
+            JSONObject out = new JSONObject();
+            out.put("type", "goecs_menu");
+            out.put("options", options);
+            if (wsSession.isOpen()) {
+                wsSession.sendMessage(new TextMessage(out.toJSONString()));
+            }
+        } catch (Exception ignored) {}
     }
 
     /**

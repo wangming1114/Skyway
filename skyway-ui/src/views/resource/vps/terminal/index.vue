@@ -28,6 +28,7 @@
                 @connected-change="onWsConnectedChange"
                 @exec-output="onExecOutput"
                 @exec-end="onExecEnd"
+                @goecs-menu="onGoecsMenu"
               />
             </div>
           </Pane>
@@ -64,6 +65,34 @@
                           安装
                         </el-button>
                       </div>
+                      <div class="command-card" @click="wsConnected && openExecDrawer('backtrace', '三网回程检查')">
+                        <span class="command-card-icon">🌐</span>
+                        <span class="command-card-title">三网回程检查</span>
+                        <span class="command-card-desc">zhanghanyun/backtrace，兼容 curl/wget</span>
+                        <el-button
+                          type="primary"
+                          size="small"
+                          :disabled="!wsConnected"
+                          @click.stop="openExecDrawer('backtrace', '三网回程检查')"
+                          class="command-card-btn"
+                        >
+                          执行
+                        </el-button>
+                      </div>
+                      <div class="command-card" @click="wsConnected && openGoecsOptionDialog()">
+                        <span class="command-card-icon">🖥</span>
+                        <span class="command-card-title">融合怪脚本</span>
+                        <span class="command-card-desc">oneclickvirt/ecs，可选 1-10 或 0 退出</span>
+                        <el-button
+                          type="primary"
+                          size="small"
+                          :disabled="!wsConnected"
+                          @click.stop="openGoecsOptionDialog"
+                          class="command-card-btn"
+                        >
+                          执行
+                        </el-button>
+                      </div>
                     </div>
                   </div>
                 </el-tab-pane>
@@ -92,6 +121,57 @@
         <pre ref="installLogRef" class="install-log">{{ installLog }}</pre>
       </div>
     </el-drawer>
+
+    <!-- 融合怪选项 -->
+    <el-dialog
+      v-model="goecsOptionDialogVisible"
+      title="融合怪脚本 - 选择项目"
+      width="680"
+      :close-on-click-modal="true"
+      :class="['goecs-option-dialog', isDark && 'goecs-option-dialog--dark']"
+      @closed="selectedGoecsOption = 1; goecsOptionsLoading = false"
+    >
+      <div v-if="goecsOptionsLoading" class="goecs-option-loading">
+        <el-icon class="is-loading"><Loading /></el-icon>
+        <span>正在从服务器获取选项…</span>
+      </div>
+      <div v-else class="goecs-option-list">
+        <div
+          v-for="opt in goecsOptions"
+          :key="opt.value"
+          class="goecs-option-row"
+          :class="{ 'is-selected': selectedGoecsOption === opt.value }"
+          @click="selectedGoecsOption = opt.value"
+        >
+          <span class="goecs-option-dot" />
+          <span class="goecs-option-num">{{ opt.value }}</span>
+          <span class="goecs-option-text">{{ opt.label }}</span>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="goecsOptionDialogVisible = false">取消</el-button>
+        <el-button type="primary" :disabled="goecsOptionsLoading" @click="confirmGoecsOption">执行</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 一键执行（三网回程 / 融合怪）实时日志 -->
+    <el-drawer
+      v-model="execDrawerVisible"
+      :title="execDrawerTitle + ' - 实时日志'"
+      direction="rtl"
+      size="800"
+      :close-on-click-modal="!execDrawerRunning"
+      @closed="onExecDrawerClosed"
+    >
+      <div class="install-drawer-body">
+        <div v-if="execDrawerRunning" class="install-status">执行中…</div>
+        <div v-else-if="execDrawerExitCode != null" :class="['install-status', execDrawerExitCode === 0 ? 'success' : 'fail']">
+          {{ execDrawerExitCode === 0 ? '执行完成' : '执行结束 (exit ' + execDrawerExitCode + ')，请查看下方日志' }}
+          <div v-if="execDrawerExitCode !== 0 && execDrawerErrorMessage" class="install-status-msg">{{ execDrawerErrorMessage }}</div>
+        </div>
+        <pre ref="execLogRef" class="install-log">{{ execDrawerLog }}</pre>
+      </div>
+    </el-drawer>
   </div>
 </template>
 
@@ -103,15 +183,32 @@ import useTagsViewStore from '@/store/modules/tagsView'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Splitpanes, Pane } from 'splitpanes'
 import 'splitpanes/dist/splitpanes.css'
-import { Folder, Monitor } from '@element-plus/icons-vue'
+import { Folder, Monitor, Loading } from '@element-plus/icons-vue'
 import TerminalPanel from '../components/TerminalPanel.vue'
 import ServerMonitorPanel from '../components/ServerMonitorPanel.vue'
 import SftpFilePanel from '../components/SftpFilePanel.vue'
 
 const INSTALL_CMD = 'bash <(wget -qO- -o- https://github.com/233boy/sing-box/raw/main/install.sh)'
 
+const GOECS_OPTIONS_FALLBACK = [
+  { value: 1, label: '融合怪完全体(能测全测)' },
+  { value: 2, label: '极简版(系统信息+CPU+内存+磁盘+测速节点5个)' },
+  { value: 3, label: '精简版(系统信息+CPU+内存+磁盘+跨国平台解锁+路由+测速节点5个)' },
+  { value: 4, label: '精简网络版(系统信息+CPU+内存+磁盘+回程+路由+测速节点5个)' },
+  { value: 5, label: '精简解锁版(系统信息+CPU+内存+磁盘IO+跨国平台解锁+测速节点5个)' },
+  { value: 6, label: '网络单项(IP质量检测+上游及三网回程+广州三网回程详细路由+全国延迟+TGDC+网站延迟+测速节点11个)' },
+  { value: 7, label: '解锁单项(跨国平台解锁)' },
+  { value: 8, label: '硬件单项(系统信息+CPU+dd磁盘测试+fio磁盘测试)' },
+  { value: 9, label: 'IP质量检测(15个数据库的IP质量检测+邮件端口检测)' },
+  { value: 10, label: '三网回程线路检测+三网回程详细路由(北京上海广州成都)+全国延迟+TGDC+网站延迟' },
+  { value: 0, label: '退出程序' }
+]
+const goecsOptions = ref([...GOECS_OPTIONS_FALLBACK])
+const goecsOptionsLoading = ref(false)
+
 const route = useRoute()
 const router = useRouter()
+const isDark = computed(() => useSettingsStore().isDark)
 
 // 仅在本页为终端路由时从 route 更新，避免 keep-alive 下切到非终端时 route 变成别页导致 instanceId 清空、终端被 cleanup 重连
 const lastTerminalState = ref({ id: null, name: '', ip: '' })
@@ -153,6 +250,19 @@ const installExitCode = ref(null)
 const installErrorMessage = ref('')
 let installReqId = 1
 
+const execDrawerVisible = ref(false)
+const execDrawerTitle = ref('')
+const execDrawerLog = ref('')
+const execLogRef = ref(null)
+const execDrawerRunning = ref(false)
+const execDrawerExitCode = ref(null)
+const execDrawerErrorMessage = ref('')
+const execDrawerReqId = ref(null)
+let execDrawerReqIdCounter = 100000
+
+const goecsOptionDialogVisible = ref(false)
+const selectedGoecsOption = ref(1)
+
 function onWsConnectedChange(connected) {
   wsConnected.value = !!connected
   if (connected && route.query.install === 'singbox') {
@@ -178,6 +288,61 @@ function sendSysinfo() {
 
 function sendJson(obj) {
   terminalRef.value?.sendJson?.(obj)
+}
+
+function openExecDrawer(commandId, title, option) {
+  if (!wsConnected.value) {
+    ElMessage.warning('请先连接 SSH')
+    return
+  }
+  const desc = title === '三网回程检查' ? '三网回程检查脚本（兼容 curl/wget）' : (option != null ? `融合怪脚本（已选选项 ${option}）` : '融合怪脚本')
+  ElMessageBox.confirm(`将在当前服务器上执行「${title}」，是否继续？\n${desc}`, '确认执行', {
+    confirmButtonText: '执行',
+    cancelButtonText: '取消',
+    type: 'warning'
+  }).then(() => {
+    execDrawerTitle.value = title
+    execDrawerLog.value = ''
+    execDrawerRunning.value = true
+    execDrawerExitCode.value = null
+    execDrawerErrorMessage.value = ''
+    execDrawerReqId.value = ++execDrawerReqIdCounter
+    execDrawerVisible.value = true
+    nextTick(() => {
+      const payload = { type: 'exec', commandId, reqId: execDrawerReqId.value }
+      if (commandId === 'goecs' && option != null) payload.option = option
+      sendJson(payload)
+    })
+  }).catch(() => {})
+}
+
+function openGoecsOptionDialog() {
+  if (!wsConnected.value) {
+    ElMessage.warning('请先连接 SSH')
+    return
+  }
+  selectedGoecsOption.value = 1
+  goecsOptionDialogVisible.value = true
+  goecsOptionsLoading.value = true
+  sendJson({ type: 'get_goecs_menu' })
+}
+
+function onGoecsMenu(options) {
+  goecsOptionsLoading.value = false
+  if (options && options.length > 0) {
+    goecsOptions.value = options.map(o => ({ value: o.value, label: o.label || String(o.value) })).sort((a, b) => a.value - b.value)
+  }
+}
+
+function confirmGoecsOption() {
+  const opt = selectedGoecsOption.value
+  goecsOptionDialogVisible.value = false
+  const label = goecsOptions.value.find(o => o.value === opt)?.label || `选项 ${opt}`
+  openExecDrawer('goecs', `融合怪脚本 - ${label}`, opt)
+}
+
+function onExecDrawerClosed() {
+  execDrawerExitCode.value = null
 }
 
 function openInstallDrawer() {
@@ -206,13 +371,22 @@ function openInstallDrawer() {
 }
 
 function onExecOutput(msg) {
-  if (msg.reqId !== installReqId) return
   const data = msg.data != null ? String(msg.data) : ''
-  installLog.value += data
-  nextTick(() => {
-    const el = installLogRef.value
-    if (el) el.scrollTop = el.scrollHeight
-  })
+  if (msg.reqId === installReqId) {
+    installLog.value += data
+    nextTick(() => {
+      const el = installLogRef.value
+      if (el) el.scrollTop = el.scrollHeight
+    })
+    return
+  }
+  if (msg.reqId === execDrawerReqId.value) {
+    execDrawerLog.value += data
+    nextTick(() => {
+      const el = execLogRef.value
+      if (el) el.scrollTop = el.scrollHeight
+    })
+  }
 }
 
 function isInstallSuccessByLog(log) {
@@ -222,20 +396,32 @@ function isInstallSuccessByLog(log) {
 }
 
 function onExecEnd(msg) {
-  if (msg.reqId !== installReqId) return
-  if (msg.type === 'exec_error' && msg.message) {
-    installErrorMessage.value = String(msg.message)
+  if (msg.reqId === installReqId) {
+    if (msg.type === 'exec_error' && msg.message) {
+      installErrorMessage.value = String(msg.message)
+    }
+    installRunning.value = false
+    const code = msg.code != null ? msg.code : (msg.type === 'exec_error' ? -1 : null)
+    const success = code === 0 || (code === 1 && isInstallSuccessByLog(installLog.value))
+    installExitCode.value = success ? 0 : code
+    if (success) {
+      ElMessage.success('sing-box 安装完成')
+    } else if (code != null && code !== 0) {
+      ElMessage.error('安装失败，请查看日志')
+    }
+    installReqId += 1
+    return
   }
-  installRunning.value = false
-  const code = msg.code != null ? msg.code : (msg.type === 'exec_error' ? -1 : null)
-  const success = code === 0 || (code === 1 && isInstallSuccessByLog(installLog.value))
-  installExitCode.value = success ? 0 : code
-  if (success) {
-    ElMessage.success('sing-box 安装完成')
-  } else if (code != null && code !== 0) {
-    ElMessage.error('安装失败，请查看日志')
+  if (msg.reqId === execDrawerReqId.value) {
+    if (msg.type === 'exec_error' && msg.message) {
+      execDrawerErrorMessage.value = String(msg.message)
+    }
+    execDrawerRunning.value = false
+    execDrawerExitCode.value = msg.code != null ? msg.code : (msg.type === 'exec_error' ? -1 : null)
+    if (execDrawerExitCode.value === 0) {
+      ElMessage.success(execDrawerTitle.value + ' 执行完成')
+    }
   }
-  installReqId += 1
 }
 
 function onInstallDrawerClosed() {
@@ -485,5 +671,92 @@ onBeforeUnmount(() => {
 .command-card-btn {
   flex-shrink: 0;
   opacity: 0.9;
+}
+
+.goecs-option-dialog :deep(.el-dialog__body) {
+  width: 100%;
+  box-sizing: border-box;
+}
+.goecs-option-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+  color: var(--el-text-color-secondary);
+}
+.goecs-option-list {
+  max-height: 60vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 4px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  box-sizing: border-box;
+}
+.goecs-option-row {
+  display: grid;
+  grid-template-columns: 20px 28px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 14px;
+  border: 1px solid var(--el-border-color);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: border-color 0.2s, background-color 0.2s;
+  flex-shrink: 0;
+  overflow: visible;
+}
+.goecs-option-row:hover {
+  border-color: var(--el-border-color-hover);
+  background-color: var(--el-fill-color-light);
+}
+.goecs-option-row.is-selected {
+  border-color: var(--el-color-primary);
+  background-color: var(--el-color-primary-light-9);
+}
+.goecs-option-dialog--dark .goecs-option-row.is-selected {
+  background-color: rgba(30, 58, 95, 0.55);
+  border-color: var(--el-color-primary);
+}
+.goecs-option-dialog--dark .goecs-option-row.is-selected .goecs-option-text {
+  color: var(--el-text-color-primary);
+}
+.goecs-option-dot {
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--el-border-color);
+  border-radius: 50%;
+  background-color: var(--el-bg-color);
+  flex-shrink: 0;
+}
+.goecs-option-row.is-selected .goecs-option-dot {
+  border-color: var(--el-color-primary);
+  background-color: var(--el-color-primary);
+  box-shadow: inset 0 0 0 2px var(--el-bg-color);
+}
+.goecs-option-num {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--el-color-primary);
+  line-height: 1.5;
+  text-align: left;
+  min-width: 0;
+}
+.goecs-option-text {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--el-text-color-primary);
+  text-align: left;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  min-width: 0;
+  max-width: 100%;
+  overflow: visible;
 }
 </style>
