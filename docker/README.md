@@ -21,7 +21,7 @@ cd skyway-ui && npm install && npm run build:prod && cd ..
 cd skyway-c-ui && npm install && npm run build && cd ..
 ```
 
-将 `skyway-ui/dist/` 和 `skyway-c-ui/dist/` 的**全部内容**分别复制到 `docker/volumes/nginx/admin/` 和 `docker/volumes/nginx/c/`。C 端构建时 `base` 需为 `/`。
+将 `skyway-ui/dist/` 和 `skyway-c-ui/dist/` 的**全部内容**分别复制到 `docker/volumes/nginx/admin/` 和 `docker/volumes/nginx/c/`。也可直接执行：`bash bin/build-admin.sh`（管理端）、`bash bin/build-c.sh`（C 端）完成打包并复制。C 端构建时 `base` 需为 `/`。
 
 ### 2. 后端配置
 
@@ -72,13 +72,13 @@ docker compose up -d
 修改后端代码后需重新打镜像并推送，再在服务器上 `docker compose pull skyway-admin && docker compose up -d`。
 
 1. **创建 buildx builder（首次）**  
-   `bash docker/buildx-create-builder.sh`
+   `bash bin/buildx-create-builder.sh`
 
 2. **构建并推送到阿里云**  
    复制 `docker/.registry.env.example` 为 `docker/.registry.env`，填入仓库用户名与密码，然后：
 
    ```bash
-   bash docker/buildx-build.sh
+   bash bin/buildx-build.sh
    ```
 
    推送地址：`crpi-kf13onfj0v8f6jax.cn-shanghai.personal.cr.aliyuncs.com/ming121/skyway-admin:latest`（可通过环境变量 `DOCKER_NAMESPACE`、`DOCKER_REGISTRY` 覆盖）。
