@@ -1,42 +1,40 @@
 <template>
   <div class="auth-page">
-    <div class="auth-bg" aria-hidden="true">
-      <div class="auth-bg-gradient"></div>
-      <div class="auth-bg-orb auth-bg-orb--left" aria-hidden="true"></div>
-      <div class="auth-bg-orb auth-bg-orb--right" aria-hidden="true"></div>
-      <div class="auth-bg-grid" aria-hidden="true"></div>
-      <div class="auth-bg-shapes">
-        <span class="shape shape-1"></span>
-        <span class="shape shape-2"></span>
-        <span class="shape shape-3"></span>
+    <!-- 左侧视觉区：浅色，非黑暗系 -->
+    <div class="auth-visual">
+      <div class="auth-visual__gradient" aria-hidden="true"></div>
+      <div class="auth-visual__content">
+        <div class="auth-visual__logo" aria-label="品牌">
+          <span class="auth-visual__logo-icon" aria-hidden="true">
+            <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="20" cy="8" r="3.5" fill="currentColor"/>
+              <circle cx="8" cy="24" r="3.5" fill="currentColor"/>
+              <circle cx="32" cy="24" r="3.5" fill="currentColor"/>
+              <circle cx="20" cy="34" r="3.5" fill="currentColor"/>
+              <path d="M20 11.5v5M20 29v4M20 16.5l-9 4.5M20 16.5l9 4.5M8 24l11.5-5.5M32 24l-11.5-5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+          </span>
+          <span class="auth-visual__logo-text">Skyway</span>
+        </div>
+        <div class="auth-visual__main">
+          <h1 class="auth-visual__title">构建无界网络，赋能全球业务</h1>
+          <p class="auth-visual__subtitle">企业级智能路由与安全接入平台。提供极速、稳定、端到端加密的跨域互联方案。</p>
+          <div class="monitor-badges">
+            <span class="monitor-badge"><span class="monitor-dot monitor-dot--green"></span> Global Nodes: 124 Online</span>
+            <span class="monitor-badge"><span class="monitor-dot monitor-dot--yellow"></span> Avg Latency: &lt; 10ms</span>
+            <span class="monitor-badge"><span class="monitor-dot monitor-dot--blue"></span> AES-256 Secured</span>
+          </div>
+        </div>
+        <div class="auth-visual__footer">© 2026 Skyway Inc.</div>
       </div>
     </div>
-    <header class="brand-logo" aria-label="品牌">
-      <span class="brand-icon" aria-hidden="true">
-        <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <circle cx="20" cy="8" r="3.5" fill="currentColor"/>
-          <circle cx="8" cy="24" r="3.5" fill="currentColor"/>
-          <circle cx="32" cy="24" r="3.5" fill="currentColor"/>
-          <circle cx="20" cy="34" r="3.5" fill="currentColor"/>
-          <path d="M20 11.5v5M20 29v4M20 16.5l-9 4.5M20 16.5l9 4.5M8 24l11.5-5.5M32 24l-11.5-5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-        </svg>
-      </span>
-      <span class="brand-name">Skyway</span>
-    </header>
-    <div class="auth-main">
-      <div class="auth-slogan">
-        <h1 class="slogan-title">构建无界网络，赋能全球业务</h1>
-        <p class="slogan-sub">企业级智能路由与安全接入平台。提供极速、稳定、端到端加密的跨域互联方案。</p>
-        <div class="monitor-badges">
-          <span class="monitor-badge"><span class="monitor-dot monitor-dot--green"></span> Global Nodes: 124 Online</span>
-          <span class="monitor-badge"><span class="monitor-dot monitor-dot--yellow"></span> Avg Latency: &lt; 10ms</span>
-          <span class="monitor-badge"><span class="monitor-dot monitor-dot--blue"></span> AES-256 Secured</span>
-        </div>
-      </div>
-      <div class="auth-form-wrap">
-      <div class="auth-glass-card">
-        <div class="tabs tabs-single">
-          <span class="tab active">{{ activeTab === 'login' ? '账号登录' : activeTab === 'forgot' ? '找回密码' : '邮箱注册' }}</span>
+
+    <!-- 右侧表单区：白底、下划线输入、与 Admin 一致风格 -->
+    <div class="auth-form-wrap">
+      <div class="auth-form-box">
+        <div class="auth-form-header">
+          <h2 class="auth-form-title">{{ activeTab === 'login' ? '欢迎回来' : activeTab === 'forgot' ? '找回密码' : '注册账号' }}</h2>
+          <p class="auth-form-subtitle">{{ activeTab === 'login' ? '请输入邮箱或用户名登录' : activeTab === 'forgot' ? '通过注册邮箱重置密码' : '填写信息完成注册' }}</p>
         </div>
 
         <div v-if="activeTab === 'forgot'" class="forgot-panel">
@@ -52,6 +50,12 @@
             </div>
             <div class="field code-field">
               <div class="code-row">
+                <span class="code-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 2l8 4v6c0 5-3.5 9.5-8 10-4.5-.5-8-5-8-10V6l8-4z"/>
+                    <path d="M9 12l2 2 4-4"/>
+                  </svg>
+                </span>
                 <input v-model="forgotForm.code" type="text" placeholder="验证码" class="input code-input" maxlength="6" />
                 <button type="button" class="btn secondary" :disabled="resetCodeCountdown > 0" @click="handleSendResetCode">
                   {{ resetCodeCountdown > 0 ? `${resetCodeCountdown}s 后重试` : '获取验证码' }}
@@ -59,14 +63,17 @@
               </div>
               <p v-if="forgotErrors.code" class="err">{{ forgotErrors.code }}</p>
             </div>
-<div class="field pwd-field">
-            <div class="input-with-icon input-wrap">
-              <span class="input-icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-              </span>
-              <input v-model="forgotForm.password" :type="forgotPwdVisible ? 'text' : 'password'" placeholder="新密码" class="input" autocomplete="new-password"
+            <div class="field pwd-field">
+              <div class="input-with-icon input-wrap">
+                <span class="input-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                </span>
+                <input v-model="forgotForm.password" :type="forgotPwdVisible ? 'text' : 'password'" placeholder="新密码" class="input" autocomplete="new-password"
                   @focus="forgotPwdBubbleVisible = true" @blur="forgotPwdBubbleVisible = false" />
-                <button type="button" class="pwd-toggle" @click="forgotPwdVisible = !forgotPwdVisible">{{ forgotPwdVisible ? '隐藏' : '显示' }}</button>
+                <button type="button" class="pwd-toggle" :aria-label="forgotPwdVisible ? '隐藏密码' : '显示密码'" @click="forgotPwdVisible = !forgotPwdVisible">
+                  <svg v-if="forgotPwdVisible" class="pwd-toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                  <svg v-else class="pwd-toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                </button>
               </div>
               <Transition name="bubble">
                 <div v-if="forgotPwdBubbleVisible" class="pwd-bubble" role="tooltip">
@@ -87,7 +94,10 @@
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
                 </span>
                 <input v-model="forgotForm.confirmPassword" :type="forgotConfirmVisible ? 'text' : 'password'" placeholder="再次输入新密码" class="input" autocomplete="new-password" />
-                <button type="button" class="pwd-toggle" @click="forgotConfirmVisible = !forgotConfirmVisible">{{ forgotConfirmVisible ? '隐藏' : '显示' }}</button>
+                <button type="button" class="pwd-toggle" :aria-label="forgotConfirmVisible ? '隐藏密码' : '显示密码'" @click="forgotConfirmVisible = !forgotConfirmVisible">
+                <svg v-if="forgotConfirmVisible" class="pwd-toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                <svg v-else class="pwd-toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
               </div>
               <p v-if="forgotErrors.confirmPassword" class="err">{{ forgotErrors.confirmPassword }}</p>
             </div>
@@ -116,7 +126,10 @@
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
               </span>
               <input v-model="loginForm.password" :type="loginPwdVisible ? 'text' : 'password'" placeholder="密码" class="input" autocomplete="current-password" />
-              <button type="button" class="pwd-toggle" :aria-label="loginPwdVisible ? '隐藏' : '显示'" @click="loginPwdVisible = !loginPwdVisible">{{ loginPwdVisible ? '隐藏' : '显示' }}</button>
+              <button type="button" class="pwd-toggle" :aria-label="loginPwdVisible ? '隐藏密码' : '显示密码'" @click="loginPwdVisible = !loginPwdVisible">
+              <svg v-if="loginPwdVisible" class="pwd-toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+              <svg v-else class="pwd-toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
             </div>
             <p v-if="loginErrors.password" class="err">{{ loginErrors.password }}</p>
           </div>
@@ -159,6 +172,12 @@
           </div>
           <div class="field code-field">
             <div class="code-row">
+              <span class="code-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M12 2l8 4v6c0 5-3.5 9.5-8 10-4.5-.5-8-5-8-10V6l8-4z"/>
+                  <path d="M9 12l2 2 4-4"/>
+                </svg>
+              </span>
               <input v-model="registerForm.code" type="text" placeholder="验证码" class="input code-input" maxlength="6" />
               <button type="button" class="btn secondary" :disabled="codeCountdown > 0" @click="handleSendCode">
                 {{ codeCountdown > 0 ? `${codeCountdown}s 后重试` : '获取验证码' }}
@@ -173,7 +192,10 @@
               </span>
               <input v-model="registerForm.password" :type="regPwdVisible ? 'text' : 'password'" placeholder="密码" class="input" autocomplete="new-password"
                 @focus="registerPwdBubbleVisible = true" @blur="registerPwdBubbleVisible = false" />
-              <button type="button" class="pwd-toggle" @click="regPwdVisible = !regPwdVisible">{{ regPwdVisible ? '隐藏' : '显示' }}</button>
+              <button type="button" class="pwd-toggle" :aria-label="regPwdVisible ? '隐藏密码' : '显示密码'" @click="regPwdVisible = !regPwdVisible">
+              <svg v-if="regPwdVisible" class="pwd-toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+              <svg v-else class="pwd-toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
             </div>
             <Transition name="bubble">
               <div v-if="registerPwdBubbleVisible" class="pwd-bubble" role="tooltip">
@@ -194,7 +216,10 @@
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
               </span>
               <input v-model="registerForm.confirmPassword" :type="regConfirmVisible ? 'text' : 'password'" placeholder="再次输入密码" class="input" autocomplete="new-password" />
-              <button type="button" class="pwd-toggle" @click="regConfirmVisible = !regConfirmVisible">{{ regConfirmVisible ? '隐藏' : '显示' }}</button>
+              <button type="button" class="pwd-toggle" :aria-label="regConfirmVisible ? '隐藏密码' : '显示密码'" @click="regConfirmVisible = !regConfirmVisible">
+              <svg v-if="regConfirmVisible" class="pwd-toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+              <svg v-else class="pwd-toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
             </div>
             <p v-if="registerErrors.confirmPassword" class="err">{{ registerErrors.confirmPassword }}</p>
           </div>
@@ -213,11 +238,8 @@
           </p>
         </form>
       </div>
+      <p class="auth-form-footer"><a href="#">服务条款</a><span class="divider">|</span><a href="#">隐私政策</a></p>
     </div>
-    </div>
-    <footer class="page-footer">
-      <a href="#">服务条款</a><span class="divider">|</span><a href="#">隐私政策</a>
-    </footer>
   </div>
 </template>
 
@@ -581,190 +603,282 @@ async function handleRegister() {
 </script>
 
 <style scoped>
+/* 与 Admin 一致：系统字体、浅色整体 */
 .auth-page {
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'SF Pro Text', sans-serif;
+  font-family: var(--font-sans);
   min-height: 100vh;
-  position: relative;
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 48px 24px 32px;
+  width: 100%;
   box-sizing: border-box;
+  color: #334155;
+  background: #fff;
+  -webkit-font-smoothing: antialiased;
 }
-.auth-main {
+
+/* ========== 左侧视觉区：浅色系、抽象 3D 科技感背景（参考图风格） ========== */
+.auth-visual {
+  display: none;
+  width: 50%;
+  position: relative;
+  overflow: hidden;
+  background-color: #f1f5f9;
+  background-image:
+    linear-gradient(135deg, rgba(255,255,255,0.2) 0%, rgba(241,245,249,0.12) 52%, rgba(226,232,240,0.08) 100%),
+    url('/login-bg-tech3.png');
+  background-size: cover;
+  background-position: 5% center;
+}
+@media (min-width: 1024px) {
+  .auth-visual { display: flex; flex-direction: column; }
+}
+.auth-visual__gradient {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(to bottom, rgba(255,255,255,0.25) 0%, transparent 60%);
+}
+.auth-visual__content {
   position: relative;
   z-index: 1;
-  width: 100%;
-  max-width: 1152px;
-  margin: 0 auto;
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  height: 100%;
+  padding: 2.5rem 3rem;
   justify-content: space-between;
-  gap: 100px;
-  padding: 0 24px;
-  box-sizing: border-box;
 }
-.auth-bg {
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  overflow: hidden;
-}
-.auth-bg-gradient {
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(ellipse 120% 80% at 50% 20%, #0f172a 0%, #020617 50%, #030712 100%);
-}
-.auth-bg-orb {
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(80px);
-  pointer-events: none;
-  animation: breathe 9s ease-in-out infinite;
-}
-.auth-bg-orb--left {
-  width:  min(80vw, 600px);
-  height: min(80vw, 600px);
-  top: -15%;
-  left: -10%;
-  background: radial-gradient(circle, rgba(30, 58, 138, 0.5) 0%, rgba(30, 58, 138, 0.15) 40%, transparent 70%);
-}
-.auth-bg-orb--right {
-  width:  min(70vw, 520px);
-  height: min(70vw, 520px);
-  bottom: -20%;
-  right: -10%;
-  background: radial-gradient(circle, rgba(34, 211, 238, 0.35) 0%, rgba(139, 92, 246, 0.2) 45%, transparent 70%);
-  animation-delay: -4.5s;
-}
-@keyframes breathe {
-  0%, 100% { transform: scale(1); opacity: 0.5; }
-  50% { transform: scale(1.12); opacity: 0.75; }
-}
-.auth-bg-grid {
-  position: absolute;
-  inset: -50% 0;
-  width: 200%;
-  background-image:
-    linear-gradient(rgba(148, 163, 184, 0.06) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(148, 163, 184, 0.06) 1px, transparent 1px);
-  background-size: 48px 48px;
-  animation: grid-drift 45s linear infinite;
-  pointer-events: none;
-}
-@keyframes grid-drift {
-  0% { transform: translate(0, 0); }
-  100% { transform: translate(48px, 24px); }
-}
-.auth-bg-shapes {
-  position: absolute;
-  inset: 0;
-  opacity: 0.12;
-}
-.shape {
-  position: absolute;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(59, 130, 246, 0.25) 0%, transparent 70%);
-}
-.shape-1 { width: 500px; height: 500px; top: -15%; right: -5%; }
-.shape-2 { width: 320px; height: 320px; bottom: -5%; left: -5%; opacity: 0.15; }
-.shape-3 { width: 240px; height: 240px; top: 50%; left: 15%; opacity: 0.08; }
-.brand-logo {
-  position: fixed;
-  top: 0;
-  left: 0;
-  z-index: 2;
+.auth-visual__logo {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 24px 32px;
+  gap: 0.75rem;
 }
-.brand-icon {
-  display: flex;
+.auth-visual__logo-icon {
+  width: 2.5rem;
+  height: 2.5rem;
+  flex-shrink: 0;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
-  color: #60a5fa;
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 6px;
+  color: #2563eb;
 }
-.brand-icon svg { width: 100%; height: 100%; }
-.brand-name {
-  font-family: system-ui, -apple-system, sans-serif;
-  font-size: 20px;
+.auth-visual__logo-icon svg { width: 1.25rem; height: 1.25rem; }
+.auth-visual__logo-text {
   font-weight: 700;
-  color: #93c5fd;
+  font-size: 1.25rem;
   letter-spacing: 0.02em;
+  color: #0f172a;
 }
-.auth-slogan {
-  flex: 1;
-  min-width: 280px;
-  max-width: 520px;
-}
-.slogan-title {
-  margin: 0 0 20px;
-  font-size: clamp(1.75rem, 4vw, 3rem);
+.auth-visual__main { margin-top: auto; margin-bottom: 2rem; }
+.auth-visual__title {
+  font-size: 1.875rem;
   font-weight: 700;
-  line-height: 1.3;
-  color: #fff;
-  letter-spacing: 0.02em;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2), 0 0 40px rgba(0, 0, 0, 0.15);
+  color: #0f172a;
+  letter-spacing: -0.025em;
+  line-height: 1.2;
+  margin: 0 0 0.5rem 0;
 }
-.slogan-sub {
-  margin: 0;
-  font-size: 15px;
-  line-height: 1.7;
-  color: #9ca3af;
+.auth-visual__subtitle {
+  font-size: 1rem;
+  color: #475569;
+  line-height: 1.6;
+  margin: 0 0 0;
 }
 .monitor-badges {
   display: flex;
   flex-wrap: wrap;
   gap: 10px 16px;
-  margin-top: 32px;
+  margin-top: 24px;
 }
 .monitor-badge {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   padding: 6px 12px;
-  font-family: ui-monospace, 'SF Mono', 'Cascadia Code', monospace;
+  font-family: ui-monospace, 'SF Mono', monospace;
   font-size: 11px;
   font-weight: 500;
-  color: #4ade80;
-  background: rgba(0, 0, 0, 0.35);
-  border: 1px solid rgba(74, 222, 128, 0.35);
-  border-radius: 2px;
-  box-shadow: 0 0 12px rgba(74, 222, 128, 0.08);
+  color: #15803d;
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  border-radius: 6px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
-.monitor-badge:nth-child(2) { color: #38bdf8; border-color: rgba(56, 189, 248, 0.4); box-shadow: 0 0 12px rgba(56, 189, 248, 0.08); }
-.monitor-badge:nth-child(3) { color: #a78bfa; border-color: rgba(167, 139, 250, 0.35); box-shadow: 0 0 12px rgba(167, 139, 250, 0.08); }
+.monitor-badge:nth-child(2) { color: #0369a1; border-color: rgba(3, 105, 161, 0.2); }
+.monitor-badge:nth-child(3) { color: #6d28d9; border-color: rgba(109, 40, 217, 0.2); }
 .monitor-dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
   flex-shrink: 0;
 }
-.monitor-dot--green { background: #4ade80; box-shadow: 0 0 6px #4ade80; }
-.monitor-dot--yellow { background: #facc15; box-shadow: 0 0 6px #facc15; }
-.monitor-dot--blue { background: #38bdf8; box-shadow: 0 0 6px #38bdf8; }
-.auth-form-wrap {
-  flex-shrink: 0;
-  width: 100%;
-  max-width: 420px;
+.monitor-dot--green { background: #22c55e; }
+.monitor-dot--yellow { background: #eab308; }
+.monitor-dot--blue { background: #0ea5e9; }
+.auth-visual__footer {
+  padding-top: 2rem;
+  border-top: 1px solid rgba(15, 23, 42, 0.08);
+  font-size: 0.75rem;
+  color: #64748b;
 }
-.auth-glass-card {
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 2px;
-  box-shadow: 0 32px 64px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.06) inset;
-  padding: 36px 32px;
+
+/* ========== 右侧表单区：白底、下划线输入 ========== */
+.auth-form-wrap {
+  width: 100%;
   display: flex;
   flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1.5rem;
 }
-.forgot-panel {
-  margin-top: 0;
+@media (min-width: 1024px) {
+  .auth-form-wrap { width: 50%; padding: 3rem 4rem; }
 }
+.auth-form-box {
+  width: 100%;
+  max-width: 400px;
+}
+.auth-form-header { margin-bottom: 1.5rem; }
+.auth-form-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #0f172a;
+  letter-spacing: -0.025em;
+  margin: 0 0 0.5rem 0;
+}
+.auth-form-subtitle {
+  font-size: 0.875rem;
+  color: #475569;
+  margin: 0;
+}
+.forgot-panel { margin-top: 0; }
+
+/* 下划线输入框（与 Admin 一致） */
+.form { display: flex; flex-direction: column; gap: 1.25rem; }
+.field { position: relative; }
+.input-with-icon {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 44px;
+  border-bottom: 1px solid #e2e8f0;
+  transition: border-color 0.3s ease;
+}
+.input-with-icon:focus-within { border-color: #2563eb; }
+.input-with-icon .input-icon {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  color: #94a3b8;
+  pointer-events: none;
+  flex-shrink: 0;
+  transition: color 0.3s ease;
+}
+.input-with-icon:focus-within .input-icon { color: #2563eb; }
+.input-with-icon .input-icon svg { width: 100%; height: 100%; display: block; }
+.input {
+  width: 100%;
+  height: 44px;
+  padding: 0 0 0 28px;
+  font-size: 14px;
+  line-height: 42px;
+  color: #0f172a;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  outline: none;
+  box-sizing: border-box;
+}
+.input::placeholder { color: #94a3b8; }
+/* 覆盖浏览器自动填充默认高亮，保持输入框样式一致 */
+.input:-webkit-autofill,
+.input:-webkit-autofill:hover,
+.input:-webkit-autofill:focus,
+.input:-webkit-autofill:active {
+  -webkit-text-fill-color: #0f172a !important;
+  caret-color: #0f172a;
+  -webkit-box-shadow: 0 0 0 1000px #fff inset !important;
+  box-shadow: 0 0 0 1000px #fff inset !important;
+  transition: background-color 9999s ease-out 0s, color 9999s ease-out 0s;
+}
+
+.input:-moz-autofill {
+  box-shadow: 0 0 0 1000px #fff inset !important;
+  -moz-text-fill-color: #0f172a;
+  caret-color: #0f172a;
+}
+.code-field { display: flex; flex-direction: column; gap: 0; }
+.code-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 44px;
+  border-bottom: 1px solid #e2e8f0;
+  transition: border-color 0.3s ease;
+}
+.code-row:focus-within { border-color: #2563eb; }
+.code-row .input-with-icon { flex: 1; min-width: 0; }
+.code-icon {
+  width: 18px;
+  height: 18px;
+  color: #94a3b8;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.code-icon svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.code-row:focus-within .code-icon {
+  color: #2563eb;
+}
+.code-row .input.code-input {
+  flex: 1;
+  min-width: 0;
+  padding-left: 0;
+}
+.code-input { flex: 1; min-width: 0; }
+.code-row .btn.secondary {
+  height: 34px;
+  padding: 0 12px;
+  font-size: 12px;
+  line-height: 34px;
+  border-radius: 4px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.input-wrap { position: relative; height: 44px; }
+.pwd-toggle {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #64748b;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.pwd-toggle-icon {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+.pwd-toggle:hover { color: #2563eb; }
+.input-wrap .input { padding-right: 52px; }
+
+/* 密码强度气泡：浅色主题 */
 .pwd-bubble {
   position: absolute;
   left: 0;
@@ -773,12 +887,11 @@ async function handleRegister() {
   padding: 10px 14px;
   font-size: 13px;
   line-height: 1.45;
-  color: rgba(255, 255, 255, 0.9);
-  background: rgba(15, 23, 42, 0.95);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #334155;
+  background: #fff;
+  border: 1px solid #e2e8f0;
   border-radius: 10px;
-  box-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.12);
   z-index: 10;
   max-width: 280px;
 }
@@ -789,173 +902,31 @@ async function handleRegister() {
   top: -6px;
   width: 12px;
   height: 12px;
-  background: rgba(15, 23, 42, 0.95);
-  border-left: 1px solid rgba(255, 255, 255, 0.12);
-  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  background: #fff;
+  border-left: 1px solid #e2e8f0;
+  border-top: 1px solid #e2e8f0;
   transform: rotate(45deg);
 }
-.pwd-bubble-ok {
-  color: rgba(74, 222, 128, 0.95);
-  font-weight: 500;
-}
-.pwd-bubble-title {
-  color: rgba(255, 255, 255, 0.6);
-  margin-right: 4px;
-}
-.pwd-bubble-missing {
-  color: rgba(251, 191, 36, 0.95);
-}
-.pwd-field {
-  position: relative;
-}
-.bubble-enter-active,
-.bubble-leave-active {
-  transition: opacity 0.2s ease, transform 0.2s ease;
-}
-.bubble-enter-from,
-.bubble-leave-to {
-  opacity: 0;
-  transform: translateY(-4px);
-}
-.tabs {
-  display: flex;
-  gap: 0;
-  margin-bottom: 24px;
-}
-.tabs-single {
-  justify-content: center;
-}
-.tabs-single .tab {
-  margin-right: 0;
-  cursor: default;
-}
-.tab {
-  padding: 12px 6px 14px;
-  margin-right: 32px;
-  font-size: 16px;
-  color: rgba(255, 255, 255, 0.6);
-  background: none;
-  border: none;
-  border-bottom: 3px solid transparent;
-  border-radius: 0;
-  cursor: pointer;
-  transition: color 0.15s, border-color 0.15s;
-}
-.tab:hover { color: rgba(255, 255, 255, 0.9); }
-.tabs-single .tab:hover { color: #fff; }
-.tab.active {
-  color: #fff;
-  font-weight: 600;
-  border-bottom-color: #2563eb;
-}
-.form {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-.field { position: relative; }
-.input-with-icon {
-  position: relative;
-  display: flex;
-  align-items: center;
-  height: 44px;
-}
-.input-with-icon .input-icon {
-  position: absolute;
-  left: 14px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 18px;
-  height: 18px;
-  color: #9ca3af;
-  pointer-events: none;
-  flex-shrink: 0;
-}
-.input-with-icon .input-icon svg {
-  width: 100%;
-  height: 100%;
-  display: block;
-}
-.input {
-  width: 100%;
-  height: 44px;
-  padding: 0 14px;
-  font-size: 14px;
-  line-height: 42px;
-  color: #d1d5db;
-  background: rgba(0, 0, 0, 0.2);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 2px;
-  outline: none;
-  transition: border-color 0.15s, box-shadow 0.15s;
-  box-sizing: border-box;
-}
-.input-with-icon .input {
-  padding-left: 42px;
-  display: block;
-}
-.input::placeholder { color: #6b7280; }
-.input:focus {
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
-}
-.code-field { display: flex; flex-direction: column; gap: 0; }
-.code-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  height: 44px;
-}
-.code-input {
-  flex: 1;
-  height: 44px;
-  min-width: 0;
-}
-.code-row .btn.secondary {
-  height: 44px;
-  flex-shrink: 0;
-}
-.input-wrap { position: relative; height: 44px; }
-.pwd-toggle {
-  position: absolute;
-  right: 12px;
-  top: 50%;
-  transform: translateY(-50%);
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.6);
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 4px;
-}
-.pwd-toggle:hover { color: rgba(255, 255, 255, 0.9); }
-.input-wrap .input { padding-right: 52px; }
-.login-options {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
+.pwd-bubble-ok { color: #16a34a; font-weight: 500; }
+.pwd-bubble-title { color: #64748b; margin-right: 4px; }
+.pwd-bubble-missing { color: #b45309; }
+.pwd-field { position: relative; }
+.bubble-enter-active, .bubble-leave-active { transition: opacity 0.2s ease, transform 0.2s ease; }
+.bubble-enter-from, .bubble-leave-to { opacity: 0; transform: translateY(-4px); }
+
+.login-options { display: flex; align-items: center; justify-content: space-between; }
 .remember-row {
   display: flex;
   align-items: center;
   gap: 8px;
   cursor: pointer;
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.7);
+  color: #64748b;
 }
-.remember-checkbox {
-  width: 14px;
-  height: 14px;
-  border-radius: 2px;
-  accent-color: #2563eb;
-}
+.remember-checkbox { width: 14px; height: 14px; border-radius: 2px; accent-color: #2563eb; }
 .remember-text { user-select: none; }
-.forgot-link {
-  font-size: 13px;
-  color: #60a5fa;
-  text-decoration: none;
-}
-.forgot-link:hover { text-decoration: underline; color: #93c5fd; }
+.forgot-link { font-size: 13px; color: #2563eb; text-decoration: none; }
+.forgot-link:hover { text-decoration: underline; color: #1d4ed8; }
 .agreement-row {
   display: flex;
   align-items: flex-start;
@@ -963,87 +934,105 @@ async function handleRegister() {
   margin-top: 4px;
   cursor: pointer;
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.7);
+  color: #64748b;
 }
 .agreement-row .remember-checkbox { margin-top: 2px; flex-shrink: 0; }
-.agreement-text a { color: #60a5fa; text-decoration: none; }
-.agreement-text a:hover { text-decoration: underline; color: #93c5fd; }
-.err { margin: 6px 0 0; font-size: 12px; color: #f87171; }
+.agreement-text a { color: #2563eb; text-decoration: none; }
+.agreement-text a:hover { text-decoration: underline; color: #1d4ed8; }
+.err { margin: 6px 0 0; font-size: 12px; color: #dc2626; }
+
 .btn {
   height: 44px;
   padding: 0 16px;
   font-size: 14px;
   font-weight: 500;
-  border-radius: 2px;
+  border-radius: 6px;
   border: none;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background 0.2s ease, transform 0.15s ease, box-shadow 0.2s ease;
 }
 .btn:disabled { opacity: 0.7; cursor: not-allowed; }
 .btn.primary {
   width: 100%;
   height: 46px;
-  background: #2563eb;
+  background: #3b82f6;
   color: #fff;
 }
-.btn.primary:hover:not(:disabled) { background: #1d4ed8; }
+.btn.primary:hover:not(:disabled) {
+  background: #2563eb;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.35);
+}
+.btn.primary:active:not(:disabled) { transform: translateY(0) scale(0.98); }
 .btn.secondary {
   height: 44px;
   flex-shrink: 0;
   padding: 0 20px;
-  background: rgba(37, 99, 235, 0.2);
-  color: #60a5fa;
-  border: 1px solid rgba(96, 165, 250, 0.5);
-  border-radius: 2px;
+  background: rgba(59, 130, 246, 0.1);
+  color: #2563eb;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: 6px;
 }
-.btn.secondary:hover:not(:disabled) { background: rgba(37, 99, 235, 0.35); color: #93c5fd; }
-.btn.secondary:disabled { border-color: rgba(255,255,255,0.15); color: rgba(255,255,255,0.35); }
-.tab-link.below {
-  margin-top: 24px;
-  text-align: center;
-  font-size: 14px;
-  color: rgba(255, 255, 255, 0.6);
-}
-.tab-link a { color: #60a5fa; text-decoration: none; }
-.tab-link a:hover { text-decoration: underline; color: #93c5fd; }
-.page-footer {
-  position: absolute;
-  bottom: 24px;
-  left: 0;
-  right: 0;
-  z-index: 1;
+.btn.secondary:hover:not(:disabled) { background: rgba(59, 130, 246, 0.18); color: #1d4ed8; }
+.btn.secondary:disabled { border-color: #e2e8f0; color: #94a3b8; }
+
+.tab-link.below { margin-top: 1.5rem; text-align: center; font-size: 14px; color: #64748b; }
+.tab-link a { color: #2563eb; text-decoration: none; }
+.tab-link a:hover { text-decoration: underline; color: #1d4ed8; }
+.auth-form-footer {
+  margin-top: 2rem;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.6);
+  color: #94a3b8;
   text-align: center;
 }
-.page-footer a { color: rgba(255, 255, 255, 0.9); text-decoration: none; }
-.page-footer a:hover { text-decoration: underline; }
+.auth-form-footer a { color: #64748b; text-decoration: none; }
+.auth-form-footer a:hover { text-decoration: underline; color: #475569; }
 .divider { margin: 0 8px; }
-@media (max-width: 900px) {
-  .auth-page { padding: 32px 24px 80px; }
-  .brand-logo { padding: 20px 24px; }
-  .brand-name { font-size: 18px; }
-  .auth-main {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 48px;
-    max-width: 100%;
-  }
-  .auth-slogan {
-    max-width: none;
-    margin-bottom: 0;
-    text-align: center;
-  }
-  .slogan-title { font-size: 26px; }
-  .slogan-sub { font-size: 14px; }
-  .monitor-badges { justify-content: center; margin-top: 24px; }
-  .auth-form-wrap { max-width: none; }
+
+/* 滑块验证：浅色主题覆盖 */
+.auth-form-wrap :deep(.slider-track) {
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+}
+.auth-form-wrap :deep(.slider-track:hover:not(.verified)) {
+  border-color: #cbd5e1;
+  background: #e2e8f0;
+}
+.auth-form-wrap :deep(.slider-track.verified) {
+  background: rgba(34, 197, 94, 0.12);
+  border-color: rgba(34, 197, 94, 0.4);
+}
+.auth-form-wrap :deep(.slider-label) {
+  color: #64748b;
+}
+.auth-form-wrap :deep(.slider-track.verified .slider-label) {
+  color: #16a34a;
+}
+.auth-form-wrap :deep(.slider-thumb) {
+  border-radius: 6px;
+  background: #3b82f6;
+}
+.auth-form-wrap :deep(.slider-thumb.verified) {
+  background: #22c55e;
+}
+.auth-form-wrap :deep(.slider-refresh) {
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  color: #64748b;
+  border-radius: 6px;
+}
+.auth-form-wrap :deep(.slider-refresh:hover) {
+  background: #e2e8f0;
+  color: #334155;
+}
+
+@media (max-width: 1023px) {
+  .auth-page { padding: 0; }
+  .auth-form-wrap { padding: 2rem 1rem; }
 }
 @media (max-width: 480px) {
-  .brand-logo { padding: 16px 20px; }
-  .brand-icon { width: 32px; height: 32px; }
-  .brand-name { font-size: 16px; }
-  .auth-glass-card { padding: 28px 20px; }
-  .slogan-title { font-size: 22px; }
+  .auth-form-box { max-width: none; }
+  .auth-form-title { font-size: 1.25rem; }
 }
 </style>
