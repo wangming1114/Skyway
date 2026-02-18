@@ -2,6 +2,7 @@ package com.skyway.resource.service.impl;
 
 import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
+import java.util.Date;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -35,6 +36,16 @@ public class ProxyNodeServiceImpl implements IProxyNodeService {
     @Override
     public ProxyNode getById(Long id) {
         return proxyNodeMapper.selectById(id);
+    }
+
+    @Override
+    public List<ProxyNode> listExpiredAndNormal(Date maxExpireTime) {
+        return proxyNodeMapper.selectExpiredAndNormal(maxExpireTime);
+    }
+
+    @Override
+    public List<ProxyNode> listExpiringWithin(Date fromTime, Date toTime) {
+        return proxyNodeMapper.selectExpiringWithin(fromTime, toTime);
     }
 
     @Override

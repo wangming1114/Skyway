@@ -148,13 +148,23 @@ public class ProxyNodeController extends BaseController {
     }
 
     /**
-     * 删除代理节点（先在服务器上删除配置文件，再删库）
+     * 删除代理节点（支持单条或批量，执行流程一致：先在服务器上删除配置文件，再删流量与库）
      */
     @PreAuthorize("@ss.hasPermi('resource:vps:remove')")
     @Log(title = "代理节点", businessType = BusinessType.DELETE)
     @DeleteMapping("/{ids}")
-    public AjaxResult remove(@PathVariable Long[] ids) {
-        for (Long id : ids) {
+    public AjaxResult remove(@PathVariable String ids) {
+        if (StringUtils.isEmpty(ids)) {
+            return AjaxResult.error("参数错误");
+        }
+        String[] parts = ids.split(",");
+        for (String part : parts) {
+            Long id;
+            try {
+                id = Long.parseLong(part.trim());
+            } catch (NumberFormatException e) {
+                return AjaxResult.error("参数错误：无效的 id " + part);
+            }
             ProxyNode node = proxyNodeService.getById(id);
             if (node != null) {
                 try {

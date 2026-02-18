@@ -1,6 +1,9 @@
 package com.skyway.web.service;
 
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Pattern;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.SimpleMailMessage;
@@ -18,6 +21,9 @@ import com.skyway.common.utils.StringUtils;
  */
 @Service
 public class CustomerEmailCodeService {
+
+    private static final Logger log = LoggerFactory.getLogger(CustomerEmailCodeService.class);
+    private static final Pattern EMAIL_PATTERN = Pattern.compile("^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\\.[a-zA-Z0-9-.]+$");
 
     @Autowired
     private RedisCache redisCache;
@@ -157,5 +163,47 @@ public class CustomerEmailCodeService {
         }
         redisCache.deleteObject(codeKey);
         return true;
+    }
+
+    /**
+     * 发送普通通知邮件（用于节点到期等业务通知）。不做限流。
+     *
+     * @param to      收件人邮箱，非空且格式合法才发送
+     * @param subject 主题
+     * @param text    正文
+     * @return true 发送成功，false 参数无效或发送失败
+     */
+    public boolean sendNotification(String to, String subject, String text) {
+        if (StringUtils.isEmpty(to)) {
+            return false;
+        }
+        String trimmed = to.trim();
+        if (trimmed.isEmpty()) {
+            return false;
+        }
+        if (!EMAIL_PATTERN.matcher(trimmed).matches()) {
+            log.warn("sendNotification: invalid email format, to={}", to);
+            return false;
+        }
+        if (mailSender == null) {
+            log.warn("sendNotification: mailSender not configured");
+            return false;
+        }
+        if (StringUtils.isEmpty(from)) {
+            log.warn("sendNotification: skyway.mail.from not configured");
+            return false;
+        }
+        SimpleMailMessage message = new SimpleMailMessage();
+        message.setFrom(from);
+        message.setTo(trimmed);
+        message.setSubject(subject != null ? subject : "");
+        message.setText(text != null ? text : "");
+        try {
+            mailSender.send(message);
+            return true;
+        } catch (Exception e) {
+            log.warn("sendNotification failed, to={}: {}", trimmed, e.getMessage());
+            return false;
+        }
     }
 }

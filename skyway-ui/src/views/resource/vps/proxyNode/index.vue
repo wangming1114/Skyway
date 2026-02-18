@@ -34,10 +34,12 @@
     </el-form>
 
     <el-row :gutter="10" class="mb8">
+      <el-button type="danger" plain icon="Delete" :disabled="selectedIds.length === 0" @click="handleBatchDelete" v-hasPermi="['resource:vps:remove']">批量删除</el-button>
       <right-toolbar v-model:showSearch="showSearch" @queryTable="getList" />
     </el-row>
 
-    <el-table v-loading="loading" :data="nodeList" border size="small">
+    <el-table ref="tableRef" v-loading="loading" :data="nodeList" border size="small" @selection-change="handleSelectionChange">
+      <el-table-column type="selection" width="50" align="center" />
       <el-table-column label="节点名称" prop="nodeName" min-width="120" show-overflow-tooltip />
       <el-table-column label="节点类型" prop="nodeType" width="140">
         <template #default="{ row }">
@@ -102,7 +104,7 @@
         <template #default="{ row }">
           <el-button link type="primary" size="small" @click="handleDetail(row)">详情</el-button>
           <el-button link type="primary" size="small" @click="handleCopyUrl(row)">复制链接</el-button>
-          <el-button link type="danger" size="small" icon="Delete" :loading="deleteLoadingId === row.id" @click="handleDelete(row)" v-hasPermi="['resource:vps:remove']">删除</el-button>
+          <el-button link type="danger" size="small" icon="Delete" :loading="deleteLoadingId === row.id || (batchDeleteLoading && selectedIds.includes(row.id))" @click="handleDelete(row)" v-hasPermi="['resource:vps:remove']">删除</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -196,8 +198,11 @@ const queryParams = ref({
   status: undefined
 })
 
+const tableRef = ref(null)
+const selectedIds = ref([])
 const statusLoadingId = ref(null)
 const deleteLoadingId = ref(null)
+const batchDeleteLoading = ref(false)
 const trafficMap = ref({})
 const detailVisible = ref(false)
 const detailData = ref(null)
@@ -344,16 +349,40 @@ function handleStatusChange(row) {
   })
 }
 
+function handleSelectionChange(selection) {
+  selectedIds.value = (selection || []).map(r => r.id).filter(id => id != null)
+}
+
+function handleBatchDelete() {
+  if (selectedIds.value.length === 0) return
+  proxy.$modal.confirm(`确认要删除选中的 ${selectedIds.value.length} 个节点吗？将同时在服务器上删除配置，执行流程与单个删除一致。`).then(() => {
+    batchDeleteLoading.value = true
+    proxy.$modal.loading('正在删除节点...')
+    return delProxyNode(selectedIds.value.join(','))
+  }).then(() => {
+    proxy.$modal.msgSuccess('删除成功')
+    detailVisible.value = false
+    selectedIds.value = []
+    tableRef.value?.clearSelection?.()
+    getList()
+  }).catch(() => {}).finally(() => {
+    proxy.$modal.closeLoading()
+    batchDeleteLoading.value = false
+  })
+}
+
 function handleDelete(row) {
   if (!row?.id) return
   proxy.$modal.confirm(`确认要删除节点"${row.nodeName}"吗？将同时在服务器上删除配置。`).then(() => {
     deleteLoadingId.value = row.id
+    proxy.$modal.loading('正在删除节点...')
     return delProxyNode(row.id)
   }).then(() => {
     proxy.$modal.msgSuccess('删除成功')
     detailVisible.value = false
     getList()
   }).catch(() => {}).finally(() => {
+    proxy.$modal.closeLoading()
     deleteLoadingId.value = null
   })
 }

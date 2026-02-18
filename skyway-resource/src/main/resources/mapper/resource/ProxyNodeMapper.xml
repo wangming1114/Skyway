@@ -57,6 +57,18 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         where id = #{id}
     </select>
 
+    <select id="selectExpiredAndNormal" resultMap="ProxyNodeResult">
+        <include refid="selectProxyNodeVo"/>
+        where expire_time is not null and expire_time &lt; #{maxExpireTime} and (status = '0' or status is null)
+        order by expire_time asc
+    </select>
+
+    <select id="selectExpiringWithin" resultMap="ProxyNodeResult">
+        <include refid="selectProxyNodeVo"/>
+        where expire_time is not null and expire_time &gt;= #{fromTime} and expire_time &lt;= #{toTime} and (status = '0' or status is null)
+        order by expire_time asc
+    </select>
+
     <select id="selectByInstanceIdAndPort" resultMap="ProxyNodeResult">
         <include refid="selectProxyNodeVo"/>
         where instance_id = #{instanceId} and port = #{port}

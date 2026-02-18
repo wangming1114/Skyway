@@ -1,5 +1,6 @@
 package com.skyway.resource.mapper;
 
+import java.util.Date;
 import java.util.List;
 import org.apache.ibatis.annotations.Param;
 import com.skyway.resource.domain.ProxyNode;
@@ -29,6 +30,23 @@ public interface ProxyNodeMapper {
      * @return 实体
      */
     ProxyNode selectById(Long id);
+
+    /**
+     * 查询已到期且状态为正常的节点（用于定时任务自动停用）
+     *
+     * @param maxExpireTime 到期时间上限，查询 expire_time &lt; maxExpireTime
+     * @return 节点列表
+     */
+    List<ProxyNode> selectExpiredAndNormal(@Param("maxExpireTime") Date maxExpireTime);
+
+    /**
+     * 查询在指定时间区间内到期且状态为正常的节点（用于即将到期提醒）
+     *
+     * @param fromTime 到期时间下限，expire_time &gt;= fromTime
+     * @param toTime   到期时间上限，expire_time &lt;= toTime
+     * @return 节点列表
+     */
+    List<ProxyNode> selectExpiringWithin(@Param("fromTime") Date fromTime, @Param("toTime") Date toTime);
 
     /**
      * 按实例与端口查询唯一节点（用于流量采集时映射 port -> node_id）

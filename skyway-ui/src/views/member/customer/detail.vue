@@ -31,9 +31,11 @@
         <el-tab-pane label="关联节点" name="bindings">
           <div class="toolbar">
             <el-button type="primary" size="small" icon="Plus" @click="handleAddNode" v-hasPermi="['resource:vps:add']">新增节点</el-button>
+            <el-button type="danger" plain size="small" icon="Delete" :disabled="selectedIds.length === 0" @click="handleBatchDeleteNode" v-hasPermi="['resource:vps:remove']">批量删除</el-button>
             <el-button icon="Refresh" size="small" circle style="margin-left: 8px" @click="loadBindings" />
           </div>
-          <el-table v-loading="bindingsLoading" :data="bindings" border size="small" style="margin-top: 10px">
+          <el-table v-loading="bindingsLoading" :data="bindings" border size="small" style="margin-top: 10px" @selection-change="handleSelectionChange">
+            <el-table-column type="selection" width="50" align="center" />
             <el-table-column label="节点名称" prop="nodeName" min-width="120" show-overflow-tooltip />
             <el-table-column label="节点类型" prop="nodeType" width="160">
               <template #default="{ row }">
@@ -87,7 +89,7 @@
               <template #default="{ row }">
                 <el-button link type="primary" size="small" @click="handleNodeDetail(row)">详情</el-button>
                 <el-button link type="primary" size="small" @click="handleCopyUrl(row)">复制链接</el-button>
-                <el-button link type="danger" size="small" icon="Delete" :loading="deleteLoadingId === row.id" @click="handleDeleteNode(row)" v-hasPermi="['resource:vps:remove']">删除</el-button>
+                <el-button link type="danger" size="small" icon="Delete" :loading="deleteLoadingId === row.id || (batchDeleteLoading && selectedIds.includes(row.id))" @click="handleDeleteNode(row)" v-hasPermi="['resource:vps:remove']">删除</el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -194,7 +196,7 @@ import useUserStore from '@/store/modules/user'
 import { getCustomer, getCustomerBindings } from '@/api/member/customer'
 import { listInstance, addProxyNodeOnInstance, updateProxyNode, delProxyNode, getProxyNodeTraffic } from '@/api/resource/vps'
 import { parseTime } from '@/utils/skyway'
-import { DocumentCopy, Loading, Edit } from '@element-plus/icons-vue'
+import { DocumentCopy, Loading, Edit, Delete } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -229,6 +231,8 @@ const nodeDetailConfig = computed(() => {
   try { return JSON.parse(currentNode.value.configJson) } catch { return null }
 })
 
+const selectedIds = ref([])
+const batchDeleteLoading = ref(false)
 const statusLoadingId = ref(null)
 const deleteLoadingId = ref(null)
 const trafficMap = ref({})
@@ -375,16 +379,39 @@ function handleStatusChange(row) {
   })
 }
 
+function handleSelectionChange(selection) {
+  selectedIds.value = (selection || []).map(r => r.id).filter(id => id != null)
+}
+
+function handleBatchDeleteNode() {
+  if (selectedIds.value.length === 0) return
+  proxy.$modal.confirm(`确认要删除选中的 ${selectedIds.value.length} 个节点吗？将同时在服务器上删除配置，执行流程与单个删除一致。`).then(() => {
+    batchDeleteLoading.value = true
+    proxy.$modal.loading('正在删除节点...')
+    return delProxyNode(selectedIds.value.join(','))
+  }).then(() => {
+    proxy.$modal.msgSuccess('删除成功')
+    nodeDetailVisible.value = false
+    selectedIds.value = []
+    loadBindings()
+  }).catch(() => {}).finally(() => {
+    proxy.$modal.closeLoading()
+    batchDeleteLoading.value = false
+  })
+}
+
 function handleDeleteNode(row) {
   if (!row?.id) return
   proxy.$modal.confirm(`确认要删除节点"${row.nodeName}"吗？将同时在服务器上删除配置。`).then(() => {
     deleteLoadingId.value = row.id
+    proxy.$modal.loading('正在删除节点...')
     return delProxyNode(row.id)
   }).then(() => {
     proxy.$modal.msgSuccess('删除成功')
     nodeDetailVisible.value = false
     loadBindings()
   }).catch(() => {}).finally(() => {
+    proxy.$modal.closeLoading()
     deleteLoadingId.value = null
   })
 }

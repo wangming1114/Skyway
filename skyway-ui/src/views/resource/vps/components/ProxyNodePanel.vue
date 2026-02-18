@@ -2,13 +2,15 @@
   <div class="proxy-node-panel">
     <div class="toolbar">
       <el-button type="primary" size="small" icon="Plus" @click="handleAdd" v-hasPermi="['resource:vps:add']">新增节点</el-button>
+      <el-button type="danger" plain size="small" icon="Delete" :disabled="selectedIds.length === 0" @click="handleBatchDelete" v-hasPermi="['resource:vps:remove']">批量删除</el-button>
       <el-select v-model="queryParams.nodeType" placeholder="全部类型" clearable size="small" style="width: 180px; margin-left: 10px" @change="getList">
         <el-option v-for="t in nodeTypeOptions" :key="t.value" :label="t.label" :value="t.value" />
       </el-select>
       <el-button icon="Refresh" size="small" circle style="margin-left: 8px" @click="getList" />
     </div>
 
-    <el-table v-loading="loading" :data="nodeList" border size="small" style="margin-top: 10px">
+    <el-table v-loading="loading" :data="nodeList" border size="small" style="margin-top: 10px" @selection-change="handleSelectionChange">
+      <el-table-column type="selection" width="50" align="center" />
       <el-table-column label="节点名称" prop="nodeName" min-width="120" show-overflow-tooltip />
       <el-table-column label="节点类型" prop="nodeType" width="160">
         <template #default="{ row }">
@@ -62,7 +64,7 @@
         <template #default="{ row }">
           <el-button link type="primary" size="small" @click="handleDetail(row)">详情</el-button>
           <el-button link type="primary" size="small" @click="handleCopyUrl(row)">复制链接</el-button>
-          <el-button link type="danger" size="small" icon="Delete" :loading="deletingNodeId === row.id" @click="handleDelete(row)" v-hasPermi="['resource:vps:remove']">删除</el-button>
+          <el-button link type="danger" size="small" icon="Delete" :loading="deletingNodeId === row.id || (batchDeleteLoading && selectedIds.includes(row.id))" @click="handleDelete(row)" v-hasPermi="['resource:vps:remove']">删除</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -196,9 +198,9 @@
 <script setup>
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import useUserStore from '@/store/modules/user'
-import { listProxyNode, updateProxyNode, getProxyNodeTraffic } from '@/api/resource/vps'
+import { listProxyNode, updateProxyNode, delProxyNode, getProxyNodeTraffic } from '@/api/resource/vps'
 import { listCustomer } from '@/api/member/customer'
-import { DocumentCopy, Loading, Edit } from '@element-plus/icons-vue'
+import { DocumentCopy, Loading, Edit, Delete } from '@element-plus/icons-vue'
 
 const { proxy } = getCurrentInstance()
 const { res_proxy_node_status } = proxy.useDict('res_proxy_node_status')
@@ -383,7 +385,10 @@ function handleWsMessage(msg) {
   } else if (msg.type === 'exec_end') {
     clearExecTimeout()
     addLogRunning.value = false
-    if (isDelete) deletingNodeId.value = null
+    if (isDelete) {
+      proxy.$modal.closeLoading()
+      deletingNodeId.value = null
+    }
     const code = msg.code != null ? msg.code : -1
     addLogExitCode.value = code
     if (code === 0) {
@@ -405,6 +410,7 @@ function handleWsMessage(msg) {
 watch(() => props.wsConnected, (connected) => {
   if (!connected && addLogRunning.value) {
     clearExecTimeout()
+    proxy.$modal.closeLoading()
     deletingNodeId.value = null
     endLogStateAsFailed('连接已断开，本次操作已中止，状态未知。')
     proxy.$modal.msgWarning('连接已断开，请等待自动重连或刷新页面')
@@ -445,12 +451,33 @@ function handleStatusChange(row) {
   })
 }
 
+function handleSelectionChange(selection) {
+  selectedIds.value = (selection || []).map(r => r.id).filter(id => id != null)
+}
+
+function handleBatchDelete() {
+  if (selectedIds.value.length === 0) return
+  proxy.$modal.confirm(`确认要删除选中的 ${selectedIds.value.length} 个节点吗？将同时在服务器上删除配置，执行流程与单个删除一致。`).then(() => {
+    batchDeleteLoading.value = true
+    proxy.$modal.loading('正在删除节点...')
+    return delProxyNode(selectedIds.value.join(','))
+  }).then(() => {
+    proxy.$modal.msgSuccess('删除成功')
+    selectedIds.value = []
+    getList()
+  }).catch(() => {}).finally(() => {
+    proxy.$modal.closeLoading()
+    batchDeleteLoading.value = false
+  })
+}
+
 function handleDelete(row) {
   proxy.$modal.confirm(`确认要删除节点"${row.nodeName}"吗？删除将在服务器上执行后再移除数据库记录。`).then(() => {
     if (!props.wsConnected) {
       proxy.$modal.msgWarning('请等待 SSH 连接完成')
       return
     }
+    proxy.$modal.loading('正在删除节点...')
     deletingNodeId.value = row.id
     addLog.value = ''
     addLogRunning.value = true
@@ -465,6 +492,7 @@ function handleDelete(row) {
       reqId: deleteNodeReqId
     })
     if (sent === false) {
+      proxy.$modal.closeLoading()
       deletingNodeId.value = null
       endLogStateAsFailed('消息发送失败，连接可能已断开。')
       proxy.$modal.msgWarning('发送失败，请检查连接后重试')
@@ -473,6 +501,7 @@ function handleDelete(row) {
     execTimeoutId = setTimeout(() => {
       execTimeoutId = null
       if (addLogRunning.value) {
+        proxy.$modal.closeLoading()
         deletingNodeId.value = null
         endLogStateAsFailed('执行超时（90 秒），请检查连接与服务器状态。')
         proxy.$modal.msgWarning('执行超时，请查看日志')
@@ -481,6 +510,8 @@ function handleDelete(row) {
   }).catch(() => {})
 }
 
+const selectedIds = ref([])
+const batchDeleteLoading = ref(false)
 const statusLoadingId = ref(null)
 const deletingNodeId = ref(null)
 const trafficMap = ref({})

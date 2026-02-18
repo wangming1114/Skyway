@@ -1,5 +1,6 @@
 package com.skyway.resource.service;
 
+import java.util.Date;
 import java.util.List;
 import com.skyway.resource.domain.ProxyNode;
 
@@ -28,6 +29,23 @@ public interface IProxyNodeService {
      * @return 实体
      */
     ProxyNode getById(Long id);
+
+    /**
+     * 查询已到期且状态为正常的节点（用于定时任务自动停用）
+     *
+     * @param maxExpireTime 到期时间上限
+     * @return 节点列表
+     */
+    List<ProxyNode> listExpiredAndNormal(Date maxExpireTime);
+
+    /**
+     * 查询在指定时间区间内到期且状态为正常的节点（用于即将到期提醒）
+     *
+     * @param fromTime 到期时间下限
+     * @param toTime   到期时间上限
+     * @return 节点列表
+     */
+    List<ProxyNode> listExpiringWithin(Date fromTime, Date toTime);
 
     /**
      * 按实例与端口查询唯一节点

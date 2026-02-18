@@ -1052,12 +1052,17 @@ onUnmounted(() => {
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: var(--el-text-color-placeholder);
+  background: var(--el-color-danger);
   border: 2px solid var(--el-fill-color);
   box-sizing: border-box;
 }
 .vps-status-badge--running {
   background: var(--el-color-success);
+  border-color: var(--el-fill-color);
+}
+.vps-status-badge--stopped,
+.vps-status-badge--error {
+  background: var(--el-color-danger);
   border-color: var(--el-fill-color);
 }
 .vps-name-cell {
