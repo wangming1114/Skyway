@@ -253,13 +253,16 @@ onMounted(() => {
 </script>
 
 <style lang="scss" scoped>
+/* 系统级无衬线字体栈，统一字重与层级 */
 .login-split {
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'SF Pro Text', sans-serif;
   display: flex;
   min-height: 100vh;
   width: 100%;
-  font-family: inherit;
-  color: #1e293b;
+  font-family: var(--font-sans);
+  color: #334155; /* Slate-600 正文 */
   background: #fff;
+  -webkit-font-smoothing: antialiased;
 }
 
 /* ========== 左侧视觉区 ========== */
@@ -289,14 +292,14 @@ onMounted(() => {
   inset: 0;
   pointer-events: none;
 
-  /* 深蓝遮罩，更通透、不太黑 */
+  /* 深蓝遮罩，平滑过渡，保证文字可读 */
   &--multiply {
-    background: rgba(30, 58, 138, 0.3);
+    background: rgba(30, 58, 138, 0.28);
     mix-blend-mode: multiply;
   }
 
   &--gradient {
-    background: linear-gradient(to top, rgba(15, 23, 42, 0.8) 0%, transparent 50%, transparent 100%);
+    background: linear-gradient(to top, rgba(15, 23, 42, 0.82) 0%, rgba(15, 23, 42, 0.2) 45%, transparent 100%);
   }
 }
 
@@ -356,7 +359,7 @@ onMounted(() => {
   font-size: 1.875rem;
   font-weight: 700;
   color: #fff;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.025em;
   line-height: 1.2;
   margin: 0 0 0.5rem 0;
 }
@@ -364,7 +367,8 @@ onMounted(() => {
 .login-visual__subtitle {
   font-size: 1rem;
   font-weight: 300;
-  color: rgba(191, 219, 254, 0.9);
+  letter-spacing: 0.2em;
+  color: rgba(191, 219, 254, 0.92);
   margin: 0 0 1.5rem 0;
 }
 
@@ -379,14 +383,16 @@ onMounted(() => {
   align-items: center;
   gap: 1rem;
   padding: 0.75rem;
-  border-radius: 8px;
+  border-radius: 10px;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(4px);
-  transition: background 0.2s;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  transition: background 0.25s ease, border-color 0.25s ease;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.12);
   }
 }
 
@@ -470,14 +476,15 @@ onMounted(() => {
 .login-form-title {
   font-size: 1.5rem;
   font-weight: 700;
-  color: #0f172a;
-  letter-spacing: -0.02em;
+  color: #0f172a; /* Slate-900 */
+  letter-spacing: -0.025em;
   margin: 0 0 0.5rem 0;
 }
 
 .login-form-subtitle {
   font-size: 0.875rem;
-  color: #64748b;
+  color: #475569; /* Slate-600 */
+  letter-spacing: 0.01em;
   margin: 0;
 }
 
@@ -504,9 +511,9 @@ onMounted(() => {
       display: block;
       font-size: 0.75rem;
       font-weight: 700;
-      color: #94a3b8;
+      color: #94a3b8; /* Slate-400 辅助 */
       text-transform: uppercase;
-      letter-spacing: 0.05em;
+      letter-spacing: 0.06em;
       margin-bottom: 0.5rem;
     }
 
@@ -514,10 +521,11 @@ onMounted(() => {
       display: flex;
       align-items: center;
       border-bottom: 1px solid #e2e8f0;
-      transition: border-color 0.2s;
+      transition: border-color 0.3s ease, box-shadow 0.3s ease;
 
       &:focus-within {
-        border-color: #2563eb;
+        border-color: #2563eb; /* Blue-600 */
+        outline: none;
       }
 
       &:focus-within .field__icon {
@@ -531,7 +539,7 @@ onMounted(() => {
       color: #94a3b8;
       flex-shrink: 0;
       margin-right: 0.5rem;
-      transition: color 0.2s;
+      transition: color 0.3s ease;
     }
 
     .field__item {
@@ -551,7 +559,7 @@ onMounted(() => {
     }
 
     .field__input :deep(.el-input__inner) {
-      --el-input-placeholder-color: #cbd5e1;
+      --el-input-placeholder-color: #94a3b8; /* Slate-400 */
     }
   }
 }
@@ -585,25 +593,25 @@ onMounted(() => {
   min-width: 0;
 }
 
-/* 验证码图片容器：灰底、圆角、干扰线，后端图只负责内容，容器做精致样式 */
+/* 验证码容器：与输入框视觉对齐，精致组件感 */
 .captcha-box {
   position: relative;
   width: 7rem;
   height: 2.5rem;
   flex-shrink: 0;
-  background: linear-gradient(145deg, #f8fafc 0%, #f1f5f9 100%);
+  background: linear-gradient(160deg, #f8fafc 0%, #f1f5f9 100%);
   border: none;
-  border-radius: 10px;
+  border-radius: 8px;
   overflow: hidden;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: box-shadow 0.2s;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  transition: box-shadow 0.25s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
 
   &:hover {
-    box-shadow: 0 2px 8px rgba(37, 99, 235, 0.08);
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.12);
   }
 
   &:hover .captcha-box__refresh {
@@ -615,11 +623,11 @@ onMounted(() => {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  opacity: 0.08;
+  opacity: 0.06;
   background-image:
-    radial-gradient(circle at 20% 30%, #94a3b8 1px, transparent 1px),
-    radial-gradient(circle at 80% 70%, #94a3b8 1px, transparent 1px);
-  background-size: 6px 6px;
+    radial-gradient(circle at 15% 25%, #94a3b8 1px, transparent 1px),
+    radial-gradient(circle at 85% 75%, #94a3b8 1px, transparent 1px);
+  background-size: 5px 5px;
 }
 
 .captcha-box__noise::before {
@@ -627,11 +635,11 @@ onMounted(() => {
   position: absolute;
   inset: 0;
   background: repeating-linear-gradient(
-    -45deg,
+    -42deg,
     transparent,
     transparent 2px,
-    rgba(148, 163, 184, 0.06) 2px,
-    rgba(148, 163, 184, 0.06) 3px
+    rgba(148, 163, 184, 0.05) 2px,
+    rgba(148, 163, 184, 0.05) 3px
   );
 }
 
@@ -667,29 +675,36 @@ onMounted(() => {
 }
 
 .form-options :deep(.el-checkbox__label) {
-  color: #64748b;
+  color: #475569; /* Slate-600 */
   font-size: 0.875rem;
 }
 
-/* 登录按钮：品牌亮蓝 + 轻微蓝色阴影 */
+/* 登录按钮：亮蓝（Blue-500）+ 悬停略深 + 按压反馈 */
 .submit-btn {
   width: 100%;
   height: 2.75rem;
   font-weight: 700;
   letter-spacing: 0.05em;
   border-radius: 8px;
-  background: #2563eb !important;
-  border-color: #2563eb !important;
-  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.25);
+  background: #3b82f6 !important; /* Blue-500 更亮 */
+  border-color: #3b82f6 !important;
+  box-shadow: 0 4px 14px rgba(59, 130, 246, 0.3);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
 
   &:hover:not(:disabled) {
-    background: #1d4ed8 !important;
-    border-color: #1d4ed8 !important;
-    box-shadow: 0 6px 20px rgba(37, 99, 235, 0.35);
+    background: #2563eb !important; /* Blue-600 悬停略深 */
+    border-color: #2563eb !important;
+    box-shadow: 0 8px 24px rgba(59, 130, 246, 0.4);
+    transform: translateY(-2px);
+  }
+
+  &:active:not(:disabled) {
+    transform: translateY(0) scale(0.98);
   }
 
   &:disabled {
     box-shadow: none;
+    transform: none;
   }
 }
 
@@ -697,7 +712,7 @@ onMounted(() => {
   margin-top: 2rem;
   text-align: center;
   font-size: 0.75rem;
-  color: #cbd5e1;
-  font-weight: 300;
+  color: #94a3b8; /* Slate-400 */
+  font-weight: 400;
 }
 </style>
