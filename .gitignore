@@ -6,6 +6,8 @@
 !gradle/wrapper/gradle-wrapper.jar
 
 target/
+**/target/
+${project.build.directory}/
 !.mvn/wrapper/maven-wrapper.jar
 
 ######################################################################
@@ -52,6 +54,10 @@ docker/volumes/nginx/admin/*
 !docker/volumes/nginx/admin/.gitkeep
 docker/volumes/nginx/c/*
 !docker/volumes/nginx/c/.gitkeep
+
+# Docker 运行时数据（勿提交）
+docker/volumes/redis/data/
+docker/volumes/database/mysql/data/
 
 # Others
 *.log
