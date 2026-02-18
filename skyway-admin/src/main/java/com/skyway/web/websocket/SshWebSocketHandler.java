@@ -58,6 +58,9 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
 
     private static final Logger log = LoggerFactory.getLogger(SshWebSocketHandler.class);
     private static final String ATTR_INSTANCE_ID = "instanceId";
+
+    /** SFTP 二进制分片魔术头，用于区分终端按键与上传分片，避免误把按键写入文件 */
+    private static final byte[] SFTP_CHUNK_MAGIC = "SFT0CHNK".getBytes(StandardCharsets.UTF_8);
     private static final int PTY_COLS = 80;
     private static final int PTY_ROWS = 24;
     /** 仅允许的一键安装命令：233boy sing-box 官方安装脚本，禁止任意命令执行 */
@@ -191,6 +194,18 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                 return;
             }
             if (type != null && type.startsWith("sftp_")) {
+                if ("sftp_upload_chunk_bin".equals(type)) {
+                    String pathVal = obj.getString("path");
+                    String path = pathVal != null ? pathVal.trim() : "/";
+                    long offset = obj.getLongValue("offset");
+                    Object reqId = obj.get("_id");
+                    Map<String, Object> meta = new HashMap<>();
+                    meta.put("path", path);
+                    meta.put("offset", offset);
+                    meta.put("reqId", reqId);
+                    wsSession.getAttributes().put("uploadPendingChunk", meta);
+                    return;
+                }
                 handleSftp(wsSession, obj);
                 return;
             }
@@ -921,6 +936,35 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
 
     @Override
     protected void handleBinaryMessage(WebSocketSession wsSession, BinaryMessage message) throws Exception {
+        Object pendingObj = wsSession.getAttributes().get("uploadPendingChunk");
+        if (pendingObj instanceof Map) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> meta = (Map<String, Object>) pendingObj;
+            wsSession.getAttributes().remove("uploadPendingChunk");
+            ByteBuffer payload = message.getPayload();
+            int rem = payload.remaining();
+            if (rem >= SFTP_CHUNK_MAGIC.length) {
+                byte[] magicBuf = new byte[SFTP_CHUNK_MAGIC.length];
+                ByteBuffer dup = payload.duplicate();
+                dup.get(magicBuf);
+                boolean magicOk = true;
+                for (int i = 0; i < SFTP_CHUNK_MAGIC.length; i++) {
+                    if (magicBuf[i] != SFTP_CHUNK_MAGIC[i]) {
+                        magicOk = false;
+                        break;
+                    }
+                }
+                if (magicOk) {
+                    int chunkLen = rem - SFTP_CHUNK_MAGIC.length;
+                    byte[] chunkBytes = new byte[chunkLen];
+                    payload.position(payload.position() + SFTP_CHUNK_MAGIC.length);
+                    payload.get(chunkBytes);
+                    final byte[] bytes = chunkBytes;
+                    executor.execute(() -> processUploadChunk(wsSession, meta, bytes));
+                    return;
+                }
+            }
+        }
         Object toShell = wsSession.getAttributes().get("shell");
         if (toShell instanceof net.schmizz.sshj.connection.channel.direct.Session.Shell) {
             OutputStream out = ((net.schmizz.sshj.connection.channel.direct.Session.Shell) toShell).getOutputStream();
@@ -928,6 +972,35 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                 out.write(message.getPayload().array(), message.getPayload().position(), message.getPayload().remaining());
                 out.flush();
             }
+        }
+    }
+
+    private static final int SFTP_WRITE_PIECE = 32 * 1024;
+
+    private void processUploadChunk(WebSocketSession wsSession, Map<String, Object> meta, byte[] bytes) {
+        try {
+            Object rfObj = wsSession.getAttributes().get("uploadRemoteFile");
+            if (!(rfObj instanceof RemoteFile)) {
+                sendSftpError(wsSession, "sftp_upload_chunk", "没有正在进行的上传", meta.get("reqId"));
+                return;
+            }
+            RemoteFile rf = (RemoteFile) rfObj;
+            long offset = ((Number) meta.get("offset")).longValue();
+            for (int off = 0; off < bytes.length; off += SFTP_WRITE_PIECE) {
+                int len = Math.min(SFTP_WRITE_PIECE, bytes.length - off);
+                rf.write(offset + off, bytes, off, len);
+            }
+            JSONObject resp = new JSONObject();
+            resp.put("type", "sftp_upload_chunk");
+            resp.put("ok", true);
+            resp.put("offset", offset);
+            resp.put("written", bytes.length);
+            Object reqId = meta.get("reqId");
+            if (reqId != null) resp.put("reqId", reqId);
+            if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(resp.toJSONString()));
+        } catch (Exception e) {
+            log.warn("SFTP upload chunk failed", e);
+            sendSftpError(wsSession, "sftp_upload_chunk", e.getMessage(), meta.get("reqId"));
         }
     }
 

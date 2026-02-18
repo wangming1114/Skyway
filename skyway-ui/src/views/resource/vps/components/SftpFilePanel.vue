@@ -212,6 +212,7 @@ import { FolderAdd, DocumentAdd, Upload, Refresh, DocumentCopy } from '@element-
 
 const props = defineProps({
   sendJson: { type: Function, default: null },
+  sendBinary: { type: Function, default: null },
   sftpMessage: { type: Object, default: null },
   connected: { type: Boolean, default: false }
 })
@@ -309,9 +310,11 @@ const uploadRef = ref(null)
 /** 右击「上传到此处」时设为目标目录，beforeUpload 使用后清空 */
 const uploadTargetPath = ref(null)
 let uploadCancelled = false
-/** 前端每片 256KB，后端会按 32KB 分段写入 SFTP，兼顾往返次数与 SSHJ 单次写入限制 */
-const CHUNK_SIZE = 256 * 1024
+/** 二进制上传时分片 512KB，无 base64 膨胀；后端按 32KB 分段写 SFTP */
+const CHUNK_SIZE = 512 * 1024
 const UPLOAD_CHUNK_THRESHOLD = 1024 * 1024
+/** 与后端 SFT0CHNK 一致，用于区分终端按键与上传分片 */
+const SFTP_CHUNK_MAGIC = new TextEncoder().encode('SFT0CHNK')
 const pendingWaits = {}
 
 function clearLoadingTimeout() {
@@ -898,6 +901,16 @@ function readSliceAsBase64(file, offset, length) {
   })
 }
 
+function readSliceAsArrayBuffer(file, offset, length) {
+  return new Promise((resolve, reject) => {
+    const blob = file.slice(offset, offset + length)
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result)
+    reader.onerror = () => reject(reader.error)
+    reader.readAsArrayBuffer(blob)
+  })
+}
+
 function cancelUpload() {
   uploadCancelled = true
   send('sftp_upload_cancel', { path: '' })
@@ -923,7 +936,7 @@ function triggerUploadToFolder(row) {
 }
 
 /** 分片上传时允许 N 个块同时 in-flight，减少 RTT 等待 */
-const UPLOAD_PIPELINE = 2
+const UPLOAD_PIPELINE = 4
 
 async function doChunkedUpload(file, basePathOverride) {
   const basePath = (basePathOverride || currentPath.value).endsWith('/')
@@ -932,6 +945,7 @@ async function doChunkedUpload(file, basePathOverride) {
   uploadProgress.value = 0
   uploadFileName.value = file.name
   uploadCancelled = false
+  const useBinary = !!props.sendBinary
   try {
     const startId = send('sftp_upload_start', { path: basePath, name: file.name, size: file.size })
     const startResp = await waitForReqId(startId)
@@ -947,11 +961,23 @@ async function doChunkedUpload(file, basePathOverride) {
       const promises = []
       for (let i = 0; i < pipeline && offset < file.size; i++) {
         const len = Math.min(CHUNK_SIZE, file.size - offset)
-        const base64 = await readSliceAsBase64(file, offset, len)
-        if (uploadCancelled) return
-        const chunkId = send('sftp_upload_chunk', { path: targetPath, offset, base64 })
+        const chunkOffset = offset
         offset += len
-        promises.push(waitForReqId(chunkId))
+        if (useBinary) {
+          const buf = await readSliceAsArrayBuffer(file, chunkOffset, len)
+          if (uploadCancelled) return
+          const chunkId = send('sftp_upload_chunk_bin', { path: targetPath, offset: chunkOffset })
+          const total = new Uint8Array(SFTP_CHUNK_MAGIC.length + buf.byteLength)
+          total.set(SFTP_CHUNK_MAGIC)
+          total.set(new Uint8Array(buf), SFTP_CHUNK_MAGIC.length)
+          props.sendBinary(total.buffer)
+          promises.push(waitForReqId(chunkId))
+        } else {
+          const base64 = await readSliceAsBase64(file, chunkOffset, len)
+          if (uploadCancelled) return
+          const chunkId = send('sftp_upload_chunk', { path: targetPath, offset: chunkOffset, base64 })
+          promises.push(waitForReqId(chunkId))
+        }
       }
       const results = await Promise.all(promises)
       if (uploadCancelled) return

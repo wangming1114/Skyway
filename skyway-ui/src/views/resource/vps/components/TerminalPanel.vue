@@ -177,7 +177,23 @@ function sendJson(obj) {
   }
 }
 
-defineExpose({ sendSysinfo, sendJson })
+function sendBinary(data) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return
+  if (data instanceof ArrayBuffer) {
+    ws.send(data)
+  } else if (data instanceof Uint8Array) {
+    const buf = data.buffer
+    if (data.byteOffset === 0 && data.byteLength === buf.byteLength) {
+      ws.send(buf)
+    } else {
+      ws.send(buf.slice(data.byteOffset, data.byteOffset + data.byteLength))
+    }
+  } else {
+    ws.send(data.buffer)
+  }
+}
+
+defineExpose({ sendSysinfo, sendJson, sendBinary })
 
 /** 仅在容器有尺寸且终端未销毁时调用 fit，避免 dimensions 异常 */
 function doFit() {

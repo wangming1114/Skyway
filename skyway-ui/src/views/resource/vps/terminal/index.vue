@@ -41,6 +41,7 @@
                   </template>
                   <SftpFilePanel
                     :send-json="sendJson"
+                    :send-binary="sendBinary"
                     :sftp-message="sftpMessage"
                     :connected="wsConnected"
                   />
@@ -346,6 +347,10 @@ function sendSysinfo() {
 
 function sendJson(obj) {
   terminalRef.value?.sendJson?.(obj)
+}
+
+function sendBinary(data) {
+  terminalRef.value?.sendBinary?.(data)
 }
 
 function openExecDrawer(commandId, title, option) {
