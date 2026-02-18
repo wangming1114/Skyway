@@ -42,15 +42,20 @@
             <span class="toolbar-spacer" />
             <el-tooltip content="新建文件夹" placement="top"><el-button size="small" :icon="FolderAdd" :disabled="!connected" @click="openNewFolder" /></el-tooltip>
             <el-tooltip content="新建文件" placement="top"><el-button size="small" :icon="DocumentAdd" :disabled="!connected" @click="openNewFile" /></el-tooltip>
-            <el-upload ref="uploadRef" :show-file-list="false" :before-upload="beforeUpload" :http-request="() => {}">
+            <el-upload ref="uploadRef" :show-file-list="false" :before-upload="beforeUpload" :http-request="() => {}" multiple>
               <el-tooltip content="上传" placement="top"><el-button size="small" :icon="Upload" :disabled="!connected" /></el-tooltip>
             </el-upload>
             <el-tooltip v-if="copiedPath" content="粘贴" placement="top"><el-button size="small" :icon="DocumentCopy" @click="openPaste" /></el-tooltip>
             <el-tooltip content="刷新" placement="top"><el-button size="small" :icon="Refresh" :disabled="!connected" @click="loadList(currentPath)" /></el-tooltip>
           </div>
-          <div v-if="uploadProgress != null" class="upload-progress-bar">
-            <span class="upload-progress-label">{{ uploadFileName }} {{ uploadProgress }}%</span>
-            <el-progress :percentage="uploadProgress" :stroke-width="6" style="flex:1" />
+          <div v-if="uploadProgress != null || uploadQueue.length > 0" class="upload-progress-bar">
+            <span class="upload-progress-label">
+              共 {{ batchUploadTotal || uploadQueue.length }} 个
+              <template v-if="batchUploadTotal > 0">，当前第 {{ batchUploadIndex }} 个：</template>
+              {{ uploadFileName || '准备上传...' }}
+              {{ uploadProgress != null ? uploadProgress + '%' : '' }}
+            </span>
+            <el-progress :percentage="uploadProgress != null ? uploadProgress : 0" :stroke-width="6" style="flex:1" />
             <el-button size="small" type="danger" plain style="margin-left:8px" @click="cancelUpload">取消</el-button>
           </div>
           <div v-if="downloadProgress != null" class="upload-progress-bar download-progress-bar">
@@ -118,6 +123,8 @@
           <div class="ctx-item" @click="ctxAction(() => batchCopy())">📋 批量复制</div>
           <div class="ctx-item" @click="ctxAction(() => batchCut())">✂️ 批量剪切</div>
           <div v-if="copiedPath || copiedPaths.length" class="ctx-item" @click="ctxAction(() => openPaste())">📌 粘贴到此处</div>
+          <div class="ctx-divider"></div>
+          <div class="ctx-item" @click="ctxAction(() => batchDownload())">📥 批量下载</div>
           <div class="ctx-divider"></div>
           <div class="ctx-item" @click="ctxAction(() => batchChmod())">🔒 批量权限</div>
           <div class="ctx-divider"></div>
@@ -311,10 +318,21 @@ const pathInputValue = ref('')
 const pathInputRef = ref(null)
 const uploadProgress = ref(null)
 const uploadFileName = ref('')
+/** 批量上传队列；processUploadQueue 串行处理 */
+const uploadQueue = ref([])
+const batchUploadTotal = ref(0)
+const batchUploadIndex = ref(0)
+/** 多选时 beforeUpload 会连续调用多次，只调度一次 processUploadQueue，等本批文件都 push 后再串行上传 */
+let uploadQueueScheduled = false
 const downloadProgress = ref(null)
 const downloadFileName = ref('')
 /** 当前进行中的下载 reqId，用于取消 */
 const currentDownloadReqId = ref(null)
+/** 批量下载：队列项 { path, directory, name }，串行执行 */
+const batchDownloadQueue = ref([])
+const batchDownloadIndex = ref(0)
+const batchDownloadTotal = ref(0)
+const batchDownloadActive = ref(false)
 const uploadRef = ref(null)
 /** 右击「上传到此处」时设为目标目录，beforeUpload 使用后清空 */
 const uploadTargetPath = ref(null)
@@ -544,9 +562,14 @@ function onSftpMessage(msg) {
   } else if (msg.type === 'sftp_download_start') {
     const reqId = msg.reqId
     if (reqId != null) {
-      downloadPending[reqId] = { name: msg.name || 'download', path: msg.path, size: msg.size || 0, chunks: [] }
+      const size = msg.size != null && msg.size >= 0 ? msg.size : 0
+      downloadPending[reqId] = { name: msg.name || 'download', path: msg.path, size, chunks: [] }
       downloadProgress.value = 0
-      downloadFileName.value = msg.name || 'download'
+      if (batchDownloadActive.value && batchDownloadTotal.value) {
+        downloadFileName.value = `(${batchDownloadIndex.value + 1}/${batchDownloadTotal.value}) ${msg.name || 'download'}`
+      } else {
+        downloadFileName.value = msg.name || 'download'
+      }
       currentDownloadReqId.value = reqId
     }
   } else if (msg.type === 'sftp_download_chunk') {
@@ -574,11 +597,11 @@ function onSftpMessage(msg) {
     if (reqId != null) delete downloadPending[reqId]
     currentDownloadReqId.value = null
     if (msg.cancelled) {
+      batchDownloadQueue.value = []
+      batchDownloadActive.value = false
       downloadProgress.value = null
       return
     }
-    downloadProgress.value = 100
-    setTimeout(() => { downloadProgress.value = null }, 500)
     if (state && state.chunks.length) {
       try {
         const blob = new Blob(state.chunks)
@@ -587,14 +610,39 @@ function onSftpMessage(msg) {
         a.download = state.name
         a.click()
         URL.revokeObjectURL(a.href)
-        ElMessage.success('下载完成')
       } catch (e) {
         ElMessage.error('下载失败')
       }
     }
+    if (batchDownloadActive.value && batchDownloadQueue.value.length) {
+      batchDownloadIndex.value++
+      const idx = batchDownloadIndex.value
+      const total = batchDownloadTotal.value
+      const queue = batchDownloadQueue.value
+      if (idx < queue.length) {
+        const item = queue[idx]
+        if (item.directory) {
+          send('sftp_download_dir', { path: item.path })
+        } else {
+          send('sftp_download', { path: item.path })
+        }
+      } else {
+        batchDownloadQueue.value = []
+        batchDownloadActive.value = false
+        downloadProgress.value = 100
+        setTimeout(() => { downloadProgress.value = null }, 500)
+        ElMessage.success(`共下载 ${total} 项`)
+      }
+    } else {
+      downloadProgress.value = 100
+      setTimeout(() => { downloadProgress.value = null }, 500)
+      if (!batchDownloadActive.value) ElMessage.success('下载完成')
+    }
   } else if (msg.type === 'sftp_download') {
     if (msg.reqId != null) delete downloadPending[msg.reqId]
     currentDownloadReqId.value = null
+    batchDownloadQueue.value = []
+    batchDownloadActive.value = false
     downloadProgress.value = null
     if (msg.error) ElMessage.error(msg.error)
   } else if (msg.type === 'sftp_upload') {
@@ -826,6 +874,22 @@ function downloadFile(row) {
   send('sftp_download', { path: row.path })
 }
 
+function batchDownload() {
+  const rows = selectedRows.value
+  if (!rows.length || !props.sendJson) return
+  const queue = rows.map((r) => ({ path: r.path, directory: !!r.directory, name: r.name || r.path.split('/').pop() || 'item' }))
+  batchDownloadQueue.value = queue
+  batchDownloadIndex.value = 0
+  batchDownloadTotal.value = queue.length
+  batchDownloadActive.value = true
+  const item = queue[0]
+  if (item.directory) {
+    send('sftp_download_dir', { path: item.path })
+  } else {
+    send('sftp_download', { path: item.path })
+  }
+}
+
 function openNewFolder() {
   newFolderName.value = ''
   newFolderVisible.value = true
@@ -963,17 +1027,72 @@ function readSliceAsArrayBuffer(file, offset, length) {
 
 function cancelUpload() {
   uploadCancelled = true
+  uploadQueue.value = []
+  batchUploadTotal.value = 0
   send('sftp_upload_cancel', { path: '' })
   ElMessage.warning('上传已取消')
   uploadProgress.value = null
 }
 
+function processUploadQueue() {
+  if (uploadQueue.value.length === 0) {
+    if (batchUploadTotal.value > 0) {
+      ElMessage.success(`共上传 ${batchUploadTotal.value} 个文件`)
+      loadList(currentPath.value)
+    }
+    batchUploadTotal.value = 0
+    uploadProgress.value = null
+    uploadTargetPath.value = null
+    return
+  }
+  if (batchUploadTotal.value === 0) {
+    batchUploadTotal.value = uploadQueue.value.length
+  }
+  const file = uploadQueue.value.shift()
+  batchUploadIndex.value = batchUploadTotal.value - uploadQueue.value.length
+  const rawPath = uploadTargetPath.value || currentPath.value
+  const basePath = rawPath.endsWith('/') ? rawPath : rawPath + '/'
+  uploadFileName.value = file.name
+  uploadProgress.value = 0
+  uploadCancelled = false
+
+  const onDone = () => {
+    if (uploadCancelled) return
+    processUploadQueue()
+  }
+
+  if (file.size > UPLOAD_CHUNK_THRESHOLD) {
+    doChunkedUpload(file, basePath, onDone)
+  } else {
+    readSliceAsBase64(file, 0, file.size)
+      .then((base64) => {
+        if (uploadCancelled) return
+        const id = send('sftp_upload', { path: basePath, name: file.name, base64 })
+        return waitForReqId(id)
+      })
+      .then((resp) => {
+        if (uploadCancelled) return
+        if (resp && resp.error) throw new Error(resp.error)
+        if (batchUploadTotal.value > 1) uploadProgress.value = 100
+        if (batchUploadTotal.value <= 1) ElMessage.success('上传成功')
+        onDone()
+      })
+      .catch((e) => {
+        if (!uploadCancelled) ElMessage.error(e?.message || e?.msg || '上传失败')
+        onDone()
+      })
+  }
+}
+
 function cancelDownload() {
   const reqId = currentDownloadReqId.value
-  if (reqId == null || !props.sendJson) return
-  props.sendJson({ type: 'sftp_download_cancel', _id: reqId })
-  delete downloadPending[reqId]
+  if (reqId != null && props.sendJson) {
+    props.sendJson({ type: 'sftp_download_cancel', _id: reqId })
+    delete downloadPending[reqId]
+  }
   currentDownloadReqId.value = null
+  batchDownloadQueue.value = []
+  batchDownloadActive.value = false
   downloadProgress.value = null
   ElMessage.warning('下载已取消')
 }
@@ -998,12 +1117,14 @@ function triggerUploadToFolder(row) {
 /** 分片上传时允许 N 个块同时 in-flight，减少 RTT 等待 */
 const UPLOAD_PIPELINE = 8
 
-async function doChunkedUpload(file, basePathOverride) {
+async function doChunkedUpload(file, basePathOverride, onDone) {
   const basePath = (basePathOverride || currentPath.value).endsWith('/')
     ? (basePathOverride || currentPath.value)
     : (basePathOverride || currentPath.value) + '/'
-  uploadProgress.value = 0
-  uploadFileName.value = file.name
+  if (batchUploadTotal.value <= 1) {
+    uploadProgress.value = 0
+    uploadFileName.value = file.name
+  }
   uploadCancelled = false
   const useBinary = !!props.sendBinary
   try {
@@ -1011,6 +1132,7 @@ async function doChunkedUpload(file, basePathOverride) {
     const startResp = await waitForReqId(startId)
     if (startResp.error) {
       ElMessage.error(startResp.error)
+      if (typeof onDone === 'function') onDone()
       return
     }
     const targetPath = startResp.path
@@ -1044,6 +1166,7 @@ async function doChunkedUpload(file, basePathOverride) {
       const err = results.find((r) => r && r.error)
       if (err) {
         ElMessage.error(err.error)
+        if (typeof onDone === 'function') onDone()
         return
       }
       uploadProgress.value = Math.round(100 * offset / file.size)
@@ -1053,32 +1176,27 @@ async function doChunkedUpload(file, basePathOverride) {
     const endResp = await waitForReqId(endId)
     if (endResp.error) {
       ElMessage.error(endResp.error)
-    } else {
+    } else if (typeof onDone !== 'function') {
       ElMessage.success('上传成功')
     }
   } finally {
-    if (!uploadCancelled) {
+    if (!uploadCancelled && typeof onDone !== 'function') {
       setTimeout(() => { uploadProgress.value = null }, 800)
     }
+    if (typeof onDone === 'function') onDone()
   }
 }
 
 function beforeUpload(file) {
   if (!props.sendJson || !props.connected) return false
-  const rawPath = uploadTargetPath.value || currentPath.value
-  const basePath = rawPath.endsWith('/') ? rawPath : rawPath + '/'
-  uploadTargetPath.value = null
-  if (file.size > UPLOAD_CHUNK_THRESHOLD) {
-    doChunkedUpload(file, basePath)
-    return false
+  uploadQueue.value.push(file)
+  if (!uploadQueueScheduled) {
+    uploadQueueScheduled = true
+    nextTick(() => {
+      uploadQueueScheduled = false
+      processUploadQueue()
+    })
   }
-  const reader = new FileReader()
-  reader.onload = () => {
-    const base64 = (reader.result || '').split(',')[1] || ''
-    if (!base64) return
-    send('sftp_upload', { path: basePath, name: file.name, base64 })
-  }
-  reader.readAsDataURL(file)
   return false
 }
 

@@ -142,7 +142,9 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                         int n = fromShell.read(buf);
                         if (n <= 0) break;
                         if (wsSession.isOpen()) {
-                            wsSession.sendMessage(new BinaryMessage(ByteBuffer.wrap(buf, 0, n)));
+                            synchronized (wsSession) {
+                                wsSession.sendMessage(new BinaryMessage(ByteBuffer.wrap(buf, 0, n)));
+                            }
                         }
                     }
                 } catch (IOException e) {
@@ -361,7 +363,9 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                     err.put("type", "exec_error");
                     err.put("reqId", reqId);
                     err.put("message", e.getMessage());
-                    if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(err.toJSONString()));
+                    synchronized (wsSession) {
+                        if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(err.toJSONString()));
+                    }
                 } catch (Exception ignored) {}
             } finally {
                 if (cmd != null) {
@@ -428,8 +432,8 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
             JSONObject out = new JSONObject();
             out.put("type", "goecs_menu");
             out.put("options", options);
-            if (wsSession.isOpen()) {
-                wsSession.sendMessage(new TextMessage(out.toJSONString()));
+            synchronized (wsSession) {
+                if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(out.toJSONString()));
             }
         } catch (Exception ignored) {}
     }
@@ -489,7 +493,9 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
             out.put("data", data);
             if (reqId != null) out.put("reqId", reqId);
             if (stderr) out.put("stderr", true);
-            if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(out.toJSONString()));
+            synchronized (wsSession) {
+                if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(out.toJSONString()));
+            }
         } catch (Exception ignored) {}
     }
 
@@ -499,7 +505,9 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
             out.put("type", "exec_end");
             if (reqId != null) out.put("reqId", reqId);
             out.put("code", code);
-            if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(out.toJSONString()));
+            synchronized (wsSession) {
+                if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(out.toJSONString()));
+            }
         } catch (Exception ignored) {}
     }
 
@@ -509,7 +517,9 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
             err.put("type", "exec_error");
             if (reqId != null) err.put("reqId", reqId);
             err.put("message", message);
-            if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(err.toJSONString()));
+            synchronized (wsSession) {
+                if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(err.toJSONString()));
+            }
         } catch (Exception ignored) {}
     }
 
@@ -640,7 +650,9 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                     nodeCreated.put("type", "node_created");
                     if (reqId != null) nodeCreated.put("reqId", reqId);
                     nodeCreated.put("node", toJsonNode(parsed));
-                    if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(nodeCreated.toJSONString()));
+                    synchronized (wsSession) {
+                        if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(nodeCreated.toJSONString()));
+                    }
                 } catch (Exception e) {
                     log.warn("proxy node insert failed: {}", e.getMessage());
                     sendExecError(wsSession, reqId, "保存节点失败: " + e.getMessage());
@@ -1011,7 +1023,9 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
             resp.put("written", bytes.length);
             Object reqId = meta.get("reqId");
             if (reqId != null) resp.put("reqId", reqId);
-            if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(resp.toJSONString()));
+            synchronized (wsSession) {
+                if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(resp.toJSONString()));
+            }
         } catch (Exception e) {
             log.warn("SFTP upload chunk failed", e);
             sendSftpError(wsSession, "sftp_upload_chunk", e.getMessage(), meta.get("reqId"));
@@ -1123,16 +1137,18 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                 JSONObject resp = new JSONObject();
                 resp.put("type", "sysinfo");
                 resp.put("data", data);
-                if (wsSession.isOpen()) {
-                    try {
-                        wsSession.sendMessage(new TextMessage(resp.toJSONString()));
-                    } catch (IllegalStateException sendEx) {
-                        String msg = sendEx.getMessage() != null ? sendEx.getMessage() : "";
-                        if (msg.contains("BINARY_PARTIAL_WRITING") || msg.contains("InvalidState")) {
-                            log.debug("sysinfo send skipped (session busy): {}", msg);
-                            return;
+                synchronized (wsSession) {
+                    if (wsSession.isOpen()) {
+                        try {
+                            wsSession.sendMessage(new TextMessage(resp.toJSONString()));
+                        } catch (IllegalStateException sendEx) {
+                            String msg = sendEx.getMessage() != null ? sendEx.getMessage() : "";
+                            if (msg.contains("BINARY_PARTIAL_WRITING") || msg.contains("TEXT_PARTIAL_WRITING") || msg.contains("InvalidState")) {
+                                log.debug("sysinfo send skipped (session busy): {}", msg);
+                                return;
+                            }
+                            throw sendEx;
                         }
-                        throw sendEx;
                     }
                 }
             } catch (Exception e) {
@@ -1145,7 +1161,9 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                     JSONObject err = new JSONObject();
                     err.put("type", "sysinfo");
                     err.put("data", new JSONObject().fluentPut("error", errMsg));
-                    if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(err.toJSONString()));
+                    synchronized (wsSession) {
+                        if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(err.toJSONString()));
+                    }
                 } catch (Exception ignored) {}
             }
         });
@@ -1396,7 +1414,9 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                     resp.put("type", "sftp_home");
                     resp.put("home", home != null ? home : "/");
                     if (reqId != null) resp.put("reqId", reqId);
-                    if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(resp.toJSONString()));
+                    synchronized (wsSession) {
+                        if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(resp.toJSONString()));
+                    }
                 } else if ("sftp_list".equals(type)) {
                     String listPath = normalizeSftpPath(path);
                     List<RemoteResourceInfo> list = sftp.ls(listPath);
@@ -1428,7 +1448,9 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                     resp.put("path", listPath);
                     resp.put("data", rows);
                     if (reqId != null) resp.put("reqId", reqId);
-                    if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(resp.toJSONString()));
+                    synchronized (wsSession) {
+                        if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(resp.toJSONString()));
+                    }
                 } else if ("sftp_download".equals(type)) {
                     // 流式下载：按块从 SFTP 读取并推给前端，不在 Skyway 内存中保留完整文件
                     long size;
@@ -1488,6 +1510,75 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                     synchronized (wsSession) {
                         if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(endResp.toJSONString()));
                     }
+                } else if ("sftp_download_dir".equals(type)) {
+                    // 目录打包为 tar 流，复用与 sftp_download 相同的 start/chunk/end 协议
+                    FileAttributes attrs;
+                    try {
+                        attrs = sftp.stat(path);
+                        if (attrs.getMode().getType() != FileMode.Type.DIRECTORY) {
+                            sendSftpError(wsSession, type, "不是目录", reqId);
+                            return;
+                        }
+                    } catch (IOException e) {
+                        sendSftpError(wsSession, type, e.getMessage() != null ? e.getMessage() : "目录不存在或无法读取", reqId);
+                        return;
+                    }
+                    int lastSlash = path.lastIndexOf('/');
+                    String parent = lastSlash <= 0 ? "/" : path.substring(0, lastSlash);
+                    String dirname = lastSlash < 0 ? path : path.substring(lastSlash + 1);
+                    String name = dirname + ".tar";
+                    String tarCmd = "tar cf - -C " + quoteSh(parent) + " " + quoteSh(dirname);
+                    JSONObject startResp = new JSONObject();
+                    startResp.put("type", "sftp_download_start");
+                    startResp.put("path", path);
+                    startResp.put("name", name);
+                    startResp.put("size", -1);
+                    if (reqId != null) startResp.put("reqId", reqId);
+                    synchronized (wsSession) {
+                        if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(startResp.toJSONString()));
+                    }
+                    final int chunkSize = 256 * 1024;
+                    byte[] buf = new byte[chunkSize];
+                    long offset = 0;
+                    boolean cancelled = false;
+                    @SuppressWarnings("unchecked")
+                    Set<Object> cancelledSet = (Set<Object>) wsSession.getAttributes().get("downloadCancelledReqIds");
+                    net.schmizz.sshj.connection.channel.direct.Session tarSession = null;
+                    Command tarCmdObj = null;
+                    try {
+                        tarSession = ssh.startSession();
+                        tarCmdObj = tarSession.exec(tarCmd);
+                        InputStream tarIn = tarCmdObj.getInputStream();
+                        int n;
+                        while ((n = tarIn.read(buf)) != -1 && wsSession.isOpen()) {
+                            if (cancelledSet != null && reqId != null && cancelledSet.contains(reqId)) {
+                                cancelled = true;
+                                break;
+                            }
+                            byte[] chunk = n == buf.length ? buf : java.util.Arrays.copyOf(buf, n);
+                            String base64 = Base64.getEncoder().encodeToString(chunk);
+                            JSONObject chunkResp = new JSONObject();
+                            chunkResp.put("type", "sftp_download_chunk");
+                            chunkResp.put("offset", offset);
+                            chunkResp.put("base64", base64);
+                            if (reqId != null) chunkResp.put("reqId", reqId);
+                            synchronized (wsSession) {
+                                if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(chunkResp.toJSONString()));
+                            }
+                            offset += n;
+                        }
+                    } finally {
+                        if (tarCmdObj != null) try { tarCmdObj.close(); } catch (IOException ignored) {}
+                        if (tarSession != null) try { tarSession.close(); } catch (IOException ignored) {}
+                    }
+                    if (cancelledSet != null && reqId != null) cancelledSet.remove(reqId);
+                    JSONObject endResp = new JSONObject();
+                    endResp.put("type", "sftp_download_end");
+                    endResp.put("cancelled", cancelled);
+                    if (reqId != null) endResp.put("reqId", reqId);
+                    synchronized (wsSession) {
+                        if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(endResp.toJSONString()));
+                    }
                 } else if ("sftp_upload".equals(type)) {
                     String base64 = objFinal.getString("base64");
                     if (base64 == null || base64.isEmpty()) {
@@ -1516,7 +1607,9 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                     resp.put("ok", true);
                     putFileAttrs(resp, sftp, targetPath);
                     if (reqId != null) resp.put("reqId", reqId);
-                    if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(resp.toJSONString()));
+                    synchronized (wsSession) {
+                        if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(resp.toJSONString()));
+                    }
                 } else if ("sftp_upload_start".equals(type)) {
                     String name = objFinal.getString("name");
                     String targetPath;
@@ -1543,7 +1636,9 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                     resp.put("ok", true);
                     resp.put("path", targetPath);
                     if (reqId != null) resp.put("reqId", reqId);
-                    if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(resp.toJSONString()));
+                    synchronized (wsSession) {
+                        if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(resp.toJSONString()));
+                    }
                 } else if ("sftp_upload_chunk".equals(type)) {
                     String base64 = objFinal.getString("base64");
                     if (base64 == null || base64.isEmpty()) {
@@ -1570,7 +1665,9 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                     resp.put("offset", offset);
                     resp.put("written", bytes.length);
                     if (reqId != null) resp.put("reqId", reqId);
-                    if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(resp.toJSONString()));
+                    synchronized (wsSession) {
+                        if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(resp.toJSONString()));
+                    }
                 } else if ("sftp_upload_end".equals(type)) {
                     // 关闭上传文件句柄
                     Object rfObj = wsSession.getAttributes().remove("uploadRemoteFile");
@@ -1593,7 +1690,9 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                     resp.put("gid", a.getGID());
                     resp.put("directory", a.getMode().getType() == FileMode.Type.DIRECTORY);
                     if (reqId != null) resp.put("reqId", reqId);
-                    if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(resp.toJSONString()));
+                    synchronized (wsSession) {
+                        if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(resp.toJSONString()));
+                    }
                 } else if ("sftp_upload_cancel".equals(type)) {
                     // 取消上传：关闭文件句柄并删除不完整文件
                     Object rfObj = wsSession.getAttributes().remove("uploadRemoteFile");
@@ -1608,7 +1707,9 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                     resp.put("type", "sftp_upload_cancel");
                     resp.put("ok", true);
                     if (reqId != null) resp.put("reqId", reqId);
-                    if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(resp.toJSONString()));
+                    synchronized (wsSession) {
+                        if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(resp.toJSONString()));
+                    }
                 } else if ("sftp_mkdir".equals(type)) {
                     sftp.mkdirs(path);
                     JSONObject resp = new JSONObject();
@@ -1617,7 +1718,9 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                     resp.put("ok", true);
                     putFileAttrs(resp, sftp, path);
                     if (reqId != null) resp.put("reqId", reqId);
-                    if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(resp.toJSONString()));
+                    synchronized (wsSession) {
+                        if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(resp.toJSONString()));
+                    }
                 } else if ("sftp_touch".equals(type)) {
                     String name = objFinal.getString("name");
                     String targetPath;
@@ -1639,7 +1742,9 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                     resp.put("ok", true);
                     putFileAttrs(resp, sftp, targetPath);
                     if (reqId != null) resp.put("reqId", reqId);
-                    if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(resp.toJSONString()));
+                    synchronized (wsSession) {
+                        if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(resp.toJSONString()));
+                    }
                 } else if ("sftp_rename".equals(type)) {
                     String newPath = objFinal.getString("newPath");
                     if (newPath == null || newPath.trim().isEmpty() || newPath.contains("..")) {
@@ -1655,7 +1760,9 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                     resp.put("ok", true);
                     putFileAttrs(resp, sftp, newPathTrimmed);
                     if (reqId != null) resp.put("reqId", reqId);
-                    if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(resp.toJSONString()));
+                    synchronized (wsSession) {
+                        if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(resp.toJSONString()));
+                    }
                 } else if ("sftp_delete".equals(type)) {
                     deleteRecursive(sftp, path);
                     JSONObject resp = new JSONObject();
@@ -1663,7 +1770,9 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                     resp.put("path", path);
                     resp.put("ok", true);
                     if (reqId != null) resp.put("reqId", reqId);
-                    if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(resp.toJSONString()));
+                    synchronized (wsSession) {
+                        if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(resp.toJSONString()));
+                    }
                 } else if ("sftp_read_text".equals(type)) {
                     int maxBytes = 512 * 1024;
                     ByteArrayOutputStream bout = new ByteArrayOutputStream();
@@ -1687,7 +1796,9 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                     resp.put("content", text);
                     resp.put("ok", true);
                     if (reqId != null) resp.put("reqId", reqId);
-                    if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(resp.toJSONString()));
+                    synchronized (wsSession) {
+                        if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(resp.toJSONString()));
+                    }
                 } else if ("sftp_write_text".equals(type)) {
                     String content = objFinal.getString("content");
                     if (content == null) content = "";
@@ -1700,7 +1811,9 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                     resp.put("path", path);
                     resp.put("ok", true);
                     if (reqId != null) resp.put("reqId", reqId);
-                    if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(resp.toJSONString()));
+                    synchronized (wsSession) {
+                        if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(resp.toJSONString()));
+                    }
                 } else if ("sftp_copy".equals(type)) {
                     String dest = objFinal.getString("dest");
                     if (dest == null || dest.contains("..")) {
@@ -1725,7 +1838,9 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                     resp.put("ok", true);
                     putFileAttrs(resp, sftp, dest);
                     if (reqId != null) resp.put("reqId", reqId);
-                    if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(resp.toJSONString()));
+                    synchronized (wsSession) {
+                        if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(resp.toJSONString()));
+                    }
                 } else if ("sftp_move".equals(type)) {
                     String dest = objFinal.getString("dest");
                     if (dest == null || dest.contains("..")) {
@@ -1740,7 +1855,9 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                     resp.put("ok", true);
                     putFileAttrs(resp, sftp, dest);
                     if (reqId != null) resp.put("reqId", reqId);
-                    if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(resp.toJSONString()));
+                    synchronized (wsSession) {
+                        if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(resp.toJSONString()));
+                    }
                 } else if ("sftp_chmod".equals(type)) {
                     String modeStr = objFinal.getString("mode");
                     if (modeStr == null || modeStr.isEmpty()) {
@@ -1755,7 +1872,9 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                     resp.put("ok", true);
                     putFileAttrs(resp, sftp, path);
                     if (reqId != null) resp.put("reqId", reqId);
-                    if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(resp.toJSONString()));
+                    synchronized (wsSession) {
+                        if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(resp.toJSONString()));
+                    }
                 } else if ("sftp_chown".equals(type)) {
                     Integer uid = objFinal.getInteger("uid");
                     Integer gid = objFinal.getInteger("gid");
@@ -1774,7 +1893,9 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                     resp.put("ok", true);
                     putFileAttrs(resp, sftp, path);
                     if (reqId != null) resp.put("reqId", reqId);
-                    if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(resp.toJSONString()));
+                    synchronized (wsSession) {
+                        if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(resp.toJSONString()));
+                    }
                 } else {
                     sendSftpError(wsSession, type, "未知类型", reqId);
                 }
@@ -1814,7 +1935,9 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
             err.put("type", type);
             err.put("error", message);
             if (reqId != null) err.put("reqId", reqId);
-            if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(err.toJSONString()));
+            synchronized (wsSession) {
+                if (wsSession.isOpen()) wsSession.sendMessage(new TextMessage(err.toJSONString()));
+            }
         } catch (Exception ignored) {}
     }
 
