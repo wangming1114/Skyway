@@ -39,7 +39,7 @@ defineProps({
   }
 })
 
-const title = 'NetCloud'
+const title = 'Skyway'
 const settingsStore = useSettingsStore()
 const sideTheme = computed(() => settingsStore.sideTheme)
 

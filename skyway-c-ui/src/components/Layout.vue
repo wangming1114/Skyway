@@ -11,7 +11,7 @@
             <path d="M20 11.5v5M20 29v4M20 16.5l-9 4.5M20 16.5l9 4.5M8 24l11.5-5.5M32 24l-11.5-5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
           </svg>
         </span>
-        <span class="logo-name">NetCloud</span>
+        <span class="logo-name">Skyway</span>
       </router-link>
       <nav class="main-nav">
         <router-link to="/" class="nav-link">首页</router-link>

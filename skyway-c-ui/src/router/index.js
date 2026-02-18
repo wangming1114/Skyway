@@ -45,7 +45,7 @@ const router = createRouter({
   routes
 })
 
-const appTitle = import.meta.env.VITE_APP_TITLE || 'NetCloud'
+const appTitle = import.meta.env.VITE_APP_TITLE || 'Skyway'
 router.beforeEach((to, _from, next) => {
   document.title = to.meta.title ? `${to.meta.title} - ${appTitle}` : appTitle
   const token = getToken()
