@@ -309,8 +309,8 @@ const uploadRef = ref(null)
 /** 右击「上传到此处」时设为目标目录，beforeUpload 使用后清空 */
 const uploadTargetPath = ref(null)
 let uploadCancelled = false
-/** SSHJ SFTP 单次写入约 32KB 限制，过大会导致 EOF while reading packet，故分片不超过 32KB */
-const CHUNK_SIZE = 32 * 1024
+/** 前端每片 256KB，后端会按 32KB 分段写入 SFTP，兼顾往返次数与 SSHJ 单次写入限制 */
+const CHUNK_SIZE = 256 * 1024
 const UPLOAD_CHUNK_THRESHOLD = 1024 * 1024
 const pendingWaits = {}
 
@@ -922,6 +922,9 @@ function triggerUploadToFolder(row) {
   triggerUpload()
 }
 
+/** 分片上传时允许 N 个块同时 in-flight，减少 RTT 等待 */
+const UPLOAD_PIPELINE = 2
+
 async function doChunkedUpload(file, basePathOverride) {
   const basePath = (basePathOverride || currentPath.value).endsWith('/')
     ? (basePathOverride || currentPath.value)
@@ -938,19 +941,25 @@ async function doChunkedUpload(file, basePathOverride) {
     }
     const targetPath = startResp.path
     let offset = 0
+    const pipeline = UPLOAD_PIPELINE
     while (offset < file.size) {
       if (uploadCancelled) return
-      const len = Math.min(CHUNK_SIZE, file.size - offset)
-      const base64 = await readSliceAsBase64(file, offset, len)
+      const promises = []
+      for (let i = 0; i < pipeline && offset < file.size; i++) {
+        const len = Math.min(CHUNK_SIZE, file.size - offset)
+        const base64 = await readSliceAsBase64(file, offset, len)
+        if (uploadCancelled) return
+        const chunkId = send('sftp_upload_chunk', { path: targetPath, offset, base64 })
+        offset += len
+        promises.push(waitForReqId(chunkId))
+      }
+      const results = await Promise.all(promises)
       if (uploadCancelled) return
-      const chunkId = send('sftp_upload_chunk', { path: targetPath, offset, base64 })
-      const chunkResp = await waitForReqId(chunkId)
-      if (uploadCancelled) return
-      if (chunkResp.error) {
-        ElMessage.error(chunkResp.error)
+      const err = results.find((r) => r && r.error)
+      if (err) {
+        ElMessage.error(err.error)
         return
       }
-      offset += len
       uploadProgress.value = Math.round(100 * offset / file.size)
     }
     if (uploadCancelled) return

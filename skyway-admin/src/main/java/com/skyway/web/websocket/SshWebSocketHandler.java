@@ -1431,7 +1431,12 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                     RemoteFile rf = (RemoteFile) rfObj;
                     byte[] bytes = Base64.getDecoder().decode(base64);
                     long offset = objFinal.getLongValue("offset");
-                    rf.write(offset, bytes, 0, bytes.length);
+                    // SSHJ SFTP 单次 write 约 32KB 限制，大块按 32KB 分段写入以兼顾效率与稳定性
+                    final int maxWrite = 32 * 1024;
+                    for (int off = 0; off < bytes.length; off += maxWrite) {
+                        int len = Math.min(maxWrite, bytes.length - off);
+                        rf.write(offset + off, bytes, off, len);
+                    }
                     JSONObject resp = new JSONObject();
                     resp.put("type", "sftp_upload_chunk");
                     resp.put("ok", true);
