@@ -56,7 +56,7 @@
         <div class="login-visual__footer">
           <div class="login-visual__footer-secure">
             <CircleCheck class="icon" />
-            <span>© SYSTEM SECURE V2.4.0</span>
+            <span>© SYSTEM SECURE V3.9.1</span>
           </div>
         </div>
       </div>
@@ -152,7 +152,7 @@
           </el-form-item>
         </el-form>
 
-        <p class="login-form-footer">© 2025 Skyway Inc.</p>
+        <p class="login-form-footer">© 2026 Skyway Inc.</p>
       </div>
     </div>
   </div>
@@ -171,8 +171,8 @@ const router = useRouter()
 const { proxy } = getCurrentInstance()
 
 const loginForm = ref({
-  username: 'admin',
-  password: 'admin123',
+  username: '',
+  password: '',
   rememberMe: false,
   code: '',
   uuid: ''
@@ -241,7 +241,7 @@ function getCookie() {
   const rememberMe = Cookies.get('rememberMe')
   loginForm.value = {
     username: username === undefined ? loginForm.value.username : username,
-    password: password === undefined ? loginForm.value.password : decrypt(password),
+    password: password === undefined ? '' : decrypt(password),
     rememberMe: rememberMe === undefined ? false : Boolean(rememberMe)
   }
 }
@@ -573,6 +573,11 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 1rem;
+}
+
+/* 验证码图与输入框底边（横线）平齐 */
+.field--captcha .field__input-row {
+  align-items: flex-end;
 }
 
 .field--captcha .field__input-row .field__input-wrap {
