@@ -505,6 +505,21 @@ onMounted(() => {
     .field__input :deep(.el-input__inner) {
       --el-input-placeholder-color: #94a3b8; /* Slate-400 */
     }
+
+    /* 覆盖浏览器自动填充/回显的默认高亮，打包后与开发环境一致 */
+    .field__input :deep(input:-webkit-autofill),
+    .field__input :deep(input:-webkit-autofill:hover),
+    .field__input :deep(input:-webkit-autofill:focus),
+    .field__input :deep(input:-webkit-autofill:active) {
+      -webkit-box-shadow: 0 0 0 1000px #fff inset !important;
+      box-shadow: 0 0 0 1000px #fff inset !important;
+      -webkit-text-fill-color: #0f172a !important;
+      caret-color: #2563eb;
+      transition: background-color 9999s ease-out 0s, color 9999s ease-out 0s;
+    }
+    .field__input :deep(input:-moz-autofill) {
+      box-shadow: 0 0 0 1000px #fff inset !important;
+    }
   }
 }
 
