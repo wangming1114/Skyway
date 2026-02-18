@@ -118,7 +118,7 @@
           {{ installExitCode === 0 ? '安装完成' : '安装失败 (exit ' + installExitCode + ')，请查看下方日志' }}
           <div v-if="installExitCode !== 0 && installErrorMessage" class="install-status-msg">{{ installErrorMessage }}</div>
         </div>
-        <pre ref="installLogRef" class="install-log">{{ installLog }}</pre>
+        <div ref="installLogRef" class="install-log" v-html="installLogHtml"></div>
       </div>
     </el-drawer>
 
@@ -169,7 +169,7 @@
           {{ execDrawerExitCode === 0 ? '执行完成' : '执行结束 (exit ' + execDrawerExitCode + ')，请查看下方日志' }}
           <div v-if="execDrawerExitCode !== 0 && execDrawerErrorMessage" class="install-status-msg">{{ execDrawerErrorMessage }}</div>
         </div>
-        <pre ref="execLogRef" class="install-log">{{ execDrawerLog }}</pre>
+        <div ref="execLogRef" class="install-log" v-html="execDrawerLogHtml"></div>
       </div>
     </el-drawer>
   </div>
@@ -260,11 +260,63 @@ const execDrawerErrorMessage = ref('')
 const execDrawerReqId = ref(null)
 let execDrawerReqIdCounter = 100000
 
-/** 移除 ANSI 转义序列，避免在日志里显示 [32m、[0m 等控制码 */
-function stripAnsiEscapes(str) {
+// ANSI SGR 标准色（与常见终端一致）
+const ANSI_FG = ['#000000', '#cd3131', '#0dbc79', '#e5e510', '#2472c8', '#bc3fbc', '#11a8cd', '#e5e5e5']
+const ANSI_FG_BRIGHT = ['#666666', '#f14c4c', '#23d18b', '#f5f543', '#3b8eea', '#d670d6', '#29b8db', '#e5e5e5']
+
+function escapeHtml(str) {
   if (typeof str !== 'string') return ''
-  return str.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
 }
+
+/** 将 ANSI 转义序列转为带颜色的 HTML，保留高亮 */
+function ansiToHtml(str) {
+  if (typeof str !== 'string') return ''
+  const parts = []
+  let state = { bold: false, fg: null }
+  const re = /\x1b\[([0-9;]*)([a-zA-Z])/g
+  let lastEnd = 0
+  let m
+  while ((m = re.exec(str)) !== null) {
+    const text = str.slice(lastEnd, m.index)
+    if (text) parts.push({ ...state, text: escapeHtml(text) })
+    const codes = m[1].split(';').map(Number).filter((n) => !Number.isNaN(n))
+    const cmd = m[2]
+    if (cmd === 'm') {
+      for (let i = 0; i < codes.length; i++) {
+        const c = codes[i]
+        if (c === 0) state = { bold: false, fg: null }
+        else if (c === 1) state = { ...state, bold: true }
+        else if (c === 22) state = { ...state, bold: false }
+        else if (c >= 30 && c <= 37) state = { ...state, fg: c - 30 }
+        else if (c === 39) state = { ...state, fg: null }
+        else if (c >= 90 && c <= 97) state = { ...state, fg: (c - 90) + 8 }
+      }
+    }
+    lastEnd = re.lastIndex
+  }
+  const tail = str.slice(lastEnd)
+  if (tail) parts.push({ ...state, text: escapeHtml(tail) })
+  return parts
+    .map((p) => {
+      const style = []
+      if (p.bold) style.push('font-weight: bold')
+      if (p.fg !== null) {
+        const color = p.fg < 8 ? ANSI_FG[p.fg] : ANSI_FG_BRIGHT[p.fg - 8]
+        if (color) style.push(`color: ${color}`)
+      }
+      return style.length ? `<span style="${style.join('; ')}">${p.text}</span>` : p.text
+    })
+    .join('')
+}
+
+const installLogHtml = computed(() => ansiToHtml(installLog.value))
+const execDrawerLogHtml = computed(() => ansiToHtml(execDrawerLog.value))
 
 const goecsOptionDialogVisible = ref(false)
 const selectedGoecsOption = ref(1)
@@ -377,8 +429,7 @@ function openInstallDrawer() {
 }
 
 function onExecOutput(msg) {
-  const raw = msg.data != null ? String(msg.data) : ''
-  const data = stripAnsiEscapes(raw)
+  const data = msg.data != null ? String(msg.data) : ''
   if (msg.reqId === installReqId) {
     installLog.value += data
     nextTick(() => {
