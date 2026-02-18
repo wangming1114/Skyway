@@ -260,6 +260,12 @@ const execDrawerErrorMessage = ref('')
 const execDrawerReqId = ref(null)
 let execDrawerReqIdCounter = 100000
 
+/** 移除 ANSI 转义序列，避免在日志里显示 [32m、[0m 等控制码 */
+function stripAnsiEscapes(str) {
+  if (typeof str !== 'string') return ''
+  return str.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
+}
+
 const goecsOptionDialogVisible = ref(false)
 const selectedGoecsOption = ref(1)
 
@@ -371,7 +377,8 @@ function openInstallDrawer() {
 }
 
 function onExecOutput(msg) {
-  const data = msg.data != null ? String(msg.data) : ''
+  const raw = msg.data != null ? String(msg.data) : ''
+  const data = stripAnsiEscapes(raw)
   if (msg.reqId === installReqId) {
     installLog.value += data
     nextTick(() => {
@@ -507,13 +514,15 @@ onBeforeUnmount(() => {
   margin: 0;
   padding: 12px;
   overflow: auto;
+  font-family: ui-monospace, 'Cascadia Code', 'Consolas', Monaco, 'Courier New', monospace;
   font-size: 13px;
   line-height: 1.5;
   background: #1e1e1e;
   color: #d4d4d4;
   border-radius: 4px;
-  white-space: pre-wrap;
-  word-break: break-all;
+  white-space: pre;
+  word-break: normal;
+  overflow-wrap: normal;
 }
 .ssh-split {
   flex: 1;
