@@ -61,7 +61,7 @@
                     v-model="loginForm.username"
                     type="text"
                     autocomplete="off"
-                    placeholder="admin"
+                    placeholder="请输入账号"
                     class="field__input"
                     :border="false"
                     @keyup.enter="handleLogin"
@@ -79,7 +79,7 @@
                     v-model="loginForm.password"
                     type="password"
                     autocomplete="off"
-                    placeholder="••••••••"
+                    placeholder="请输入密码"
                     class="field__input"
                     :border="false"
                     show-password
