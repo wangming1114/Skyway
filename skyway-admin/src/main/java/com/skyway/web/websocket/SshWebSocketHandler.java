@@ -524,7 +524,7 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
     }
 
     /**
-     * 添加 VLESS-REALITY 节点：检查 sb，执行 printf '1\n18\n{port}\n' | sb，重命名配置文件，解析输出并入库。
+     * 添加节点：根据 nodeType 分支执行 sb 对应菜单，重命名配置，解析输出并入库。支持 VLESS-REALITY、VMess-TCP。
      */
     private void handleAddProxyNode(WebSocketSession wsSession, JSONObject obj) {
         Object reqId = obj.get("reqId");
@@ -532,6 +532,16 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
         String expireTimeStr = obj.getString("expireTime");
         Long customerId = obj.getLong("customerId");
         String remark = obj.getString("remark");
+        String nodeType = obj.getString("nodeType");
+        if (nodeType != null) nodeType = nodeType.trim();
+        if (nodeType == null || nodeType.isEmpty()) {
+            nodeType = "VLESS-REALITY";
+        }
+        if (!"VLESS-REALITY".equals(nodeType) && !"VMess-TCP".equals(nodeType)) {
+            sendExecError(wsSession, reqId, "不支持的协议类型: " + nodeType);
+            sendExecEnd(wsSession, reqId, -1);
+            return;
+        }
 
         if (customerId == null) {
             sendExecError(wsSession, reqId, "请选择归属客户");
@@ -549,6 +559,7 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
             return;
         }
         Long instanceId = (Long) instanceIdObj;
+        final String nodeTypeFinal = nodeType;
 
         executor.execute(() -> {
             SSHClient ssh = null;
@@ -557,7 +568,6 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
             StringBuilder fullOutput = new StringBuilder();
             try {
                 ssh = createSshClient(instanceId);
-                // 1. 检查 sb 是否安装
                 try (Session checkSession = ssh.startSession()) {
                     String sbCheck = execAndRead(checkSession, "command -v sb 2>/dev/null || which sb 2>/dev/null || echo ''");
                     if (sbCheck == null || sbCheck.trim().isEmpty()) {
@@ -568,12 +578,23 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                     }
                 }
 
-                String hint = "正在执行: 添加配置 -> VLESS-REALITY -> 端口 " + port + "\n";
+                String runCmd;
+                String oldJsonName;
+                String typeLabel;
+                if ("VMess-TCP".equals(nodeTypeFinal)) {
+                    typeLabel = "VMess-TCP";
+                    oldJsonName = "VMess-TCP-" + port + ".json";
+                    runCmd = "printf '1\\n5\\n" + port + "\\n' | sb";
+                } else {
+                    typeLabel = "VLESS-REALITY";
+                    oldJsonName = "VLESS-REALITY-" + port + ".json";
+                    runCmd = "printf '1\\n18\\n" + port + "\\n' | sb";
+                }
+
+                String hint = "正在执行: 添加配置 -> " + typeLabel + " -> 端口 " + port + "\n";
                 sendExecOutput(wsSession, reqId, hint, false);
                 fullOutput.append(hint);
 
-                // 2. 执行 printf '1\n18\n{port}\n' | sb
-                String runCmd = "printf '1\\n18\\n" + port + "\\n' | sb";
                 newSession = ssh.startSession();
                 String toRun = "sh -c \"" + runCmd.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
                 cmd = newSession.exec(toRun);
@@ -582,10 +603,22 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                 InputStream stderr = cmd.getErrorStream();
                 byte[] buf = new byte[4096];
                 int n;
+                boolean portConflict = false;
                 while ((n = stdout.read(buf)) > 0 && wsSession.isOpen()) {
                     String data = new String(buf, 0, n, StandardCharsets.UTF_8);
                     fullOutput.append(data);
                     sendExecOutput(wsSession, reqId, data, false);
+                    String soFar = stripAnsi(fullOutput.toString());
+                    if (soFar.contains("无法使用") && soFar.contains("端口")) {
+                        portConflict = true;
+                        break;
+                    }
+                }
+                if (portConflict) {
+                    try { if (cmd != null) cmd.close(); } catch (IOException ignored) {}
+                    sendExecError(wsSession, reqId, "端口 (" + port + ") 已被占用，请选择其他端口重试（可使用推荐端口）");
+                    sendExecEnd(wsSession, reqId, -1);
+                    return;
                 }
                 while ((n = stderr.read(buf)) > 0 && wsSession.isOpen()) {
                     String data = new String(buf, 0, n, StandardCharsets.UTF_8);
@@ -600,20 +633,28 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                 String output = fullOutput.toString();
                 output = stripAnsi(output);
 
-                // 3. 解析输出
-                ProxyNode parsed = parseSbVlessRealityOutput(output, port);
+                if (output.contains("无法使用") && output.contains("端口")) {
+                    sendExecError(wsSession, reqId, "端口 (" + port + ") 已被占用，请选择其他端口重试（可使用推荐端口）");
+                    sendExecEnd(wsSession, reqId, -1);
+                    return;
+                }
+
+                ProxyNode parsed;
+                if ("VMess-TCP".equals(nodeTypeFinal)) {
+                    parsed = parseSbVmessTcpOutput(output, port);
+                } else {
+                    parsed = parseSbVlessRealityOutput(output, port);
+                }
                 if (parsed == null || parsed.getUrl() == null || parsed.getUrl().isEmpty()) {
                     sendExecError(wsSession, reqId, "解析输出失败，请查看上方日志");
                     sendExecEnd(wsSession, reqId, exitCode != 0 ? exitCode : -1);
                     return;
                 }
 
-                // 4. 生成目标文件名并重命名：VLESS-REALITY-{port}-{customPart}-{expiryTag}.json
                 Date expireDate = parseExpireTime(expireTimeStr);
                 String expiryTag = (expireDate == null) ? "permanent" : new SimpleDateFormat("yyyyMMdd").format(expireDate);
                 String customPart = customerIdStr;
-                String targetBaseName = "VLESS-REALITY-" + port + "-" + customPart + "-" + expiryTag;
-                String oldJsonName = "VLESS-REALITY-" + port + ".json";
+                String targetBaseName = typeLabel + "-" + port + "-" + customPart + "-" + expiryTag;
                 String newJsonName = targetBaseName + ".json";
                 String confDir = "/etc/sing-box/conf";
                 String mvCmd = "mv " + confDir + "/" + oldJsonName + " " + confDir + "/" + newJsonName + " 2>&1";
@@ -867,6 +908,7 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
     private static final Pattern P_FINGERPRINT = Pattern.compile("指纹\\s*\\(Fingerprint\\)\\s*=\\s*(.+)");
     private static final Pattern P_PUBLIC_KEY = Pattern.compile("公钥\\s*\\(Public key\\)\\s*=\\s*(.+)");
     private static final Pattern P_URL = Pattern.compile("(vless://[^\\s]+)");
+    private static final Pattern P_VMESS_URL = Pattern.compile("(vmess://[^\\s]+)");
     /** 去除终端 ANSI 转义序列（如 [41m [0m），避免解析出的字段带颜色码 */
     private static final Pattern ANSI_ESCAPE = Pattern.compile("\u001B\\[[0-9;]*m|\\[[0-9;]+m");
 
@@ -916,6 +958,82 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
         config.put("sni", sni != null ? sni.trim() : "");
         config.put("fingerprint", fingerprint != null ? fingerprint.trim() : "");
         config.put("publicKey", publicKey != null ? publicKey.trim() : "");
+        node.setConfigJson(config.toJSONString());
+        return node;
+    }
+
+    /**
+     * 解析 sb 输出的 VMess-TCP 信息：优先匹配 vmess:// 链接并 Base64 解码取 id/aid/add/port，否则用正则匹配用户ID、alterId、地址、端口。
+     */
+    private ProxyNode parseSbVmessTcpOutput(String output, int defaultPort) {
+        if (output == null) return null;
+        String url = match1(P_VMESS_URL, output);
+        if (url != null) url = stripAnsi(url);
+        String id = null;
+        int aid = 0;
+        String address = stripAnsi(match1(P_ADDRESS, output));
+        String portStr = stripAnsi(match1(P_PORT, output));
+        if (address == null) address = "";
+        int port = defaultPort;
+        if (portStr != null && !portStr.trim().isEmpty()) {
+            try {
+                port = Integer.parseInt(portStr.trim());
+            } catch (NumberFormatException ignored) {}
+        }
+
+        if (url != null && url.startsWith("vmess://")) {
+            try {
+                String b64 = url.substring(8).trim();
+                String json = new String(Base64.getDecoder().decode(b64), StandardCharsets.UTF_8);
+                JSONObject o = JSON.parseObject(json);
+                if (o != null) {
+                    id = o.getString("id");
+                    aid = o.getIntValue("aid");
+                    if (address.isEmpty()) address = o.getString("add");
+                    if (port == defaultPort && o.get("port") != null) port = o.getIntValue("port");
+                }
+            } catch (Exception ignored) {}
+        }
+        if (id == null || id.isEmpty()) {
+            id = stripAnsi(match1(P_ID, output));
+        }
+        if (id == null || id.isEmpty()) {
+            return null;
+        }
+        if (url == null || url.isEmpty()) {
+            String aidStr = stripAnsi(match1(Pattern.compile("alterId\\s*[=：:]?\\s*(\\d+)", Pattern.CASE_INSENSITIVE), output));
+            if (aidStr != null && !aidStr.isEmpty()) {
+                try {
+                    aid = Integer.parseInt(aidStr.trim());
+                } catch (NumberFormatException ignored) {}
+            }
+            JSONObject vmess = new JSONObject();
+            vmess.put("v", 2);
+            vmess.put("ps", "VMess-TCP-" + port);
+            vmess.put("add", address.isEmpty() ? "0.0.0.0" : address);
+            vmess.put("port", port);
+            vmess.put("id", id.trim());
+            vmess.put("aid", aid);
+            vmess.put("net", "tcp");
+            vmess.put("type", "none");
+            vmess.put("host", "");
+            vmess.put("path", "");
+            vmess.put("tls", "");
+            url = "vmess://" + Base64.getEncoder().encodeToString(vmess.toJSONString().getBytes(StandardCharsets.UTF_8));
+        }
+
+        ProxyNode node = new ProxyNode();
+        node.setNodeType("VMess-TCP");
+        node.setAddress(address != null ? address.trim() : "");
+        node.setPort(port);
+        node.setUrl(url);
+        node.setNodeName("VMess-TCP-" + port);
+
+        JSONObject config = new JSONObject();
+        config.put("protocol", "vmess");
+        config.put("id", id != null ? id.trim() : "");
+        config.put("aid", aid);
+        config.put("network", "tcp");
         node.setConfigJson(config.toJSONString());
         return node;
     }

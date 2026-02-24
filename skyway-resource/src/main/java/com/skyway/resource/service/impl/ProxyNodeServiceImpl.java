@@ -2,6 +2,7 @@ package com.skyway.resource.service.impl;
 
 import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
+import java.util.Base64;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashSet;
@@ -110,7 +111,9 @@ public class ProxyNodeServiceImpl implements IProxyNodeService {
             if ("VLESS-REALITY".equals(nodeType)) {
                 return buildVlessRealityUrl(node, cfg);
             }
-            // 其他协议类型后续扩展
+            if ("VMess-TCP".equals(nodeType)) {
+                return buildVmessTcpUrl(node, cfg);
+            }
             return null;
         } catch (Exception e) {
             return null;
@@ -152,6 +155,44 @@ public class ProxyNodeServiceImpl implements IProxyNodeService {
     private void appendParam(StringBuilder sb, String key, String value) {
         if (value != null && !value.isEmpty()) {
             sb.append("&").append(key).append("=").append(value);
+        }
+    }
+
+    /**
+     * 构建 VMess-TCP 分享链接
+     * vmess://Base64(JSON)，JSON 含 v,ps,add,port,id,aid,net,type 等
+     */
+    private String buildVmessTcpUrl(ProxyNode node, JSONObject cfg) {
+        String id = cfg.getString("id");
+        if (id == null || id.isEmpty()) {
+            return null;
+        }
+        String address = node.getAddress() != null ? node.getAddress() : "";
+        Integer port = node.getPort();
+        if (port == null) {
+            return null;
+        }
+        int aid = cfg.getIntValue("aid");
+        if (aid < 0) {
+            aid = 0;
+        }
+        JSONObject vmess = new JSONObject();
+        vmess.put("v", 2);
+        vmess.put("ps", node.getNodeName() != null ? node.getNodeName() : "");
+        vmess.put("add", address);
+        vmess.put("port", port);
+        vmess.put("id", id);
+        vmess.put("aid", aid);
+        vmess.put("net", "tcp");
+        vmess.put("type", "none");
+        vmess.put("host", "");
+        vmess.put("path", "");
+        vmess.put("tls", "");
+        try {
+            String json = vmess.toJSONString();
+            return "vmess://" + Base64.getEncoder().encodeToString(json.getBytes("UTF-8"));
+        } catch (UnsupportedEncodingException e) {
+            return null;
         }
     }
 }

@@ -180,7 +180,10 @@ const router = useRouter()
 const userStore = useUserStore()
 const hasEditPermi = computed(() => (userStore.permissions || []).some(p => p === '*:*:*' || p === 'resource:vps:edit'))
 
-const nodeTypeOptions = [{ value: 'VLESS-REALITY', label: 'VLESS-REALITY' }]
+const nodeTypeOptions = [
+  { value: 'VLESS-REALITY', label: 'VLESS-REALITY' },
+  { value: 'VMess-TCP', label: 'VMess-TCP' }
+]
 
 const showSearch = ref(true)
 const loading = ref(false)

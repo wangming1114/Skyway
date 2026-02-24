@@ -215,7 +215,10 @@ const props = defineProps({
 })
 const emit = defineEmits(['register-handler'])
 
-const nodeTypeOptions = [{ value: 'VLESS-REALITY', label: 'VLESS-REALITY' }]
+const nodeTypeOptions = [
+  { value: 'VLESS-REALITY', label: 'VLESS-REALITY' },
+  { value: 'VMess-TCP', label: 'VMess-TCP' }
+]
 
 const allNodeTypesForAdd = [
   { value: 'VLESS-REALITY', label: 'VLESS-REALITY', enabled: true },
@@ -224,7 +227,7 @@ const allNodeTypesForAdd = [
   { value: 'VLESS-WS-TLS', label: 'VLESS-WS-TLS', enabled: false },
   { value: 'VLESS-HTTPUpgrade-TLS', label: 'VLESS-HTTPUpgrade-TLS', enabled: false },
   { value: 'VMess-WS', label: 'VMess-WS', enabled: false },
-  { value: 'VMess-TCP', label: 'VMess-TCP', enabled: false },
+  { value: 'VMess-TCP', label: 'VMess-TCP', enabled: true },
   { value: 'VMess-HTTP', label: 'VMess-HTTP', enabled: false },
   { value: 'VMess-QUIC', label: 'VMess-QUIC', enabled: false },
   { value: 'VMess-WS-TLS', label: 'VMess-WS-TLS', enabled: false },
@@ -352,6 +355,7 @@ function submitAddForm() {
     const sent = props.sendWs({
       type: 'add_proxy_node',
       customerId: addForm.customerId,
+      nodeType: addForm.nodeType,
       port: addForm.port,
       expireTime: addFormPermanent.value ? null : addForm.expireTime,
       remark: addForm.remark ? String(addForm.remark).trim() : undefined,
