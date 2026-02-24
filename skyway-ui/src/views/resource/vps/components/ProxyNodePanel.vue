@@ -222,12 +222,12 @@ const nodeTypeOptions = [
 
 const allNodeTypesForAdd = [
   { value: 'VLESS-REALITY', label: 'VLESS-REALITY', enabled: true },
+  { value: 'VMess-TCP', label: 'VMess-TCP', enabled: true },
   { value: 'VLESS-HTTP2-REALITY', label: 'VLESS-HTTP2-REALITY', enabled: false },
   { value: 'VLESS-H2-TLS', label: 'VLESS-H2-TLS', enabled: false },
   { value: 'VLESS-WS-TLS', label: 'VLESS-WS-TLS', enabled: false },
   { value: 'VLESS-HTTPUpgrade-TLS', label: 'VLESS-HTTPUpgrade-TLS', enabled: false },
   { value: 'VMess-WS', label: 'VMess-WS', enabled: false },
-  { value: 'VMess-TCP', label: 'VMess-TCP', enabled: true },
   { value: 'VMess-HTTP', label: 'VMess-HTTP', enabled: false },
   { value: 'VMess-QUIC', label: 'VMess-QUIC', enabled: false },
   { value: 'VMess-WS-TLS', label: 'VMess-WS-TLS', enabled: false },

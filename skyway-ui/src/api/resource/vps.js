@@ -157,6 +157,14 @@ export function getRecommendPort(instanceId) {
   })
 }
 
+/** 检查实例 SSH 是否可连接（用于添加节点前先建立 SSH） */
+export function checkInstanceSsh(instanceId) {
+  return request({
+    url: '/resource/vps/instance/' + instanceId + '/sshCheck',
+    method: 'get'
+  })
+}
+
 /** 在指定实例上添加代理节点（HTTP 同步，用于客户详情等无 WebSocket 场景） */
 export function addProxyNodeOnInstance(instanceId, data) {
   return request({

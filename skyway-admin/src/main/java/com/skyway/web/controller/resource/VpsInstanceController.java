@@ -146,6 +146,20 @@ public class VpsInstanceController extends BaseController {
     }
 
     /**
+     * 检查实例 SSH 是否可连接（用于用户详情添加节点前先建立 SSH，再执行添加命令）。
+     */
+    @PreAuthorize("@ss.hasPermi('resource:vps:add')")
+    @GetMapping("/{instanceId}/sshCheck")
+    public AjaxResult sshCheck(@PathVariable Long instanceId) {
+        try {
+            vpsSshCommandService.checkSshConnection(instanceId);
+            return success();
+        } catch (Exception e) {
+            return AjaxResult.error(e.getMessage() != null ? e.getMessage() : "SSH 连接失败");
+        }
+    }
+
+    /**
      * 在指定实例上添加代理节点（HTTP 同步执行，用于客户详情等无 WebSocket 场景）
      * 请求体：customerId, port, expireTime(可选，yyyy-MM-dd HH:mm:ss)
      */
@@ -155,6 +169,12 @@ public class VpsInstanceController extends BaseController {
     public AjaxResult addProxyNode(@PathVariable Long instanceId, @RequestBody java.util.Map<String, Object> body) {
         Object customerIdObj = body.get("customerId");
         Object portObj = body.get("port");
+        String nodeType = body != null && body.get("nodeType") != null ? body.get("nodeType").toString().trim() : null;
+        if (nodeType == null || nodeType.isEmpty()) nodeType = "VLESS-REALITY";
+        if (!"VLESS-REALITY".equals(nodeType) && !"VMess-TCP".equals(nodeType)) {
+            return AjaxResult.error("不支持的协议类型: " + nodeType);
+        }
+        log.debug("addProxyNode instanceId={} customerId={} port={} nodeType={}", instanceId, body.get("customerId"), body.get("port"), nodeType);
         String expireTimeStr = body != null && body.get("expireTime") != null ? body.get("expireTime").toString() : null;
         String remark = body != null && body.get("remark") != null ? body.get("remark").toString().trim() : null;
         if (remark != null && remark.isEmpty()) remark = null;
@@ -179,7 +199,7 @@ public class VpsInstanceController extends BaseController {
             return AjaxResult.error("端口范围为 1-65535");
         }
         try {
-            ProxyNode node = vpsSshCommandService.addProxyNodeOnInstance(instanceId, customerId, port, expireTimeStr);
+            ProxyNode node = vpsSshCommandService.addProxyNodeOnInstance(instanceId, customerId, port, expireTimeStr, nodeType);
             node.setCreateBy(getUsername());
             if (remark != null) node.setRemark(remark);
             proxyNodeService.insert(node);

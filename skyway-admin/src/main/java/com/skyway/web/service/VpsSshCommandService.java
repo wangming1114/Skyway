@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
+import java.util.Base64;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
@@ -16,6 +17,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import com.skyway.common.utils.StringUtils;
 import com.skyway.resource.domain.ProxyNode;
@@ -93,9 +95,38 @@ public class VpsSshCommandService {
         }
         SSHClient ssh = new SSHClient();
         ssh.addHostKeyVerifier(new PromiscuousVerifier());
+        ssh.setConnectTimeout(15_000);
         ssh.connect(inst.getIp(), inst.getSshPort() != null ? inst.getSshPort() : 22);
         ssh.authPassword(inst.getSshUsername(), inst.getSshPassword() != null ? inst.getSshPassword() : "");
         return ssh;
+    }
+
+    /**
+     * 检查实例 SSH 是否可连接（用于用户详情等场景：先确认 SSH 再执行添加节点等命令）。
+     * @throws IOException 连接失败或执行失败时抛出，消息可直接返回给前端
+     */
+    public void checkSshConnection(Long instanceId) throws IOException {
+        SSHClient ssh = null;
+        try {
+            ssh = createSshClient(instanceId);
+            try (Session session = ssh.startSession()) {
+                Command cmd = session.exec("true");
+                consumeStream(cmd.getInputStream());
+                consumeStream(cmd.getErrorStream());
+                cmd.join(10, TimeUnit.SECONDS);
+                Integer exit = cmd.getExitStatus();
+                if (exit == null) {
+                    throw new IOException("SSH 命令执行超时或未正常结束");
+                }
+                if (exit != 0) {
+                    throw new IOException("SSH 执行异常，退出码: " + exit);
+                }
+            }
+        } finally {
+            if (ssh != null) {
+                try { ssh.close(); } catch (IOException e) { log.debug("SSH close: {}", e.getMessage()); }
+            }
+        }
     }
 
     /**
@@ -348,6 +379,49 @@ public class VpsSshCommandService {
         }
     }
 
+    /**
+     * 执行命令并读取输出，带超时。超时后关闭 session 以解除阻塞，并抛出 IOException。
+     * 用于 sb 等可能卡住不结束的命令（如等待 TTY 输入）。
+     */
+    private static String execAndReadWithTimeout(Session session, String command, int timeoutSeconds) throws IOException {
+        java.util.concurrent.atomic.AtomicReference<String> result = new java.util.concurrent.atomic.AtomicReference<>("");
+        java.util.concurrent.atomic.AtomicReference<IOException> err = new java.util.concurrent.atomic.AtomicReference<>();
+        java.util.concurrent.CountDownLatch done = new java.util.concurrent.CountDownLatch(1);
+        Thread worker = new Thread(() -> {
+            try (Command cmd = session.exec(command)) {
+                InputStream in = cmd.getInputStream();
+                byte[] buf = new byte[4096];
+                StringBuilder sb = new StringBuilder();
+                int n;
+                while ((n = in.read(buf)) > 0) {
+                    sb.append(new String(buf, 0, n, StandardCharsets.UTF_8));
+                }
+                cmd.join(5, TimeUnit.SECONDS);
+                result.set(sb.toString());
+            } catch (IOException e) {
+                err.set(e);
+            } finally {
+                done.countDown();
+            }
+        }, "ssh-exec-timeout");
+        worker.setDaemon(true);
+        worker.start();
+        try {
+            if (!done.await(timeoutSeconds, TimeUnit.SECONDS)) {
+                try {
+                    session.close();
+                } catch (IOException ignored) {}
+                worker.join(3000);
+                throw new IOException("添加节点命令执行超时（" + timeoutSeconds + " 秒），请检查服务器上 sb 是否需交互或端口是否被占用");
+            }
+            if (err.get() != null) throw err.get();
+            return result.get();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("执行被中断", e);
+        }
+    }
+
     private static final Pattern P_PROTOCOL = Pattern.compile("协议\\s*\\(protocol\\)\\s*=\\s*(.+)");
     private static final Pattern P_ADDRESS = Pattern.compile("地址\\s*\\(address\\)\\s*=\\s*(.+)");
     private static final Pattern P_PORT = Pattern.compile("端口\\s*\\(port\\)\\s*=\\s*(.+)");
@@ -359,6 +433,7 @@ public class VpsSshCommandService {
     private static final Pattern P_FINGERPRINT = Pattern.compile("指纹\\s*\\(Fingerprint\\)\\s*=\\s*(.+)");
     private static final Pattern P_PUBLIC_KEY = Pattern.compile("公钥\\s*\\(Public key\\)\\s*=\\s*(.+)");
     private static final Pattern P_URL = Pattern.compile("(vless://[^\\s]+)");
+    private static final Pattern P_VMESS_URL = Pattern.compile("(vmess://[^\\s]+)");
     private static final Pattern ANSI_ESCAPE = Pattern.compile("\u001B\\[[0-9;]*m|\\[[0-9;]+m");
 
     private static String stripAnsi(String s) {
@@ -427,11 +502,77 @@ public class VpsSshCommandService {
         return node;
     }
 
+    private ProxyNode parseSbVmessTcpOutput(String output, int defaultPort) {
+        if (output == null) return null;
+        String url = match1(P_VMESS_URL, output);
+        if (url != null) url = stripAnsi(url);
+        String id = null;
+        int aid = 0;
+        String address = stripAnsi(match1(P_ADDRESS, output));
+        String portStr = stripAnsi(match1(P_PORT, output));
+        if (address == null) address = "";
+        int port = defaultPort;
+        if (portStr != null && !portStr.trim().isEmpty()) {
+            try { port = Integer.parseInt(portStr.trim()); } catch (NumberFormatException ignored) {}
+        }
+        if (url != null && url.startsWith("vmess://")) {
+            try {
+                String b64 = url.substring(8).trim();
+                String json = new String(Base64.getDecoder().decode(b64), StandardCharsets.UTF_8);
+                JSONObject o = JSON.parseObject(json);
+                if (o != null) {
+                    id = o.getString("id");
+                    aid = o.getIntValue("aid");
+                    if (address.isEmpty()) address = o.getString("add");
+                    if (port == defaultPort && o.get("port") != null) port = o.getIntValue("port");
+                }
+            } catch (Exception ignored) {}
+        }
+        if (id == null || id.isEmpty()) id = stripAnsi(match1(P_ID, output));
+        if (id == null || id.isEmpty()) return null;
+        if (url == null || url.isEmpty()) {
+            String aidStr = stripAnsi(match1(Pattern.compile("alterId\\s*[=：:]?\\s*(\\d+)", Pattern.CASE_INSENSITIVE), output));
+            if (aidStr != null && !aidStr.isEmpty()) {
+                try { aid = Integer.parseInt(aidStr.trim()); } catch (NumberFormatException ignored) {}
+            }
+            JSONObject vmess = new JSONObject();
+            vmess.put("v", 2);
+            vmess.put("ps", "VMess-TCP-" + port);
+            vmess.put("add", address.isEmpty() ? "0.0.0.0" : address);
+            vmess.put("port", port);
+            vmess.put("id", id.trim());
+            vmess.put("aid", aid);
+            vmess.put("net", "tcp");
+            vmess.put("type", "none");
+            vmess.put("host", "");
+            vmess.put("path", "");
+            vmess.put("tls", "");
+            url = "vmess://" + Base64.getEncoder().encodeToString(vmess.toJSONString().getBytes(StandardCharsets.UTF_8));
+        }
+        ProxyNode node = new ProxyNode();
+        node.setNodeType("VMess-TCP");
+        node.setAddress(address != null ? address.trim() : "");
+        node.setPort(port);
+        node.setUrl(url);
+        node.setNodeName("VMess-TCP-" + port);
+        JSONObject config = new JSONObject();
+        config.put("protocol", "vmess");
+        config.put("id", id != null ? id.trim() : "");
+        config.put("aid", aid);
+        config.put("network", "tcp");
+        node.setConfigJson(config.toJSONString());
+        return node;
+    }
+
     /**
-     * 在指定实例上添加 VLESS-REALITY 节点（执行 sb、重命名、解析），返回可入库的节点对象（未设置 createBy，由调用方 insert）。
+     * 在指定实例上添加节点（执行 sb、重命名、解析），返回可入库的节点对象。支持 VLESS-REALITY、VMess-TCP。
      */
-    public ProxyNode addProxyNodeOnInstance(Long instanceId, Long customerId, int port, String expireTimeStr) throws IOException {
+    public ProxyNode addProxyNodeOnInstance(Long instanceId, Long customerId, int port, String expireTimeStr, String nodeType) throws IOException {
         if (customerId == null) throw new IllegalArgumentException("请选择归属客户");
+        if (nodeType == null || nodeType.isEmpty()) nodeType = "VLESS-REALITY";
+        if (!"VLESS-REALITY".equals(nodeType) && !"VMess-TCP".equals(nodeType)) {
+            throw new IllegalArgumentException("不支持的协议类型: " + nodeType);
+        }
         SSHClient ssh = null;
         try {
             ssh = createSshClient(instanceId);
@@ -441,23 +582,44 @@ public class VpsSshCommandService {
                     throw new IllegalStateException("未检测到 sing-box 脚本 (sb)，请先在服务器上安装 sing-box");
                 }
             }
-            String runCmd = "printf '1\\n18\\n" + port + "\\n' | sb";
+            // 先检查端口是否已被占用，避免 sb 进入交互等待导致超时
+            try (Session portSession = ssh.startSession()) {
+                String portCheckCmd = "sh -c '(ss -tlnp 2>/dev/null || netstat -tlnp 2>/dev/null) | grep -q \":" + port + " \" && echo in_use || echo free'";
+                String portOut = execAndRead(portSession, portCheckCmd);
+                if (portOut != null && portOut.trim().contains("in_use")) {
+                    throw new IllegalStateException("端口 (" + port + ") 已被占用，请选择其他端口（可使用推荐端口）");
+                }
+            }
+            String runCmd;
+            String oldJsonName;
+            String typeLabel;
+            if ("VMess-TCP".equals(nodeType)) {
+                typeLabel = "VMess-TCP";
+                oldJsonName = "VMess-TCP-" + port + ".json";
+                runCmd = "printf '1\\n5\\n" + port + "\\n' | sb";
+            } else {
+                typeLabel = "VLESS-REALITY";
+                oldJsonName = "VLESS-REALITY-" + port + ".json";
+                runCmd = "printf '1\\n18\\n" + port + "\\n' | sb";
+            }
             String output;
             try (Session runSession = ssh.startSession()) {
                 String toRun = "sh -c \"" + runCmd.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
-                output = execAndRead(runSession, toRun);
+                output = execAndReadWithTimeout(runSession, toRun, 25);
             }
             if (output == null) output = "";
             output = stripAnsi(output);
-            ProxyNode parsed = parseSbVlessRealityOutput(output, port);
+            if (output.contains("无法使用") && output.contains("端口")) {
+                throw new IllegalStateException("端口 (" + port + ") 已被占用，请选择其他端口重试");
+            }
+            ProxyNode parsed = "VMess-TCP".equals(nodeType) ? parseSbVmessTcpOutput(output, port) : parseSbVlessRealityOutput(output, port);
             if (parsed == null || parsed.getUrl() == null || parsed.getUrl().isEmpty()) {
                 throw new IllegalStateException("解析 sb 输出失败，请检查服务器上 sing-box 是否正常");
             }
             Date expireDate = parseExpireTime(expireTimeStr);
             String expiryTag = (expireDate == null) ? "permanent" : new SimpleDateFormat("yyyyMMdd").format(expireDate);
             String customPart = String.valueOf(customerId);
-            String targetBaseName = "VLESS-REALITY-" + port + "-" + customPart + "-" + expiryTag;
-            String oldJsonName = "VLESS-REALITY-" + port + ".json";
+            String targetBaseName = typeLabel + "-" + port + "-" + customPart + "-" + expiryTag;
             String newJsonName = targetBaseName + ".json";
             String mvCmd = "mv " + CONF_DIR + "/" + oldJsonName + " " + CONF_DIR + "/" + newJsonName + " 2>&1";
             try (Session mvSession = ssh.startSession()) {

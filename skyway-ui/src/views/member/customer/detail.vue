@@ -102,8 +102,19 @@
                   <el-option v-for="i in instanceOptions" :key="i.id" :label="i.name + ' (' + (i.ip || '') + ')'" :value="i.id" />
                 </el-select>
               </el-form-item>
-              <el-form-item label="协议类型">
-                <el-input model-value="VLESS-REALITY" disabled />
+              <el-form-item label="协议类型" prop="nodeType">
+                <el-select v-model="addNodeForm.nodeType" placeholder="请选择协议类型" style="width: 100%">
+                  <el-option
+                    v-for="t in allNodeTypesForAdd"
+                    :key="t.value"
+                    :label="t.label"
+                    :value="t.value"
+                    :disabled="!t.enabled"
+                  >
+                    <span>{{ t.label }}</span>
+                    <span v-if="!t.enabled" class="add-form-type-tip">即将支持</span>
+                  </el-option>
+                </el-select>
               </el-form-item>
               <el-form-item label="端口" prop="port">
                 <el-input-number v-model="addNodeForm.port" :min="1" :max="65535" controls-position="right" style="width: 100%" placeholder="如 5000" />
@@ -130,6 +141,22 @@
               <el-button type="primary" :loading="addNodeSubmitting" @click="submitAddNode">确定（将在服务器执行）</el-button>
             </template>
           </el-dialog>
+
+          <el-drawer
+            v-model="addLogDrawerVisible"
+            :title="addLogTitle"
+            direction="rtl"
+            size="520"
+            :close-on-click-modal="!addLogRunning"
+          >
+            <div class="add-log-body">
+              <div v-if="addLogRunning" class="add-log-status">执行中…</div>
+              <div v-else-if="addLogExitCode != null" :class="['add-log-status', addLogExitCode === 0 ? 'success' : 'fail']">
+                {{ addLogExitCode === 0 ? '执行成功，节点已保存' : '执行失败，请查看下方日志' }}
+              </div>
+              <pre ref="addLogRef" class="add-log-pre">{{ addLog }}</pre>
+            </div>
+          </el-drawer>
 
           <el-dialog title="节点详情" v-model="nodeDetailVisible" width="620px" append-to-body destroy-on-close>
             <el-descriptions v-if="currentNode" :column="2" border size="small">
@@ -194,7 +221,7 @@
 <script setup name="MemberCustomerDetail">
 import useUserStore from '@/store/modules/user'
 import { getCustomer, getCustomerBindings } from '@/api/member/customer'
-import { listInstance, addProxyNodeOnInstance, updateProxyNode, delProxyNode, getProxyNodeTraffic, getRecommendPort } from '@/api/resource/vps'
+import { listInstance, checkInstanceSsh, addProxyNodeOnInstance, updateProxyNode, delProxyNode, getProxyNodeTraffic, getRecommendPort } from '@/api/resource/vps'
 import { parseTime } from '@/utils/skyway'
 import { DocumentCopy, Loading, Edit, Delete } from '@element-plus/icons-vue'
 
@@ -215,11 +242,28 @@ const activeTab = ref('bindings')
 const addNodeVisible = ref(false)
 const addNodeSubmitting = ref(false)
 const addNodePermanent = ref(true)
+const addLogDrawerVisible = ref(false)
+const addLogTitle = ref('添加节点 - 执行日志')
+const addLog = ref('')
+const addLogRef = ref(null)
+const addLogRunning = ref(false)
+const addLogExitCode = ref(null)
 const instanceOptions = ref([])
-const addNodeForm = reactive({ instanceId: undefined, port: undefined, expireTime: null, remark: '' })
+const allNodeTypesForAdd = [
+  { value: 'VLESS-REALITY', label: 'VLESS-REALITY', enabled: true },
+  { value: 'VMess-TCP', label: 'VMess-TCP', enabled: true },
+  { value: 'VLESS-HTTP2-REALITY', label: 'VLESS-HTTP2-REALITY', enabled: false },
+  { value: 'VLESS-H2-TLS', label: 'VLESS-H2-TLS', enabled: false },
+  { value: 'VLESS-WS-TLS', label: 'VLESS-WS-TLS', enabled: false },
+  { value: 'VMess-WS', label: 'VMess-WS', enabled: false },
+  { value: 'Trojan', label: 'Trojan', enabled: false },
+  { value: 'Hysteria2', label: 'Hysteria2', enabled: false },
+]
+const addNodeForm = reactive({ instanceId: undefined, nodeType: 'VLESS-REALITY', port: undefined, expireTime: null, remark: '' })
 const addNodeFormRef = ref(null)
 const addNodeFormRules = {
   instanceId: [{ required: true, message: '请选择服务器', trigger: 'change' }],
+  nodeType: [{ required: true, message: '请选择协议类型', trigger: 'change' }],
   port: [{ required: true, message: '请输入端口', trigger: 'blur' }]
 }
 
@@ -271,6 +315,7 @@ function fetchTrafficForList(rows) {
 
 function handleAddNode() {
   addNodeForm.instanceId = undefined
+  addNodeForm.nodeType = 'VLESS-REALITY'
   addNodeForm.port = undefined
   addNodeForm.expireTime = null
   addNodeForm.remark = ''
@@ -295,18 +340,43 @@ function onAddNodeInstanceChange(instanceId) {
 function submitAddNode() {
   addNodeFormRef.value.validate(valid => {
     if (!valid) return
+    addNodeVisible.value = false
+    addLog.value = '正在连接 SSH…\n'
+    addLogRunning.value = true
+    addLogExitCode.value = null
+    addLogTitle.value = '添加节点 - 执行日志'
+    addLogDrawerVisible.value = true
     addNodeSubmitting.value = true
-    addProxyNodeOnInstance(addNodeForm.instanceId, {
+    const instanceId = addNodeForm.instanceId
+    const nodeType = addNodeForm.nodeType && String(addNodeForm.nodeType).trim() ? addNodeForm.nodeType : 'VLESS-REALITY'
+    const payload = {
       customerId: customerId.value,
+      nodeType,
       port: addNodeForm.port,
       expireTime: addNodePermanent.value ? null : addNodeForm.expireTime,
       remark: (addNodeForm.remark || '').trim() || undefined
+    }
+    const finishErr = (msg) => {
+      addLog.value += msg + '\n'
+      addLogRunning.value = false
+      addLogExitCode.value = -1
+      proxy.$modal.msgError(msg)
+      nextTick(() => { const el = addLogRef.value; if (el) el.scrollTop = el.scrollHeight })
+    }
+    checkInstanceSsh(instanceId).then(() => {
+      addLog.value += 'SSH 连接成功，正在执行添加节点…\n'
+      nextTick(() => { const el = addLogRef.value; if (el) el.scrollTop = el.scrollHeight })
+      return addProxyNodeOnInstance(instanceId, payload)
     }).then(() => {
-      proxy.$modal.msgSuccess('节点已添加')
-      addNodeVisible.value = false
+      addLog.value += '节点已保存到数据库。\n'
+      addLogRunning.value = false
+      addLogExitCode.value = 0
       loadBindings()
+      proxy.$modal.msgSuccess('节点已添加')
+      nextTick(() => { const el = addLogRef.value; if (el) el.scrollTop = el.scrollHeight })
     }).catch(e => {
-      proxy.$modal.msgError(e.msg || e.message || '添加失败')
+      const msg = e.msg || e.message || '添加失败'
+      finishErr(msg)
     }).finally(() => { addNodeSubmitting.value = false })
   })
 }
@@ -466,6 +536,42 @@ onMounted(() => {
 .status-cell { display: inline-flex; align-items: center; gap: 6px; }
 .status-loading { font-size: 14px; margin-right: 2px; }
 .text-placeholder { color: var(--el-text-color-placeholder); }
+.add-form-type-tip {
+  float: right;
+  color: var(--el-text-color-placeholder);
+  font-size: 12px;
+}
+.add-log-body {
+  padding: 12px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.add-log-status {
+  font-size: 14px;
+  margin-bottom: 10px;
+  font-weight: 500;
+}
+.add-log-status.success {
+  color: var(--el-color-success);
+}
+.add-log-status.fail {
+  color: var(--el-color-danger);
+}
+.add-log-pre {
+  flex: 1;
+  margin: 0;
+  padding: 10px;
+  background: #1e1e1e;
+  color: #d4d4d4;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow: auto;
+  border-radius: 4px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
 .remark-cell-editable {
   cursor: pointer;
   display: inline-flex;
