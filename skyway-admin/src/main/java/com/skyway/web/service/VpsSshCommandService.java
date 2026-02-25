@@ -51,10 +51,7 @@ public class VpsSshCommandService {
         if (instanceId == null || StringUtils.isEmpty(nodeName)) {
             throw new IllegalArgumentException("instanceId 与 nodeName 不能为空");
         }
-        String baseName = nodeName.trim();
-        if (baseName.endsWith(".json")) {
-            baseName = baseName.substring(0, baseName.length() - 5);
-        }
+        String baseName = normalizeNodeBaseName(nodeName);
         String fromName = baseName + ".json" + (disable ? "" : DISABLED_SUFFIX);
         String toName = baseName + ".json" + (disable ? DISABLED_SUFFIX : "");
         String fromPath = CONF_DIR + "/" + fromName;
@@ -85,6 +82,79 @@ public class VpsSshCommandService {
                 }
             }
         }
+    }
+
+    /**
+     * Rename proxy node config file by old/new base names while keeping current suffix.
+     * Suffix is kept as either ".json" or ".json.disabled" according to {@code disabled}.
+     *
+     * @param instanceId  instance id
+     * @param oldNodeName old base name (may include .json/.json.disabled)
+     * @param newNodeName new base name (may include .json/.json.disabled)
+     * @param disabled    current suffix flag, true=.json.disabled, false=.json
+     */
+    public void renameProxyNodeConfig(Long instanceId, String oldNodeName, String newNodeName, boolean disabled) throws IOException {
+        if (instanceId == null || StringUtils.isEmpty(oldNodeName) || StringUtils.isEmpty(newNodeName)) {
+            throw new IllegalArgumentException("instanceId, oldNodeName and newNodeName cannot be empty");
+        }
+        String oldBaseName = normalizeNodeBaseName(oldNodeName);
+        String newBaseName = normalizeNodeBaseName(newNodeName);
+        if (oldBaseName.equals(newBaseName)) {
+            return;
+        }
+        String suffix = disabled ? ".json" + DISABLED_SUFFIX : ".json";
+        String fromPath = CONF_DIR + "/" + oldBaseName + suffix;
+        String toPath = CONF_DIR + "/" + newBaseName + suffix;
+
+        SSHClient ssh = null;
+        try {
+            ssh = createSshClient(instanceId);
+            try (Session session = ssh.startSession()) {
+                String fromQuoted = shellQuote(fromPath);
+                String toQuoted = shellQuote(toPath);
+                String cmd = "sh -c \"if [ ! -f " + fromQuoted + " ]; then echo __SRC_MISSING__; " +
+                        "elif [ -f " + toQuoted + " ]; then echo __DST_EXISTS__; " +
+                        "elif mv " + fromQuoted + " " + toQuoted + "; then echo __OK__; else echo __MV_FAIL__; fi\"";
+                String out = execAndRead(session, cmd);
+                String marker = out != null ? out : "";
+                if (marker.contains("__SRC_MISSING__")) {
+                    throw new IOException("source config file not found: " + fromPath);
+                }
+                if (marker.contains("__DST_EXISTS__")) {
+                    throw new IOException("target config file already exists: " + toPath);
+                }
+                if (!marker.contains("__OK__")) {
+                    throw new IOException("rename config file failed: " + fromPath + " -> " + toPath);
+                }
+            }
+        } finally {
+            if (ssh != null) {
+                try {
+                    ssh.close();
+                } catch (IOException e) {
+                    log.debug("SSH close: {}", e.getMessage());
+                }
+            }
+        }
+    }
+
+    private static String normalizeNodeBaseName(String nodeName) {
+        String baseName = nodeName.trim();
+        if (baseName.endsWith(".json" + DISABLED_SUFFIX)) {
+            return baseName.substring(0, baseName.length() - (5 + DISABLED_SUFFIX.length()));
+        }
+        if (baseName.endsWith(".json")) {
+            return baseName.substring(0, baseName.length() - 5);
+        }
+        if (baseName.endsWith(DISABLED_SUFFIX)) {
+            return baseName.substring(0, baseName.length() - DISABLED_SUFFIX.length());
+        }
+        return baseName;
+    }
+
+    private static String shellQuote(String s) {
+        if (s == null) return "''";
+        return "'" + s.replace("'", "'\"'\"'") + "'";
     }
 
     private SSHClient createSshClient(Long instanceId) throws IOException {

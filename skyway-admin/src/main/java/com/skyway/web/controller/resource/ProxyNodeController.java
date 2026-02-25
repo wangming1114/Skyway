@@ -1,6 +1,9 @@
 package com.skyway.web.controller.resource;
 
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.List;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,7 +22,6 @@ import com.skyway.common.core.controller.BaseController;
 import com.skyway.common.core.domain.AjaxResult;
 import com.skyway.common.core.page.TableDataInfo;
 import com.skyway.common.enums.BusinessType;
-import com.skyway.common.utils.SecurityUtils;
 import com.skyway.common.utils.StringUtils;
 import com.skyway.resource.domain.ProxyNode;
 import com.skyway.resource.service.IProxyNodeService;
@@ -28,8 +30,6 @@ import com.skyway.web.service.VpsSshCommandService;
 
 /**
  * 代理节点
- *
- * @author ruoyi
  */
 @RestController
 @RequestMapping("/resource/vps/proxyNode")
@@ -46,9 +46,6 @@ public class ProxyNodeController extends BaseController {
     @Autowired
     private IProxyNodeTrafficService proxyNodeTrafficService;
 
-    /**
-     * 查询代理节点列表
-     */
     @PreAuthorize("@ss.hasPermi('resource:vps:list')")
     @GetMapping("/list")
     public TableDataInfo list(ProxyNode proxyNode) {
@@ -57,27 +54,18 @@ public class ProxyNodeController extends BaseController {
         return getDataTable(list);
     }
 
-    /**
-     * 根据ID获取详情
-     */
     @PreAuthorize("@ss.hasPermi('resource:vps:query')")
     @GetMapping("/{id}")
     public AjaxResult getInfo(@PathVariable Long id) {
         return success(proxyNodeService.getById(id));
     }
 
-    /**
-     * 节点流量统计（总量 + 近期明细），用于详情等
-     */
     @PreAuthorize("@ss.hasPermi('resource:vps:query')")
     @GetMapping("/{id}/traffic")
     public AjaxResult getTraffic(@PathVariable Long id) {
         return success(proxyNodeTrafficService.getTrafficByNodeId(id));
     }
 
-    /**
-     * 新增代理节点
-     */
     @PreAuthorize("@ss.hasPermi('resource:vps:add')")
     @Log(title = "代理节点", businessType = BusinessType.INSERT)
     @PostMapping
@@ -97,59 +85,148 @@ public class ProxyNodeController extends BaseController {
         return toAjax(rows);
     }
 
-    /**
-     * 修改代理节点。若仅状态变更，会先在服务器上重命名配置文件（.json &harr; .json.disabled）再更新库。
-     * 不使用 @Validated，因前端可能只传 id+status，在方法内用库数据补全必填项后再 update。
-     */
     @PreAuthorize("@ss.hasPermi('resource:vps:edit')")
     @Log(title = "代理节点", businessType = BusinessType.UPDATE)
     @PutMapping
-    public AjaxResult edit(@RequestBody ProxyNode row) {
-        if (row.getId() == null) {
-            return AjaxResult.error("参数错误：缺少节点 id");
+    public AjaxResult edit(@RequestBody Map<String, Object> body) {
+        Long id = parseLong(body != null ? body.get("id") : null);
+        if (id == null) {
+            return AjaxResult.error("参数错误：缺少节点id");
         }
-        ProxyNode existing = proxyNodeService.getById(row.getId());
+        ProxyNode existing = proxyNodeService.getById(id);
         if (existing == null) {
             return AjaxResult.error("节点不存在");
         }
-        // 前端可能只传 id+status，用库中数据补全必填项避免校验报错（如“端口不能为空”）
-        fillRowFromExisting(row, existing);
+
+        ProxyNode row = new ProxyNode();
+        row.setId(id);
+        fillRequiredFromExisting(row, existing);
+
+        boolean hasExpireTime = body != null && body.containsKey("expireTime");
+        boolean hasUrl = body != null && body.containsKey("url");
+        boolean hasStatus = body != null && body.containsKey("status");
+        boolean hasRemark = body != null && body.containsKey("remark");
+
+        Date newExpireTime = hasExpireTime ? parseExpireTime(body.get("expireTime")) : existing.getExpireTime();
+        row.setExpireTime(newExpireTime);
+
+        if (hasUrl) {
+            Object urlObj = body.get("url");
+            row.setUrl(urlObj == null ? "" : String.valueOf(urlObj).trim());
+        } else {
+            row.setUrl(existing.getUrl());
+        }
+
+        if (hasStatus) {
+            row.setStatus(body.get("status") == null ? null : String.valueOf(body.get("status")).trim());
+        } else {
+            row.setStatus(existing.getStatus());
+        }
+
+        if (hasRemark) {
+            Object remarkObj = body.get("remark");
+            row.setRemark(remarkObj == null ? "" : String.valueOf(remarkObj).trim());
+        } else {
+            row.setRemark(existing.getRemark());
+        }
+
+        if (body != null && body.containsKey("customerId")) {
+            Long customerId = parseLong(body.get("customerId"));
+            if (customerId != null) {
+                row.setCustomerId(customerId);
+            }
+        }
+
+        String effectiveNodeName = existing.getNodeName();
+        boolean expireChanged = hasExpireTime && !isSameTime(existing.getExpireTime(), newExpireTime);
+        if (expireChanged) {
+            String oldBaseName = normalizeNodeBaseName(existing.getNodeName());
+            String newBaseName = buildNodeBaseName(existing.getNodeType(), existing.getPort(), row.getCustomerId(), newExpireTime);
+            if (!oldBaseName.equals(newBaseName)) {
+                try {
+                    boolean currentlyDisabled = "1".equals(existing.getStatus());
+                    vpsSshCommandService.renameProxyNodeConfig(existing.getInstanceId(), oldBaseName, newBaseName, currentlyDisabled);
+                } catch (Exception e) {
+                    log.warn("rename proxy config failed: instanceId={}, oldNodeName={}, newNodeName={}",
+                            existing.getInstanceId(), oldBaseName, newBaseName, e);
+                    return AjaxResult.error("服务器配置重命名失败: " + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
+                }
+                effectiveNodeName = newBaseName;
+            }
+        }
+        row.setNodeName(effectiveNodeName);
+
         if (StringUtils.isNotEmpty(row.getStatus()) && !row.getStatus().equals(existing.getStatus())) {
             try {
-                vpsSshCommandService.renameProxyNodeConfig(
-                        existing.getInstanceId(),
-                        existing.getNodeName(),
-                        "1".equals(row.getStatus()));
+                vpsSshCommandService.renameProxyNodeConfig(existing.getInstanceId(), effectiveNodeName, "1".equals(row.getStatus()));
             } catch (Exception e) {
-                log.warn("服务器配置重命名失败: instanceId={}, nodeName={}", existing.getInstanceId(), existing.getNodeName(), e);
+                log.warn("rename proxy config failed: instanceId={}, nodeName={}", existing.getInstanceId(), effectiveNodeName, e);
                 return AjaxResult.error("服务器配置重命名失败: " + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
             }
         }
+
         row.setUpdateBy(getUsername());
         return toAjax(proxyNodeService.update(row));
     }
 
-    /** 将 existing 中 row 未传的字段填回 row，便于部分更新（如仅改状态）时满足必填项且不误清空其它字段 */
-    private void fillRowFromExisting(ProxyNode row, ProxyNode existing) {
-        // ProxyNode 必填项：@NotNull instanceId, @NotBlank nodeType, @NotBlank address, @NotNull port
-        if (row.getInstanceId() == null) row.setInstanceId(existing.getInstanceId());
-        if (row.getCustomerId() == null) row.setCustomerId(existing.getCustomerId());
-        if (row.getNodeName() == null) row.setNodeName(existing.getNodeName());
-        if (row.getNodeType() == null || row.getNodeType().isEmpty()) row.setNodeType(existing.getNodeType());
-        if (row.getAddress() == null || row.getAddress().isEmpty()) row.setAddress(existing.getAddress());
-        if (row.getPort() == null) row.setPort(existing.getPort());
-        // 其它字段：未传则用原值，避免被置空
-        if (row.getUrl() == null) row.setUrl(existing.getUrl());
-        if (row.getConfigJson() == null) row.setConfigJson(existing.getConfigJson());
-        if (row.getExpireTime() == null) row.setExpireTime(existing.getExpireTime());
-        if (row.getCustomId() == null) row.setCustomId(existing.getCustomId());
-        if (row.getStatus() == null) row.setStatus(existing.getStatus());
-        if (row.getRemark() == null) row.setRemark(existing.getRemark());
+    private void fillRequiredFromExisting(ProxyNode row, ProxyNode existing) {
+        row.setInstanceId(existing.getInstanceId());
+        row.setCustomerId(existing.getCustomerId());
+        row.setNodeType(existing.getNodeType());
+        row.setAddress(existing.getAddress());
+        row.setPort(existing.getPort());
+        row.setConfigJson(existing.getConfigJson());
+        row.setCustomId(existing.getCustomId());
     }
 
-    /**
-     * 删除代理节点（支持单条或批量，执行流程一致：先在服务器上删除配置文件，再删流量与库）
-     */
+    private static boolean isSameTime(Date a, Date b) {
+        if (a == null && b == null) return true;
+        if (a == null || b == null) return false;
+        return a.getTime() == b.getTime();
+    }
+
+    private static Long parseLong(Object value) {
+        if (value == null) return null;
+        if (value instanceof Number) return ((Number) value).longValue();
+        try {
+            return Long.parseLong(String.valueOf(value).trim());
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static Date parseExpireTime(Object value) {
+        if (value == null) return null;
+        String s = String.valueOf(value).trim();
+        if (s.isEmpty()) return null;
+        try {
+            return new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").parse(s);
+        } catch (Exception ignore) {
+            try {
+                return new SimpleDateFormat("yyyy-MM-dd").parse(s);
+            } catch (Exception e) {
+                return null;
+            }
+        }
+    }
+
+    private static String normalizeNodeBaseName(String nodeName) {
+        if (nodeName == null) return "";
+        String name = nodeName.trim();
+        if (name.endsWith(".json.disabled")) return name.substring(0, name.length() - ".json.disabled".length());
+        if (name.endsWith(".json")) return name.substring(0, name.length() - ".json".length());
+        if (name.endsWith(".disabled")) return name.substring(0, name.length() - ".disabled".length());
+        return name;
+    }
+
+    private static String buildNodeBaseName(String nodeType, Integer port, Long customerId, Date expireTime) {
+        String typePart = StringUtils.isNotEmpty(nodeType) ? nodeType.trim() : "UNKNOWN";
+        String portPart = port != null ? String.valueOf(port) : "0";
+        String customerPart = customerId != null ? String.valueOf(customerId) : "0";
+        String expiryTag = expireTime == null ? "permanent" : new SimpleDateFormat("yyyyMMdd").format(expireTime);
+        return typePart + "-" + portPart + "-" + customerPart + "-" + expiryTag;
+    }
+
     @PreAuthorize("@ss.hasPermi('resource:vps:remove')")
     @Log(title = "代理节点", businessType = BusinessType.DELETE)
     @DeleteMapping("/{ids}")
@@ -163,14 +240,14 @@ public class ProxyNodeController extends BaseController {
             try {
                 id = Long.parseLong(part.trim());
             } catch (NumberFormatException e) {
-                return AjaxResult.error("参数错误：无效的 id " + part);
+                return AjaxResult.error("参数错误: 无效的 id " + part);
             }
             ProxyNode node = proxyNodeService.getById(id);
             if (node != null) {
                 try {
                     vpsSshCommandService.removeProxyNodeFromServer(node);
                 } catch (Exception e) {
-                    log.warn("服务器上删除节点配置失败: nodeId={}, nodeName={}", id, node.getNodeName(), e);
+                    log.warn("remove node config on server failed: nodeId={}, nodeName={}", id, node.getNodeName(), e);
                     return AjaxResult.error("删除失败: " + (e.getMessage() != null ? e.getMessage() : "服务器操作异常"));
                 }
                 proxyNodeTrafficService.deleteByNodeId(id);

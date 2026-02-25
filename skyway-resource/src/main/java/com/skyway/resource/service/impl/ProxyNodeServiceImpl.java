@@ -80,7 +80,9 @@ public class ProxyNodeServiceImpl implements IProxyNodeService {
 
     @Override
     public int update(ProxyNode row) {
-        row.setUrl(buildShareUrl(row));
+        if (row.getUrl() == null) {
+            row.setUrl(buildShareUrl(row));
+        }
         return proxyNodeMapper.update(row);
     }
 

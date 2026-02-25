@@ -100,9 +100,10 @@
           <span v-else>{{ row.remark || '-' }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="220" align="center" fixed="right">
+      <el-table-column label="操作" width="260" align="center" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" size="small" @click="handleDetail(row)">详情</el-button>
+          <el-button link type="primary" size="small" @click="openNodeEdit(row)" v-hasPermi="['resource:vps:edit']">编辑</el-button>
           <el-button link type="primary" size="small" @click="handleCopyUrl(row)">复制链接</el-button>
           <el-button link type="danger" size="small" icon="Delete" :loading="deleteLoadingId === row.id || (batchDeleteLoading && selectedIds.includes(row.id))" @click="handleDelete(row)" v-hasPermi="['resource:vps:remove']">删除</el-button>
         </template>
@@ -164,6 +165,31 @@
         <el-button type="primary" :loading="remarkSaving" @click="submitRemarkEdit">确定</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog title="编辑节点" v-model="editNodeVisible" width="520px" append-to-body destroy-on-close>
+      <el-form label-width="90px">
+        <el-form-item label="有效期">
+          <div style="display: flex; align-items: center; gap: 10px; width: 100%">
+            <el-date-picker
+              v-model="editNodeForm.expireTime"
+              type="datetime"
+              placeholder="选择过期时间"
+              :disabled="editNodePermanent"
+              style="flex: 1"
+              value-format="YYYY-MM-DD HH:mm:ss"
+            />
+            <el-checkbox v-model="editNodePermanent" @change="v => v && (editNodeForm.expireTime = null)">永久有效</el-checkbox>
+          </div>
+        </el-form-item>
+        <el-form-item label="订阅链接">
+          <el-input v-model="editNodeForm.url" type="textarea" :rows="4" maxlength="2000" show-word-limit placeholder="支持手动编辑" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="editNodeVisible = false">取消</el-button>
+        <el-button type="primary" :loading="editNodeSaving" @click="submitNodeEdit">确定</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -219,6 +245,11 @@ const remarkEditVisible = ref(false)
 const remarkEditRow = ref(null)
 const remarkEditValue = ref('')
 const remarkSaving = ref(false)
+const editNodeVisible = ref(false)
+const editNodeSaving = ref(false)
+const editNodeRow = ref(null)
+const editNodePermanent = ref(false)
+const editNodeForm = reactive({ expireTime: null, url: '' })
 const queryRef = ref(null)
 
 function getList() {
@@ -315,6 +346,48 @@ function copyToClipboard(text) {
     document.execCommand('copy')
     document.body.removeChild(ta)
     proxy.$modal.msgSuccess('已复制到剪贴板')
+  })
+}
+
+function openNodeEdit(row) {
+  editNodeRow.value = row
+  editNodeForm.expireTime = row.expireTime || null
+  editNodeForm.url = row.url || ''
+  editNodePermanent.value = !row.expireTime
+  editNodeVisible.value = true
+}
+
+function buildNodeNameByExpire(row, expireTime) {
+  const now = expireTime ? new Date(expireTime) : null
+  const tag = now
+    ? `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`
+    : 'permanent'
+  return `${row.nodeType}-${row.port}-${row.customerId ?? 0}-${tag}`
+}
+
+function submitNodeEdit() {
+  if (!editNodeRow.value?.id) return
+  const payload = {
+    id: editNodeRow.value.id,
+    expireTime: editNodePermanent.value ? null : editNodeForm.expireTime,
+    url: (editNodeForm.url || '').trim()
+  }
+  editNodeSaving.value = true
+  updateProxyNode(payload).then(() => {
+    const row = editNodeRow.value
+    row.expireTime = payload.expireTime
+    row.url = payload.url
+    row.nodeName = buildNodeNameByExpire(row, payload.expireTime)
+    if (detailData.value?.id === row.id) {
+      detailData.value.expireTime = row.expireTime
+      detailData.value.url = row.url
+      detailData.value.nodeName = row.nodeName
+    }
+    proxy.$modal.msgSuccess('节点已更新')
+    editNodeVisible.value = false
+    getList()
+  }).catch(() => {}).finally(() => {
+    editNodeSaving.value = false
   })
 }
 
