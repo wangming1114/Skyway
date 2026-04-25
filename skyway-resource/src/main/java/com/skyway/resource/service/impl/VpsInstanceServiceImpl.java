@@ -1,6 +1,7 @@
 package com.skyway.resource.service.impl;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -46,12 +47,27 @@ public class VpsInstanceServiceImpl implements IVpsInstanceService {
         }
         List<VpsInstance> list = vpsInstanceMapper.selectList(instance);
         if (list != null && !list.isEmpty()) {
+            List<Long> instanceIds = list.stream()
+                    .map(VpsInstance::getId)
+                    .filter(id -> id != null)
+                    .collect(Collectors.toList());
+            Map<Long, Long> trafficByInstanceId = new HashMap<>();
+            if (!instanceIds.isEmpty()) {
+                List<Map<String, Object>> sums = proxyNodeTrafficMapper.selectSumByInstanceIds(instanceIds);
+                if (sums != null) {
+                    for (Map<String, Object> sum : sums) {
+                        Long instanceId = toLongObject(sum.get("instanceId"), sum.get("instanceid"));
+                        if (instanceId != null) {
+                            long rx = toLong(sum.get("totalRx"), sum.get("totalrx"));
+                            long tx = toLong(sum.get("totalTx"), sum.get("totaltx"));
+                            trafficByInstanceId.put(instanceId, rx + tx);
+                        }
+                    }
+                }
+            }
             for (VpsInstance row : list) {
                 if (row.getId() != null) {
-                    Map<String, Object> sum = proxyNodeTrafficMapper.selectSumByInstanceId(row.getId());
-                    long rx = toLong(sum != null ? sum.get("totalRx") : null, sum != null ? sum.get("totalrx") : null);
-                    long tx = toLong(sum != null ? sum.get("totalTx") : null, sum != null ? sum.get("totaltx") : null);
-                    row.setTotalTrafficBytes(rx + tx);
+                    row.setTotalTrafficBytes(trafficByInstanceId.getOrDefault(row.getId(), 0L));
                 }
             }
         }
@@ -78,6 +94,18 @@ public class VpsInstanceServiceImpl implements IVpsInstanceService {
             try { return Long.parseLong(String.valueOf(b)); } catch (NumberFormatException ignored) {}
         }
         return 0L;
+    }
+
+    private static Long toLongObject(Object a, Object b) {
+        if (a != null) {
+            if (a instanceof Number) return ((Number) a).longValue();
+            try { return Long.parseLong(String.valueOf(a)); } catch (NumberFormatException ignored) {}
+        }
+        if (b != null) {
+            if (b instanceof Number) return ((Number) b).longValue();
+            try { return Long.parseLong(String.valueOf(b)); } catch (NumberFormatException ignored) {}
+        }
+        return null;
     }
 
     /** 收集某分类及其所有子孙分类ID（兼容 MySQL 5.7，在内存中根据树结构计算） */

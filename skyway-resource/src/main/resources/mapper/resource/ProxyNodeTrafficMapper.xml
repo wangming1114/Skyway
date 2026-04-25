@@ -34,6 +34,18 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         where p.instance_id = #{instanceId}
     </select>
 
+    <select id="selectSumByInstanceIds" resultType="java.util.HashMap">
+        select
+            p.instance_id as instanceId,
+            ifnull(sum(t.rx_delta), 0) as totalRx,
+            ifnull(sum(t.tx_delta), 0) as totalTx
+        from res_proxy_node p
+        left join res_proxy_node_traffic t on t.node_id = p.id
+        where p.instance_id in
+        <foreach collection="instanceIds" item="instanceId" open="(" separator="," close=")">#{instanceId}</foreach>
+        group by p.instance_id
+    </select>
+
     <select id="selectRecentByNodeId" resultMap="ProxyNodeTrafficResult">
         select id, node_id, stat_time, rx_delta, tx_delta
         from res_proxy_node_traffic

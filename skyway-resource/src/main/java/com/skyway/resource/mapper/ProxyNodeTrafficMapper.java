@@ -24,6 +24,8 @@ public interface ProxyNodeTrafficMapper {
      */
     Map<String, Object> selectSumByInstanceId(Long instanceId);
 
+    List<Map<String, Object>> selectSumByInstanceIds(@Param("instanceIds") List<Long> instanceIds);
+
     /**
      * 按节点查近期明细（最近 N 条，用于曲线/速率）
      */
