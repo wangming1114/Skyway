@@ -79,10 +79,10 @@
               未选择分类时显示全部 VPS；在左侧选择分类/节点可筛选列表。
             </el-alert>
 
-            <el-table ref="vpsTableRef" v-loading="loading" :data="instanceList" :row-class-name="() => 'vps-table-row'">
+            <el-table v-loading="loading" :data="instanceList" :row-class-name="() => 'vps-table-row'">
               <el-table-column label="编号" align="center" prop="id" width="72">
                 <template #default="scope">
-                  <span @mouseenter="onEnterSameRowOtherCell(scope.row.id)">{{ scope.row.id }}</span>
+                  <span>{{ scope.row.id }}</span>
                 </template>
               </el-table-column>
               <el-table-column label="主机信息" align="left" prop="name" min-width="300" show-overflow-tooltip class-name="vps-name-column">
@@ -93,38 +93,8 @@
                       <i v-if="scope.row.status != null" class="vps-status-badge" :class="'vps-status-badge--' + (scope.row.status || '')" />
                     </div>
                     <div class="vps-name-cell">
-                      <div
-                        class="vps-name-row vps-name-row--with-popover"
-                        @mouseenter="hoverCardRowId = scope.row.id; onHoverCardOpen()"
-                        @mouseleave="scheduleHoverCardHide(scope.row.id)"
-                      >
+                      <div class="vps-name-row">
                         <el-link type="primary" :underline="false" @click="goDetail(scope.row.id)" class="vps-name-link" :title="displayName(scope.row)">{{ displayName(scope.row) }}</el-link>
-                        <el-popover
-                          :visible="hoverCardRowId === scope.row.id"
-                          placement="right-start"
-                          :width="380"
-                          :offset="12"
-                          trigger="manual"
-                          :show-after="0"
-                          popper-class="vps-hover-card-popover"
-                          :enterable="true"
-                          :popper-options="vpsHoverCardPopperOptions"
-                        >
-                          <template #default>
-                            <div class="vps-hover-card-wrap" @mouseenter="hoverCardRowId = scope.row.id; onHoverCardOpen()" @mouseleave="scheduleHoverCardHide(scope.row.id)">
-                              <VpsHoverCard
-                                :row="scope.row"
-                                :display-name="displayName(scope.row)"
-                                :status-label="statusLabel"
-                                :network-type-label="networkTypeLabel"
-                                @connect="handleConnectServer"
-                              />
-                            </div>
-                          </template>
-                          <template #reference>
-                            <span class="vps-popover-anchor vps-popover-anchor--end" />
-                          </template>
-                        </el-popover>
                       </div>
                       <div class="vps-name-sub">
                         <span v-if="scope.row.ip" class="vps-name-ip-wrap" :title="scope.row.ip">
@@ -146,7 +116,7 @@
               </el-table-column>
               <el-table-column label="配置" align="left" min-width="320" show-overflow-tooltip>
                 <template #default="scope">
-                  <div class="vps-config-tags" @mouseenter="onEnterSameRowOtherCell(scope.row.id)">
+                  <div class="vps-config-tags">
                     <span v-if="scope.row.cpu" class="vps-config-tag vps-config-tag--cpu"><el-icon><Cpu /></el-icon>{{ scope.row.cpu }}</span>
                     <span v-if="scope.row.memory" class="vps-config-tag vps-config-tag--memory"><el-icon><Coin /></el-icon>{{ scope.row.memory }}</span>
                     <span v-if="scope.row.disk" class="vps-config-tag vps-config-tag--disk"><el-icon><Folder /></el-icon>{{ scope.row.disk }}</span>
@@ -160,22 +130,22 @@
               </el-table-column>
               <el-table-column label="分类" align="left" prop="categoryName" width="90" show-overflow-tooltip>
                 <template #default="scope">
-                  <span @mouseenter="onEnterSameRowOtherCell(scope.row.id)">{{ scope.row.categoryName }}</span>
+                  <span>{{ scope.row.categoryName }}</span>
                 </template>
               </el-table-column>
               <el-table-column label="节点数" align="center" prop="nodeCount" width="72">
                 <template #default="scope">
-                  <span @mouseenter="onEnterSameRowOtherCell(scope.row.id)">{{ scope.row.nodeCount }}</span>
+                  <span>{{ scope.row.nodeCount }}</span>
                 </template>
               </el-table-column>
               <el-table-column label="累计流量" align="center" prop="totalTrafficBytes" width="100" show-overflow-tooltip>
                 <template #default="scope">
-                  <span @mouseenter="onEnterSameRowOtherCell(scope.row.id)">{{ scope.row.totalTrafficBytes != null ? formatTraffic(scope.row.totalTrafficBytes) : '-' }}</span>
+                  <span>{{ scope.row.totalTrafficBytes != null ? formatTraffic(scope.row.totalTrafficBytes) : '-' }}</span>
                 </template>
               </el-table-column>
               <el-table-column label="到期时间" align="center" prop="expireTime" width="128" show-overflow-tooltip>
                 <template #default="scope">
-                  <span @mouseenter="onEnterSameRowOtherCell(scope.row.id)">
+                  <span>
                     <span v-if="!scope.row.expireTime">-</span>
                     <span v-else :class="{ 'expire-expired': isExpired(scope.row.expireTime) }">{{ formatExpireTime(scope.row.expireTime) }}</span>
                   </span>
@@ -183,7 +153,7 @@
               </el-table-column>
               <el-table-column label="操作" align="center" width="200" class-name="small-padding fixed-width vps-op-cell" fixed="right">
                 <template #default="scope">
-                  <div class="op-btns" @mouseenter="onEnterSameRowOtherCell(scope.row.id)">
+                  <div class="op-btns">
                     <el-button link icon="Connection" class="op-btn" @click="handleConnectServer(scope.row)" v-hasPermi="['resource:vps:list']">连接</el-button>
                     <el-button link icon="View" class="op-btn" @click="goDetail(scope.row.id)" v-hasPermi="['resource:vps:query']">详情</el-button>
                     <el-dropdown trigger="click" @command="(cmd) => handleInstanceCommand(cmd, scope.row)" v-hasPermi="['resource:vps:edit', 'resource:vps:remove']">
@@ -369,7 +339,6 @@ import { computed } from 'vue'
 import { Cpu, Coin, Folder, Lightning, RefreshRight, Connection, Link, DocumentCopy } from '@element-plus/icons-vue'
 import { parseTime } from '@/utils/skyway'
 import serverIcon from '@/assets/images/os/server.svg'
-import VpsHoverCard from './components/VpsHoverCard.vue'
 import ubuntuIcon from '@/assets/images/os/ubuntu.svg'
 import centosIcon from '@/assets/images/os/centos.svg'
 import debianIcon from '@/assets/images/os/debian.svg'
@@ -439,37 +408,6 @@ const categoryRules = {
 const categoryRef = ref(null)
 
 const instanceList = ref([])
-const vpsTableRef = ref(null)
-const hoverCardRowId = ref(null)
-const vpsHoverCardPopperOptions = {
-  modifiers: [
-    { name: 'flip', options: { fallbackPlacements: ['left-start', 'top-start', 'bottom-start'] } },
-    { name: 'preventOverflow', options: { padding: 16 } }
-  ]
-}
-let hoverCardHideTimer = null
-let lastHoverCardOpenAt = 0
-function clearHoverCardHide() {
-  if (hoverCardHideTimer) clearTimeout(hoverCardHideTimer)
-  hoverCardHideTimer = null
-}
-function onHoverCardOpen() {
-  lastHoverCardOpenAt = Date.now()
-  clearHoverCardHide()
-}
-function scheduleHoverCardHide(rowId) {
-  if (Date.now() - lastHoverCardOpenAt < 120) return
-  clearHoverCardHide()
-  const id = rowId ?? hoverCardRowId.value
-  hoverCardHideTimer = setTimeout(() => {
-    if (hoverCardRowId.value === id) hoverCardRowId.value = null
-  }, 280)
-}
-/** 鼠标进入同行其他列（非主机信息）时立即关闭该行气泡 */
-function onEnterSameRowOtherCell(rowId) {
-  clearHoverCardHide()
-  if (hoverCardRowId.value === rowId) hoverCardRowId.value = null
-}
 const total = ref(0)
 const loading = ref(true)
 const showSearch = ref(true)
@@ -932,7 +870,6 @@ function goDetail(id) {
   })
 }
 
-let vpsTableScrollCleanup = null
 onMounted(() => {
   const q = route.query
   if (q && (q.pageNum != null || q.keyword != null || q.status != null || q.networkType != null || q.osType != null || q.categoryId != null)) {
@@ -945,22 +882,6 @@ onMounted(() => {
     if (q.categoryId != null) queryParams.value.categoryId = q.categoryId ? Number(q.categoryId) : undefined
   }
   getCategoryTree()
-  nextTick(() => {
-    const table = vpsTableRef.value?.$el
-    if (!table) return
-    const onScroll = () => {
-      clearHoverCardHide()
-      hoverCardRowId.value = null
-    }
-    const bodyWrapper = table.querySelector('.el-table__body-wrapper')
-    if (bodyWrapper) {
-      bodyWrapper.addEventListener('scroll', onScroll, { passive: true })
-      vpsTableScrollCleanup = () => bodyWrapper.removeEventListener('scroll', onScroll)
-    }
-  })
-})
-onUnmounted(() => {
-  vpsTableScrollCleanup?.()
 })
 </script>
 
@@ -1078,21 +999,6 @@ onUnmounted(() => {
   display: flex;
   flex-direction: row;
   align-items: center;
-}
-.vps-name-row--with-popover {
-  position: relative;
-}
-.vps-popover-anchor {
-  position: absolute;
-  top: 0;
-  width: 0;
-  height: 100%;
-  overflow: hidden;
-  pointer-events: none;
-}
-.vps-popover-anchor--end {
-  left: auto;
-  right: 0;
 }
 .vps-name-link {
   display: block;
@@ -1265,13 +1171,5 @@ onUnmounted(() => {
 .op-btns:hover .op-btn,
 .op-btns .op-btn:hover {
   color: var(--el-color-primary);
-}
-</style>
-
-<style lang="scss">
-.vps-hover-card-popover {
-  padding: 0;
-  border: none;
-  background: transparent;
 }
 </style>
