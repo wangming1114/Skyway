@@ -30,9 +30,12 @@
           <span v-else :class="{ 'expire-expired': isExpired(row.expireTime) }">{{ parseTime(row.expireTime, '{y}-{m}-{d}') }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="流量" width="200" align="center" show-overflow-tooltip>
+      <el-table-column label="流量" min-width="260" align="center">
         <template #default="{ row }">
-          <span v-if="trafficMap[row.id]">↑ {{ formatTraffic(trafficMap[row.id].totalTx) }} / ↓ {{ formatTraffic(trafficMap[row.id].totalRx) }}</span>
+          <div v-if="trafficMap[row.id]" class="traffic-cell">
+            <div class="traffic-cell-total">{{ nodeTrafficTotalText(row) }}</div>
+            <div class="traffic-cell-speed">{{ nodeRealtimeSpeedText(row) }}</div>
+          </div>
           <span v-else class="text-placeholder">-</span>
         </template>
       </el-table-column>
@@ -154,7 +157,10 @@
         </el-descriptions-item>
         <el-descriptions-item label="创建时间">{{ detailData.createTime }}</el-descriptions-item>
         <el-descriptions-item label="流量统计" :span="2">
-          <span v-if="detailTraffic">↑ {{ formatTraffic(detailTraffic.totalTx) }} / ↓ {{ formatTraffic(detailTraffic.totalRx) }}</span>
+          <div v-if="detailTraffic" class="traffic-cell traffic-cell--detail">
+            <div class="traffic-cell-total">{{ nodeTrafficTotalText(detailData, detailTraffic) }}</div>
+            <div class="traffic-cell-speed">{{ nodeRealtimeSpeedText(detailData) }}</div>
+          </div>
           <span v-else class="text-placeholder">-</span>
         </el-descriptions-item>
         <template v-if="detailConfig">
@@ -224,7 +230,7 @@
 <script setup>
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import useUserStore from '@/store/modules/user'
-import { listProxyNode, updateProxyNode, delProxyNode, getProxyNodeTraffic, getRecommendPort } from '@/api/resource/vps'
+import { listProxyNode, updateProxyNode, delProxyNode, getProxyNodeTraffic, getRecommendPort, getInstanceSpeed } from '@/api/resource/vps'
 import { listCustomer } from '@/api/member/customer'
 import { DocumentCopy, Loading, Edit, Delete } from '@element-plus/icons-vue'
 
@@ -272,6 +278,10 @@ const allNodeTypesForAdd = [
 const loading = ref(false)
 const nodeList = ref([])
 const total = ref(0)
+const speedSnapshot = ref(null)
+const speedRefreshing = ref(false)
+let speedTimer = null
+const SPEED_REFRESH_MS = 8000
 const queryParams = reactive({
   pageNum: 1,
   pageSize: 10,
@@ -287,7 +297,35 @@ function getList() {
     total.value = res.total
     loading.value = false
     fetchTrafficForList(nodeList.value)
+    refreshInstanceSpeed()
+    restartSpeedPolling()
   }).catch(() => { loading.value = false })
+}
+
+function restartSpeedPolling() {
+  clearSpeedPolling()
+  speedTimer = setInterval(() => {
+    refreshInstanceSpeed()
+  }, SPEED_REFRESH_MS)
+}
+
+function clearSpeedPolling() {
+  if (speedTimer != null) {
+    clearInterval(speedTimer)
+    speedTimer = null
+  }
+}
+
+function refreshInstanceSpeed() {
+  if (speedRefreshing.value || !props.instanceId) return
+  speedRefreshing.value = true
+  getInstanceSpeed(props.instanceId).then(res => {
+    speedSnapshot.value = res.data || null
+  }).catch(() => {
+    speedSnapshot.value = { error: true, ports: {} }
+  }).finally(() => {
+    speedRefreshing.value = false
+  })
 }
 
 function fetchTrafficForList(rows) {
@@ -617,6 +655,27 @@ function formatTraffic(bytes) {
   const i = Math.max(0, Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1))
   return (bytes / Math.pow(k, i)).toFixed(2) + ' ' + sizes[i]
 }
+function formatSpeedFromMb(value) {
+  const mb = Number(value)
+  if (!Number.isFinite(mb) || mb < 0) return '0 B/s'
+  const bytes = mb * 1024 * 1024
+  if (bytes <= 0) return '0 B/s'
+  const k = 1024
+  const sizes = ['B/s', 'KB/s', 'MB/s', 'GB/s', 'TB/s']
+  const i = Math.max(0, Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1))
+  return (bytes / Math.pow(k, i)).toFixed(2) + ' ' + sizes[i]
+}
+function nodeRealtimeSpeedText(row) {
+  if (!row || speedSnapshot.value?.error) return '实时：-'
+  const port = row.port != null ? String(row.port) : ''
+  const speed = port && speedSnapshot.value?.ports ? speedSnapshot.value.ports[port] : null
+  if (!speed) return '实时：-'
+  return '实时：↑ ' + formatSpeedFromMb(speed.upMbps) + ' / ↓ ' + formatSpeedFromMb(speed.downMbps)
+}
+function nodeTrafficTotalText(row, traffic) {
+  const stat = traffic || trafficMap.value[row.id]
+  return '累计：' + (stat ? '↑ ' + formatTraffic(stat.totalTx) + ' / ↓ ' + formatTraffic(stat.totalRx) : '-')
+}
 function formatBytes(bytes) {
   if (bytes == null || bytes === 0) return '0 B'
   const k = 1024
@@ -671,9 +730,12 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   clearExecTimeout()
+  clearSpeedPolling()
 })
 
 watch(() => props.instanceId, () => {
+  speedSnapshot.value = null
+  clearSpeedPolling()
   getList()
 })
 </script>
@@ -721,6 +783,24 @@ watch(() => props.instanceId, () => {
 }
 .text-placeholder {
   color: var(--el-text-color-placeholder);
+}
+.traffic-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+.traffic-cell--detail {
+  align-items: flex-start;
+}
+.traffic-cell-total {
+  color: var(--el-text-color-primary);
+}
+.traffic-cell-speed {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
 }
 .add-log-body {
   padding: 12px;

@@ -62,6 +62,22 @@ export function getInstance(id) {
   })
 }
 
+/** VPS 实例实时网速（按 sing-box 端口汇总，单位由后端返回 MB/s） */
+export function getInstanceSpeed(id) {
+  return request({
+    url: '/resource/vps/instance/' + id + '/speed',
+    method: 'get'
+  })
+}
+
+/** VPS 实例实时网速内存快照（一次返回全部实例，不触发 SSH） */
+export function getInstanceSpeedSnapshot() {
+  return request({
+    url: '/resource/vps/instance/speed/snapshot',
+    method: 'get'
+  })
+}
+
 /** 连接测试并拉取 CPU/内存/磁盘（用于新增/编辑时的连接测试按钮） */
 export function testConnection(data) {
   return request({

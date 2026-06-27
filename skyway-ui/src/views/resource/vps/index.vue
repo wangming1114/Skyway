@@ -138,9 +138,12 @@
                   <span>{{ scope.row.nodeCount }}</span>
                 </template>
               </el-table-column>
-              <el-table-column label="累计流量" align="center" prop="totalTrafficBytes" width="100" show-overflow-tooltip>
+              <el-table-column label="累计流量" align="center" prop="totalTrafficBytes" min-width="230" show-overflow-tooltip>
                 <template #default="scope">
-                  <span>{{ scope.row.totalTrafficBytes != null ? formatTraffic(scope.row.totalTrafficBytes) : '-' }}</span>
+                  <div class="traffic-cell">
+                    <div class="traffic-cell-total">{{ trafficTotalText(scope.row) }}</div>
+                    <div class="traffic-cell-speed">{{ realtimeSpeedText(scope.row) }}</div>
+                  </div>
                 </template>
               </el-table-column>
               <el-table-column label="到期时间" align="center" prop="expireTime" width="128" show-overflow-tooltip>
@@ -371,6 +374,7 @@ import {
   delCategory,
   listInstance,
   getInstance,
+  getInstanceSpeedSnapshot,
   addInstance,
   updateInstance,
   delInstance,
@@ -411,6 +415,10 @@ const instanceList = ref([])
 const total = ref(0)
 const loading = ref(true)
 const showSearch = ref(true)
+const speedMap = ref({})
+const speedRefreshing = ref(false)
+let speedTimer = null
+const SPEED_REFRESH_MS = 5000
 const instanceOpen = ref(false)
 const instanceTitle = ref('')
 const osTypeOptions = [
@@ -725,7 +733,66 @@ function getList() {
     instanceList.value = res.rows || []
     total.value = res.total || 0
     loading.value = false
+    pruneSpeedMap(instanceList.value)
+    refreshCurrentPageSpeed()
+    restartSpeedPolling()
   })
+}
+
+function pruneSpeedMap(rows) {
+  const ids = new Set((rows || []).map(row => String(row.id)).filter(Boolean))
+  const next = {}
+  Object.keys(speedMap.value || {}).forEach(id => {
+    if (ids.has(id)) next[id] = speedMap.value[id]
+  })
+  speedMap.value = next
+}
+
+function restartSpeedPolling() {
+  clearSpeedPolling()
+  speedTimer = setInterval(() => {
+    refreshCurrentPageSpeed()
+  }, SPEED_REFRESH_MS)
+}
+
+function clearSpeedPolling() {
+  if (speedTimer != null) {
+    clearInterval(speedTimer)
+    speedTimer = null
+  }
+}
+
+async function refreshCurrentPageSpeed() {
+  if (speedRefreshing.value) return
+  const rows = instanceList.value || []
+  if (rows.length === 0) {
+    speedMap.value = {}
+    return
+  }
+  speedRefreshing.value = true
+  try {
+    const res = await getInstanceSpeedSnapshot()
+    const all = (res && res.data) ? res.data : {}
+    const next = {}
+    rows.forEach(row => {
+      if (row.id == null) return
+      const id = String(row.id)
+      if (!isInstanceRunning(row)) {
+        next[row.id] = { skipped: true }
+      } else {
+        next[row.id] = all[id] || all[row.id] || { skipped: true, message: '实时网速等待后台采集中' }
+      }
+    })
+    speedMap.value = next
+  } catch (e) {
+    const next = {}
+    rows.forEach(row => {
+      if (row.id != null) next[row.id] = { error: true }
+    })
+    speedMap.value = next
+  } finally {
+    speedRefreshing.value = false
+  }
 }
 
 function handleQuery() {
@@ -845,6 +912,28 @@ function formatTraffic(bytes) {
   const i = Math.max(0, Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1))
   return (bytes / Math.pow(k, i)).toFixed(2) + ' ' + sizes[i]
 }
+function formatSpeedFromMb(value) {
+  const mb = Number(value)
+  if (!Number.isFinite(mb) || mb < 0) return '0 B/s'
+  const bytes = mb * 1024 * 1024
+  if (bytes <= 0) return '0 B/s'
+  const k = 1024
+  const sizes = ['B/s', 'KB/s', 'MB/s', 'GB/s', 'TB/s']
+  const i = Math.max(0, Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1))
+  return (bytes / Math.pow(k, i)).toFixed(2) + ' ' + sizes[i]
+}
+function realtimeSpeedText(row) {
+  const speed = speedMap.value[row.id]
+  if (!isInstanceRunning(row) || speed?.skipped) return '实时：未监控'
+  if (!speed || speed.error) return '实时：-'
+  return '实时：↑ ' + formatSpeedFromMb(speed.totalUpMbps) + ' / ↓ ' + formatSpeedFromMb(speed.totalDownMbps)
+}
+function trafficTotalText(row) {
+  return '累计：' + (row.totalTrafficBytes != null ? formatTraffic(row.totalTrafficBytes) : '-')
+}
+function isInstanceRunning(row) {
+  return row && row.status === 'running'
+}
 function isExpired(expireTime) {
   if (!expireTime) return false
   return new Date(expireTime) < new Date()
@@ -882,6 +971,10 @@ onMounted(() => {
     if (q.categoryId != null) queryParams.value.categoryId = q.categoryId ? Number(q.categoryId) : undefined
   }
   getCategoryTree()
+})
+
+onBeforeUnmount(() => {
+  clearSpeedPolling()
 })
 </script>
 
@@ -921,6 +1014,21 @@ onMounted(() => {
 .expire-expired {
   color: var(--el-color-danger);
   font-weight: 500;
+}
+.traffic-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+.traffic-cell-total {
+  color: var(--el-text-color-primary);
+}
+.traffic-cell-speed {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
 }
 /* 最多 2 行后省略，悬停用 title 看全文 */
 .cell-ellipsis-2 {

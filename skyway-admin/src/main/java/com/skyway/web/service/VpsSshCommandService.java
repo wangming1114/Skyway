@@ -7,6 +7,7 @@ import java.text.SimpleDateFormat;
 import java.util.Base64;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
@@ -35,6 +36,152 @@ public class VpsSshCommandService {
     private static final Logger log = LoggerFactory.getLogger(VpsSshCommandService.class);
     private static final String CONF_DIR = "/etc/sing-box/conf";
     private static final String DISABLED_SUFFIX = ".disabled";
+    private static final String SPEED_SCRIPT_PATH = "/root/singbox_speed.sh";
+    private static final Pattern SPEED_LINE = Pattern.compile("^\\s*(\\d{1,5})\\s*\\|\\s*([0-9]+(?:\\.[0-9]+)?)\\s*\\|\\s*([0-9]+(?:\\.[0-9]+)?)\\s*$");
+    private static final String SINGBOX_SPEED_SCRIPT = "#!/bin/bash\n"
+            + "\n"
+            + "# 捕获 Ctrl+C 信号，优雅退出并恢复光标\n"
+            + "trap 'tput cnorm; echo -e \"\\n🛑 监控已停止。\"; exit 0' SIGINT\n"
+            + "\n"
+            + "if [[ $EUID -ne 0 ]]; then\n"
+            + "   echo \"❌ 错误: 需要 root 权限，请使用 sudo $0 运行。\"\n"
+            + "   exit 1\n"
+            + "fi\n"
+            + "\n"
+            + "CONF_DIR=\"/etc/sing-box/conf\"\n"
+            + "\n"
+            + "# 隐藏光标\n"
+            + "tput civis\n"
+            + "clear\n"
+            + "\n"
+            + "# 获取底层数据的函数\n"
+            + "get_ss_data() {\n"
+            + "    ss -itnp 2>/dev/null | awk '\n"
+            + "    /\"sing-box\"/ {\n"
+            + "        local_addr = $4\n"
+            + "        peer_addr = $5\n"
+            + "        \n"
+            + "        getline \n"
+            + "        acked=0; recv=0\n"
+            + "        n = split($0, arr, \" \")\n"
+            + "        for(i=1; i<=n; i++) {\n"
+            + "            if (arr[i] ~ /^bytes_acked:/) { split(arr[i], kv, \":\"); acked = kv[2] }\n"
+            + "            if (arr[i] ~ /^bytes_received:/) { split(arr[i], kv, \":\"); recv = kv[2] }\n"
+            + "        }\n"
+            + "        if (acked != \"\" || recv != \"\") {\n"
+            + "            print local_addr, peer_addr, acked+0, recv+0\n"
+            + "        }\n"
+            + "    }'\n"
+            + "}\n"
+            + "\n"
+            + "# 全局保存上一秒数据的字典\n"
+            + "declare -A old_acked\n"
+            + "declare -A old_recv\n"
+            + "\n"
+            + "# 初始化基准数据\n"
+            + "while read -r local_addr peer_addr acked recv; do\n"
+            + "    conn=\"${local_addr}->${peer_addr}\"\n"
+            + "    old_acked[\"$conn\"]=$acked\n"
+            + "    old_recv[\"$conn\"]=$recv\n"
+            + "done < <(get_ss_data)\n"
+            + "\n"
+            + "while true; do\n"
+            + "    sleep 1\n"
+            + "    \n"
+            + "    unset allowed_ports new_old_acked new_old_recv port_up port_down port_total output_lines\n"
+            + "    declare -A allowed_ports\n"
+            + "    declare -A new_old_acked\n"
+            + "    declare -A new_old_recv\n"
+            + "    declare -A port_up\n"
+            + "    declare -A port_down\n"
+            + "    declare -A port_total\n"
+            + "    declare -a output_lines\n"
+            + "    \n"
+            + "    # 动态获取配置目录下的有效端口\n"
+            + "    shopt -s nullglob\n"
+            + "    for conf in \"$CONF_DIR\"/*.json; do\n"
+            + "        port=$(grep -hoP '\"listen_port\":\\s*\\K\\d+' \"$conf\" 2>/dev/null)\n"
+            + "        if [[ -n \"$port\" ]]; then\n"
+            + "            allowed_ports[\"$port\"]=1\n"
+            + "            port_up[\"$port\"]=0\n"
+            + "            port_down[\"$port\"]=0\n"
+            + "            port_total[\"$port\"]=0\n"
+            + "        fi\n"
+            + "    done\n"
+            + "    shopt -u nullglob\n"
+            + "    \n"
+            + "    while read -r local_addr peer_addr acked recv; do\n"
+            + "        conn=\"${local_addr}->${peer_addr}\"\n"
+            + "        new_old_acked[\"$conn\"]=$acked\n"
+            + "        new_old_recv[\"$conn\"]=$recv\n"
+            + "        \n"
+            + "        l_port=\"${local_addr##*:}\"\n"
+            + "        l_port=\"${l_port/\\]/}\"\n"
+            + "        \n"
+            + "        if [[ -z \"${allowed_ports[$l_port]}\" ]]; then\n"
+            + "            continue\n"
+            + "        fi\n"
+            + "\n"
+            + "        o_ack=${old_acked[\"$conn\"]}\n"
+            + "        o_recv=${old_recv[\"$conn\"]}\n"
+            + "        \n"
+            + "        if [[ -z \"$o_ack\" ]]; then o_ack=$acked; fi\n"
+            + "        if [[ -z \"$o_recv\" ]]; then o_recv=$recv; fi\n"
+            + "        \n"
+            + "        up_bytes=$(( acked - o_ack ))\n"
+            + "        down_bytes=$(( recv - o_recv ))\n"
+            + "        \n"
+            + "        port_up[\"$l_port\"]=$(( ${port_up[\"$l_port\"]:-0} + up_bytes ))\n"
+            + "        port_down[\"$l_port\"]=$(( ${port_down[\"$l_port\"]:-0} + down_bytes ))\n"
+            + "        port_total[\"$l_port\"]=$(( ${port_total[\"$l_port\"]:-0} + up_bytes + down_bytes ))\n"
+            + "        \n"
+            + "    done < <(get_ss_data)\n"
+            + "    \n"
+            + "    # 刷新旧数据字典\n"
+            + "    unset old_acked old_recv\n"
+            + "    declare -A old_acked old_recv\n"
+            + "    for k in \"${!new_old_acked[@]}\"; do\n"
+            + "        old_acked[\"$k\"]=\"${new_old_acked[$k]}\"\n"
+            + "        old_recv[\"$k\"]=\"${new_old_recv[$k]}\"\n"
+            + "    done\n"
+            + "    \n"
+            + "    for port in \"${!allowed_ports[@]}\"; do\n"
+            + "        total=${port_total[\"$port\"]:-0}\n"
+            + "        up_val=${port_up[\"$port\"]:-0}\n"
+            + "        down_val=${port_down[\"$port\"]:-0}\n"
+            + "        \n"
+            + "        # 核心修改：将字节转换为 MB (除以 1024*1024 = 1048576)\n"
+            + "        up_mb=$(awk \"BEGIN {printf \\\"%.2f\\\", $up_val / 1048576}\")\n"
+            + "        down_mb=$(awk \"BEGIN {printf \\\"%.2f\\\", $down_val / 1048576}\")\n"
+            + "        \n"
+            + "        line=$(printf \"%-12s | %-15s | %-15s\" \"$port\" \"$up_mb\" \"$down_mb\")\n"
+            + "        sort_key=$(printf \"%012d\" \"$total\")\n"
+            + "        output_lines+=(\"${sort_key}|${line}\")\n"
+            + "    done\n"
+            + "    \n"
+            + "    # 动态获取当前终端窗口的实际高度 (如果获取失败默认24行)\n"
+            + "    term_lines=$(tput lines 2>/dev/null || echo 24)\n"
+            + "    max_display=$(( term_lines - 6 ))\n"
+            + "    if [ \"$max_display\" -lt 5 ]; then max_display=5; fi\n"
+            + "\n"
+            + "    # 表头单位更新为 MB/s\n"
+            + "    output_buffer=\"\\033[2J\\033[H=================================================\\n\"\n"
+            + "    output_buffer+=\" 🚀 节点端口实时网速 (按总速度倒序 | 空闲显示0.00)\\n\"\n"
+            + "    output_buffer+=\"=================================================\\n\"\n"
+            + "    output_buffer+=$(printf \"%-12s | %-15s | %-15s\\n\" \"端口 (Port)\" \"上传 (MB/s)\" \"下载 (MB/s)\")\n"
+            + "    output_buffer+=\"\\n-------------------------------------------------\\n\"\n"
+            + "    \n"
+            + "    if [ ${#allowed_ports[@]} -eq 0 ] 2>/dev/null; then\n"
+            + "        output_buffer+=\"⚠️  未在 $CONF_DIR 找到有效的 .json 配置或监听端口。\\n\"\n"
+            + "    elif [ ${#output_lines[@]} -gt 0 ]; then\n"
+            + "        sorted_lines=$(printf \"%s\\n\" \"${output_lines[@]}\" | sort -r -t'|' -k1,1 | cut -d'|' -f2- | head -n \"$max_display\")\n"
+            + "        output_buffer+=\"$sorted_lines\\n\"\n"
+            + "    else\n"
+            + "        output_buffer+=\"获取端口状态中... \\n\"\n"
+            + "    fi\n"
+            + "    \n"
+            + "    echo -ne \"$output_buffer\"\n"
+            + "done\n";
 
     @Autowired
     private IVpsInstanceService vpsInstanceService;
@@ -321,6 +468,166 @@ public class VpsSshCommandService {
         return result;
     }
 
+    public RealtimeSpeedSnapshot readRealtimeSpeed(Long instanceId) throws IOException {
+        VpsInstance inst = vpsInstanceService.getById(instanceId);
+        if (inst == null) {
+            throw new IllegalStateException("实例不存在");
+        }
+        if (!isRealtimeSpeedAllowedStatus(inst.getStatus())) {
+            RealtimeSpeedSnapshot snapshot = new RealtimeSpeedSnapshot();
+            snapshot.setSkipped(true);
+            snapshot.setMessage("实例状态非正常，已跳过实时网速采集");
+            return snapshot;
+        }
+        SSHClient ssh = null;
+        try {
+            ssh = openSshClient(instanceId);
+            ensureRealtimeSpeedScript(ssh);
+            try (Session speedSession = ssh.startSession()) {
+                String output = execAndReadWithTimeout(speedSession,
+                        "sh -c 'timeout 4s " + SPEED_SCRIPT_PATH + " 2>/dev/null || true'", 6);
+                return parseRealtimeSpeedOutput(output);
+            }
+        } finally {
+            if (ssh != null) {
+                try {
+                    ssh.close();
+                } catch (IOException e) {
+                    log.debug("SSH close: {}", e.getMessage());
+                }
+            }
+        }
+    }
+
+    public SSHClient openSshClient(Long instanceId) throws IOException {
+        return createSshClient(instanceId);
+    }
+
+    public void ensureRealtimeSpeedScript(SSHClient ssh) throws IOException {
+        if (ssh == null) {
+            throw new IOException("SSH 连接为空");
+        }
+        try (Session installSession = ssh.startSession()) {
+            installRealtimeSpeedScript(installSession);
+        }
+    }
+
+    public Command startRealtimeSpeedCommand(Session session) throws IOException {
+        return session.exec("sh -c '" + SPEED_SCRIPT_PATH + " 2>&1'");
+    }
+
+    public static boolean isRealtimeSpeedAllowedStatus(String status) {
+        return "running".equals(status);
+    }
+
+    private static void installRealtimeSpeedScript(Session session) throws IOException {
+        String encodedScript = Base64.getEncoder().encodeToString(SINGBOX_SPEED_SCRIPT.getBytes(StandardCharsets.UTF_8));
+        String install = "if [ ! -x " + SPEED_SCRIPT_PATH + " ]; then "
+                + "printf '%s' '" + encodedScript + "' | base64 -d > " + SPEED_SCRIPT_PATH
+                + " && chmod +x " + SPEED_SCRIPT_PATH + "; fi";
+        String out = execAndRead(session, "sh -c " + quoteSh(install));
+        if (out != null && (out.contains("Permission denied") || out.contains("base64:"))) {
+            throw new IOException("实时网速脚本安装失败: " + out.trim());
+        }
+    }
+
+    public static RealtimeSpeedSnapshot parseRealtimeSpeedOutput(String output) {
+        RealtimeSpeedSnapshot snapshot = new RealtimeSpeedSnapshot();
+        if (output == null || output.trim().isEmpty()) {
+            return snapshot;
+        }
+        String normalized = stripAnsi(output).replace('\r', '\n');
+        for (String line : normalized.split("\\n")) {
+            Matcher matcher = SPEED_LINE.matcher(line);
+            if (!matcher.find()) {
+                continue;
+            }
+            String port = matcher.group(1);
+            double upMbps = parseDouble(matcher.group(2));
+            double downMbps = parseDouble(matcher.group(3));
+            if (Integer.parseInt(port) > 0 && Integer.parseInt(port) <= 65535) {
+                snapshot.putPortSpeed(port, upMbps, downMbps);
+            }
+        }
+        snapshot.recalculateTotals();
+        return snapshot;
+    }
+
+    private static double parseDouble(String value) {
+        try {
+            return Double.parseDouble(value);
+        } catch (Exception e) {
+            return 0D;
+        }
+    }
+
+    public static final class RealtimeSpeedSnapshot {
+        private double totalUpMbps;
+        private double totalDownMbps;
+        private boolean skipped;
+        private String message;
+        private final Map<String, PortSpeed> ports = new LinkedHashMap<>();
+
+        public double getTotalUpMbps() {
+            return totalUpMbps;
+        }
+
+        public double getTotalDownMbps() {
+            return totalDownMbps;
+        }
+
+        public Map<String, PortSpeed> getPorts() {
+            return ports;
+        }
+
+        public boolean isSkipped() {
+            return skipped;
+        }
+
+        public void setSkipped(boolean skipped) {
+            this.skipped = skipped;
+        }
+
+        public String getMessage() {
+            return message;
+        }
+
+        public void setMessage(String message) {
+            this.message = message;
+        }
+
+        private void putPortSpeed(String port, double upMbps, double downMbps) {
+            ports.put(port, new PortSpeed(upMbps, downMbps));
+        }
+
+        private void recalculateTotals() {
+            totalUpMbps = 0D;
+            totalDownMbps = 0D;
+            for (PortSpeed speed : ports.values()) {
+                totalUpMbps += speed.getUpMbps();
+                totalDownMbps += speed.getDownMbps();
+            }
+        }
+    }
+
+    public static final class PortSpeed {
+        private final double upMbps;
+        private final double downMbps;
+
+        public PortSpeed(double upMbps, double downMbps) {
+            this.upMbps = upMbps;
+            this.downMbps = downMbps;
+        }
+
+        public double getUpMbps() {
+            return upMbps;
+        }
+
+        public double getDownMbps() {
+            return downMbps;
+        }
+    }
+
     /**
      * 解析 /etc/os-release 或 /etc/redhat-release 输出，返回 osType（centos/ubuntu/debian/alpine/other）和 osVersion。
      */
@@ -482,7 +789,7 @@ public class VpsSshCommandService {
                     session.close();
                 } catch (IOException ignored) {}
                 worker.join(3000);
-                throw new IOException("添加节点命令执行超时（" + timeoutSeconds + " 秒），请检查服务器上 sb 是否需交互或端口是否被占用");
+                throw new IOException("SSH 命令执行超时（" + timeoutSeconds + " 秒），请检查服务器状态后重试");
             }
             if (err.get() != null) throw err.get();
             return result.get();
@@ -504,7 +811,7 @@ public class VpsSshCommandService {
     private static final Pattern P_PUBLIC_KEY = Pattern.compile("公钥\\s*\\(Public key\\)\\s*=\\s*(.+)");
     private static final Pattern P_URL = Pattern.compile("(vless://[^\\s]+)");
     private static final Pattern P_VMESS_URL = Pattern.compile("(vmess://[^\\s]+)");
-    private static final Pattern ANSI_ESCAPE = Pattern.compile("\u001B\\[[0-9;]*m|\\[[0-9;]+m");
+    private static final Pattern ANSI_ESCAPE = Pattern.compile("\u001B\\[[0-9;?]*[ -/]*[@-~]|\\[[0-9;]+m");
 
     private static String stripAnsi(String s) {
         if (s == null || s.isEmpty()) return s;

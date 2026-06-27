@@ -45,6 +45,9 @@ public class VpsInstanceController extends BaseController {
     private VpsSshCommandService vpsSshCommandService;
 
     @Autowired
+    private com.skyway.web.service.VpsRealtimeSpeedManager vpsRealtimeSpeedManager;
+
+    @Autowired
     private IProxyNodeService proxyNodeService;
 
     /**
@@ -87,6 +90,24 @@ public class VpsInstanceController extends BaseController {
     public AjaxResult recommendPort(@PathVariable Long instanceId) {
         Integer port = proxyNodeService.recommendPort(instanceId);
         return success(port);
+    }
+
+    /**
+     * 获取实例 sing-box 端口实时网速（MB/s），不影响累计流量统计。
+     */
+    @PreAuthorize("@ss.hasPermi('resource:vps:list')")
+    @GetMapping("/{instanceId}/speed")
+    public AjaxResult realtimeSpeed(@PathVariable Long instanceId) {
+        return success(vpsRealtimeSpeedManager.snapshot(instanceId));
+    }
+
+    /**
+     * 获取所有实例实时网速内存快照，不触发 SSH。
+     */
+    @PreAuthorize("@ss.hasPermi('resource:vps:list')")
+    @GetMapping("/speed/snapshot")
+    public AjaxResult realtimeSpeedSnapshot() {
+        return success(vpsRealtimeSpeedManager.snapshotAll());
     }
 
     /**
