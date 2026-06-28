@@ -71,6 +71,16 @@
                         <span class="command-card-icon">📦</span>
                         <span class="command-card-title">sing-box</span>
                         <span class="command-card-desc">233boy 官方一键安装</span>
+                        <el-tooltip content="打开 GitHub 仓库" placement="top">
+                          <button
+                            type="button"
+                            class="command-card-github"
+                            aria-label="打开 GitHub 仓库"
+                            @click.stop="openGithub(SING_BOX_GITHUB_URL)"
+                          >
+                            <svg-icon icon-class="github" />
+                          </button>
+                        </el-tooltip>
                         <el-button
                           type="primary"
                           size="small"
@@ -85,6 +95,16 @@
                         <span class="command-card-icon">🌐</span>
                         <span class="command-card-title">三网回程检查</span>
                         <span class="command-card-desc">zhanghanyun/backtrace，兼容 curl/wget</span>
+                        <el-tooltip content="打开 GitHub 仓库" placement="top">
+                          <button
+                            type="button"
+                            class="command-card-github"
+                            aria-label="打开 GitHub 仓库"
+                            @click.stop="openGithub(BACKTRACE_GITHUB_URL)"
+                          >
+                            <svg-icon icon-class="github" />
+                          </button>
+                        </el-tooltip>
                         <el-button
                           type="primary"
                           size="small"
@@ -99,6 +119,16 @@
                         <span class="command-card-icon">🖥</span>
                         <span class="command-card-title">融合怪脚本</span>
                         <span class="command-card-desc">oneclickvirt/ecs，可选 1-10 或 0 退出</span>
+                        <el-tooltip content="打开 GitHub 仓库" placement="top">
+                          <button
+                            type="button"
+                            class="command-card-github"
+                            aria-label="打开 GitHub 仓库"
+                            @click.stop="openGithub(GOECS_GITHUB_URL)"
+                          >
+                            <svg-icon icon-class="github" />
+                          </button>
+                        </el-tooltip>
                         <el-button
                           type="primary"
                           size="small"
@@ -206,6 +236,9 @@ import SftpFilePanel from '../components/SftpFilePanel.vue'
 
 const INSTALL_CMD = 'bash <(wget -qO- -o- https://github.com/233boy/sing-box/raw/main/install.sh)'
 const SING_CONFIG_PATH = '/etc/sing-box/conf'
+const SING_BOX_GITHUB_URL = 'https://github.com/233boy/sing-box'
+const BACKTRACE_GITHUB_URL = 'https://github.com/zhanghanyun/backtrace'
+const GOECS_GITHUB_URL = 'https://github.com/oneclickvirt/ecs'
 
 const GOECS_OPTIONS_FALLBACK = [
   { value: 1, label: '融合怪完全体(能测全测)' },
@@ -382,6 +415,10 @@ function enterSingConfig() {
   const enc = new TextEncoder()
   sendBinary(enc.encode(`cd ${SING_CONFIG_PATH}\n`))
   ElMessage.success('已进入 sing 配置目录')
+}
+
+function openGithub(url) {
+  window.open(url, '_blank', 'noopener,noreferrer')
 }
 
 function openExecDrawer(commandId, title, option) {
@@ -763,6 +800,30 @@ onBeforeUnmount(() => {
   font-size: 12px;
   color: var(--el-text-color-secondary);
   min-width: 0;
+}
+.command-card-github {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+  background: var(--el-fill-color-blank);
+  color: var(--el-text-color-regular);
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s, background 0.2s;
+  &:hover {
+    color: var(--el-color-primary);
+    border-color: var(--el-color-primary-light-5);
+    background: var(--el-color-primary-light-9);
+  }
+  :deep(.svg-icon) {
+    width: 15px;
+    height: 15px;
+  }
 }
 .command-card-btn {
   flex-shrink: 0;
