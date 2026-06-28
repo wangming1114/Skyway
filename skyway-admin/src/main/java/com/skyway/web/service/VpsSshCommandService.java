@@ -23,6 +23,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
+import com.alibaba.fastjson2.JSONWriter;
 import com.alibaba.fastjson2.JSONObject;
 import com.skyway.common.utils.StringUtils;
 import com.skyway.resource.domain.ProxyNode;
@@ -395,7 +396,7 @@ public class VpsSshCommandService {
         JSONObject route = new JSONObject();
         route.put("rules", rules);
         root.put("route", route);
-        return root.toJSONString();
+        return JSON.toJSONString(root, JSONWriter.Feature.PrettyFormat);
     }
 
     private static String randomRelayTag() {

@@ -271,7 +271,11 @@ public class VpsInstanceController extends BaseController {
                     ? vpsSshCommandService.addProxyNodeOnInstance(instanceId, customerId, port, expireTimeStr, nodeType)
                     : vpsSshCommandService.addProxyNodeOnInstance(instanceId, customerId, port, expireTimeStr, nodeType, relay);
             node.setCreateBy(getUsername());
-            if (remark != null) node.setRemark(remark);
+            if (relay != null) {
+                node.setRemark(relayText);
+            } else if (remark != null) {
+                node.setRemark(remark);
+            }
             proxyNodeService.insert(node);
             try {
                 vpsSshCommandService.ensureTrafficRulesForPort(instanceId, node.getPort() != null ? node.getPort() : port);

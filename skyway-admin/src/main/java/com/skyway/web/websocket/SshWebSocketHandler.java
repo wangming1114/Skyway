@@ -700,7 +700,11 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                 parsed.setCustomId(customerIdStr);
                 parsed.setExpireTime(expireDate);
                 parsed.setStatus("0");
-                if (remark != null && !remark.trim().isEmpty()) parsed.setRemark(remark.trim());
+                if (relayFinal != null) {
+                    parsed.setRemark(relayText.trim());
+                } else if (remark != null && !remark.trim().isEmpty()) {
+                    parsed.setRemark(remark.trim());
+                }
                 try {
                     proxyNodeService.insert(parsed);
                     try {

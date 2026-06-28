@@ -24,6 +24,8 @@ public class VpsSocks5RelayConfigTest {
                 new VpsSshCommandService.Socks5RelayConfig("204.1.132.93", 35345, "lVZjQtlJ", "Qat3T6ofak");
 
         String patched = VpsSshCommandService.applySocks5RelayToSingBoxConfig(original, relay, "SOCKS-AbC123");
+        org.junit.jupiter.api.Assertions.assertTrue(patched.contains("\n"));
+        org.junit.jupiter.api.Assertions.assertTrue(patched.matches("(?s).*\\n\\s+\"outbounds\".*"));
         JSONObject root = JSON.parseObject(patched);
         JSONArray outbounds = root.getJSONArray("outbounds");
         JSONObject socks = outbounds.getJSONObject(0);
