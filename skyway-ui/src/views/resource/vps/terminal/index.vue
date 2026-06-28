@@ -40,6 +40,7 @@
                     <span class="tab-label"><el-icon><Folder /></el-icon> 文件</span>
                   </template>
                   <SftpFilePanel
+                    ref="sftpFileRef"
                     :send-json="sendJson"
                     :send-binary="sendBinary"
                     :sftp-message="sftpMessage"
@@ -52,6 +53,20 @@
                   </template>
                   <div class="command-panel">
                     <div class="command-cards">
+                      <div class="command-card" @click="wsConnected && enterSingConfig()">
+                        <span class="command-card-icon">📁</span>
+                        <span class="command-card-title">sing-box 配置目录</span>
+                        <span class="command-card-desc">进入 /etc/sing-box/conf，并同步文件管理</span>
+                        <el-button
+                          type="primary"
+                          size="small"
+                          :disabled="!wsConnected"
+                          @click.stop="enterSingConfig"
+                          class="command-card-btn"
+                        >
+                          进入
+                        </el-button>
+                      </div>
                       <div class="command-card" @click="wsConnected && openInstallDrawer()">
                         <span class="command-card-icon">📦</span>
                         <span class="command-card-title">sing-box</span>
@@ -190,6 +205,7 @@ import ServerMonitorPanel from '../components/ServerMonitorPanel.vue'
 import SftpFilePanel from '../components/SftpFilePanel.vue'
 
 const INSTALL_CMD = 'bash <(wget -qO- -o- https://github.com/233boy/sing-box/raw/main/install.sh)'
+const SING_CONFIG_PATH = '/etc/sing-box/conf'
 
 const GOECS_OPTIONS_FALLBACK = [
   { value: 1, label: '融合怪完全体(能测全测)' },
@@ -238,6 +254,7 @@ const instanceName = computed(() => lastTerminalState.value.name)
 const instanceIp = computed(() => lastTerminalState.value.ip)
 
 const terminalRef = ref(null)
+const sftpFileRef = ref(null)
 const sysinfoData = ref(null)
 const sftpMessage = ref(null)
 const wsConnected = ref(false)
@@ -351,6 +368,20 @@ function sendJson(obj) {
 
 function sendBinary(data) {
   terminalRef.value?.sendBinary?.(data)
+}
+
+function enterSingConfig() {
+  if (!wsConnected.value) {
+    ElMessage.warning('请先连接 SSH')
+    return
+  }
+  bottomActiveTab.value = 'file'
+  nextTick(() => {
+    sftpFileRef.value?.navigateTo?.(SING_CONFIG_PATH)
+  })
+  const enc = new TextEncoder()
+  sendBinary(enc.encode(`cd ${SING_CONFIG_PATH}\n`))
+  ElMessage.success('已进入 sing 配置目录')
 }
 
 function openExecDrawer(commandId, title, option) {

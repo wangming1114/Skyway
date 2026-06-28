@@ -1381,7 +1381,7 @@ onBeforeUnmount(() => {
   document.removeEventListener('click', hideCtxMenu)
 })
 
-defineExpose({ loadList })
+defineExpose({ loadList, navigateTo })
 </script>
 
 <style scoped lang="scss">
