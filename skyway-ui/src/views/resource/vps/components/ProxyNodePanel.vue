@@ -22,9 +22,14 @@
           <el-tag size="small" :type="getNodeTypeTagColor(row.nodeType)">{{ row.nodeType }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="归属客户" width="120" align="center" show-overflow-tooltip>
+      <el-table-column v-if="!hideCustomerColumn" label="归属客户" width="120" align="center" show-overflow-tooltip>
         <template #default="{ row }">
           {{ customerOptions.find(c => c.id === row.customerId)?.username ?? row.customerId ?? '-' }}
+        </template>
+      </el-table-column>
+      <el-table-column v-if="showInstanceColumn" label="所属VPS" width="150" align="center" show-overflow-tooltip>
+        <template #default="{ row }">
+          {{ instanceOptions.find(i => i.id === row.instanceId)?.name ?? row.instanceId ?? '-' }}
         </template>
       </el-table-column>
       <el-table-column label="地址" prop="address" min-width="100" show-overflow-tooltip />
@@ -102,9 +107,14 @@
 
     <el-dialog title="新增节点" v-model="addDialogVisible" width="460px" append-to-body>
       <el-form ref="addFormRef" :model="addForm" :rules="addFormRules" label-width="90px">
-        <el-form-item label="归属客户" prop="customerId">
+        <el-form-item v-if="!fixedCustomer" label="归属客户" prop="customerId">
           <el-select v-model="addForm.customerId" placeholder="请选择客户" style="width: 100%" filterable>
             <el-option v-for="c in customerOptions" :key="c.id" :label="c.username" :value="c.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="!instanceId" label="服务器" prop="instanceId">
+          <el-select v-model="addForm.instanceId" placeholder="请选择服务器" style="width: 100%" filterable @change="onAddInstanceChange">
+            <el-option v-for="i in instanceOptions" :key="i.id" :label="i.name + ' (' + (i.ip || '') + ')'" :value="i.id" />
           </el-select>
         </el-form-item>
         <el-form-item label="协议类型" prop="nodeType">
@@ -143,8 +153,8 @@
       </el-form>
       <template #footer>
         <el-button @click="addDialogVisible = false">取 消</el-button>
-        <el-button type="primary" :disabled="!wsConnected" @click="submitAddForm">
-          {{ wsConnected ? '确定（将在服务器执行）' : '等待 SSH 连接...' }}
+        <el-button type="primary" :disabled="!canSubmitAdd" :loading="httpExecSubmitting" @click="submitAddForm">
+          {{ canSubmitAdd ? '确定（将在服务器执行）' : '等待 SSH 连接...' }}
         </el-button>
       </template>
     </el-dialog>
@@ -317,6 +327,10 @@ import {
   getProxyNodeTraffic,
   getRecommendPort,
   getInstanceSpeed,
+  getInstanceSpeedSnapshot,
+  listInstance,
+  checkInstanceSsh,
+  addProxyNodeOnInstance,
   listProxyNodeRateLimit,
   setProxyNodeRateLimit,
   removeProxyNodeRateLimit
@@ -331,7 +345,12 @@ const userStore = useUserStore()
 const hasEditPermi = computed(() => (userStore.permissions || []).some(p => p === '*:*:*' || p === 'resource:vps:edit'))
 
 const props = defineProps({
-  instanceId: { type: Number, required: true },
+  instanceId: { type: Number, default: null },
+  customerId: { type: Number, default: null },
+  fixedCustomer: { type: Boolean, default: false },
+  hideCustomerColumn: { type: Boolean, default: false },
+  showInstanceColumn: { type: Boolean, default: false },
+  useHttpExec: { type: Boolean, default: false },
   defaultAddress: { type: String, default: '' },
   wsConnected: { type: Boolean, default: false },
   sendWs: { type: Function, default: () => {} }
@@ -376,14 +395,22 @@ const SPEED_REFRESH_MS = 8000
 const queryParams = reactive({
   pageNum: 1,
   pageSize: 10,
-  instanceId: props.instanceId,
+  instanceId: props.instanceId || undefined,
+  customerId: props.customerId || undefined,
   nodeType: undefined,
   expireStatus: 'unexpired'
+})
+const effectiveInstanceId = computed(() => props.instanceId || addForm.instanceId || null)
+const canUseWsExec = computed(() => !!props.instanceId && props.wsConnected && !props.useHttpExec)
+const canSubmitAdd = computed(() => {
+  if (props.useHttpExec || !props.instanceId) return true
+  return props.wsConnected
 })
 
 function getList() {
   loading.value = true
-  queryParams.instanceId = props.instanceId
+  queryParams.instanceId = props.instanceId || undefined
+  queryParams.customerId = props.customerId || undefined
   const params = {
     ...queryParams,
     expireStatus: queryParams.expireStatus === 'all' ? undefined : queryParams.expireStatus
@@ -419,7 +446,7 @@ function syncRateLimitsFromRows(rows) {
 
 function fetchRateLimits() {
   if (!props.instanceId) {
-    rateLimitMap.value = {}
+    applyRateLimitMapToRows(rateLimitMap.value)
     return
   }
   listProxyNodeRateLimit({ instanceId: props.instanceId }).then(res => {
@@ -506,9 +533,10 @@ function clearSpeedPolling() {
 }
 
 function refreshInstanceSpeed() {
-  if (speedRefreshing.value || !props.instanceId) return
+  if (speedRefreshing.value) return
   speedRefreshing.value = true
-  getInstanceSpeed(props.instanceId).then(res => {
+  const request = props.instanceId ? getInstanceSpeed(props.instanceId) : getInstanceSpeedSnapshot()
+  request.then(res => {
     speedSnapshot.value = res.data || null
   }).catch(() => {
     speedSnapshot.value = { error: true, ports: {} }
@@ -537,13 +565,16 @@ const EXEC_TIMEOUT_MS = 90000
 const addDialogVisible = ref(false)
 const addFormRef = ref(null)
 const customerOptions = ref([])
-const addForm = reactive({ customerId: undefined, nodeType: 'VLESS-REALITY', port: undefined, expireTime: null, remark: '' })
+const instanceOptions = ref([])
+const addForm = reactive({ customerId: undefined, instanceId: undefined, nodeType: 'VLESS-REALITY', port: undefined, expireTime: null, remark: '' })
 const addFormPermanent = ref(true)
 const addFormRules = {
   customerId: [{ required: true, message: '请选择归属客户', trigger: 'change' }],
+  instanceId: [{ required: true, message: '请选择服务器', trigger: 'change' }],
   nodeType: [{ required: true, message: '请选择协议类型', trigger: 'change' }],
   port: [{ required: true, message: '请输入端口', trigger: 'blur' }]
 }
+const httpExecSubmitting = ref(false)
 
 const remarkEditVisible = ref(false)
 const remarkEditRow = ref(null)
@@ -594,29 +625,58 @@ function endLogStateAsFailed(message) {
 }
 
 function handleAdd() {
-  addForm.customerId = undefined
+  addForm.customerId = props.fixedCustomer ? props.customerId : undefined
+  addForm.instanceId = props.instanceId || undefined
   addForm.nodeType = 'VLESS-REALITY'
   addForm.port = undefined
   addForm.expireTime = null
   addForm.remark = ''
   addFormPermanent.value = true
   addDialogVisible.value = true
-  getRecommendPort(props.instanceId).then(res => {
+  const portInstanceId = effectiveInstanceId.value
+  if (portInstanceId) getRecommendPort(portInstanceId).then(res => {
     if (res.data != null) addForm.port = res.data
   }).catch(() => {})
-  listCustomer({ pageNum: 1, pageSize: 500 }).then(res => {
-    customerOptions.value = res.rows || []
-  }).catch(() => { customerOptions.value = [] })
+  ensureCustomerOptions()
+  ensureInstanceOptions()
   nextTick(() => addFormRef.value?.clearValidate())
 }
 
+function onAddInstanceChange(instanceId) {
+  if (instanceId != null) {
+    getRecommendPort(instanceId).then(res => {
+      if (res.data != null) addForm.port = res.data
+    }).catch(() => {})
+  } else {
+    addForm.port = undefined
+  }
+}
+
+function ensureCustomerOptions() {
+  if (props.fixedCustomer && props.customerId) return
+  listCustomer({ pageNum: 1, pageSize: 500 }).then(res => {
+    customerOptions.value = res.rows || []
+  }).catch(() => { customerOptions.value = [] })
+}
+
+function ensureInstanceOptions() {
+  if (props.instanceId) return
+  listInstance({ pageNum: 1, pageSize: 500 }).then(res => {
+    instanceOptions.value = res.rows || []
+  }).catch(() => { instanceOptions.value = [] })
+}
+
 function submitAddForm() {
-  if (!props.wsConnected) {
+  if (!props.useHttpExec && props.instanceId && !props.wsConnected) {
     proxy.$modal.msgWarning('请等待 SSH 连接完成')
     return
   }
   addFormRef.value.validate(valid => {
     if (!valid) return
+    if (props.useHttpExec || !props.instanceId) {
+      submitAddFormByHttp()
+      return
+    }
     addDialogVisible.value = false
     addLog.value = ''
     addLogRunning.value = true
@@ -646,6 +706,51 @@ function submitAddForm() {
         proxy.$modal.msgWarning('执行超时，请查看日志')
       }
     }, EXEC_TIMEOUT_MS)
+  })
+}
+
+function submitAddFormByHttp() {
+  const instanceId = effectiveInstanceId.value
+  if (!instanceId) {
+    proxy.$modal.msgWarning('请选择服务器')
+    return
+  }
+  addDialogVisible.value = false
+  addLog.value = '正在连接 SSH...\n'
+  addLogRunning.value = true
+  addLogExitCode.value = null
+  execLogTitle.value = '添加节点 - 执行日志'
+  addLogDrawerVisible.value = true
+  httpExecSubmitting.value = true
+  const payload = {
+    customerId: addForm.customerId,
+    nodeType: addForm.nodeType,
+    port: addForm.port,
+    expireTime: addFormPermanent.value ? null : addForm.expireTime,
+    remark: addForm.remark ? String(addForm.remark).trim() : undefined
+  }
+  const finishErr = (msg) => {
+    addLog.value += msg + '\n'
+    addLogRunning.value = false
+    addLogExitCode.value = -1
+    proxy.$modal.msgError(msg)
+    nextTick(() => { const el = addLogRef.value; if (el) el.scrollTop = el.scrollHeight })
+  }
+  checkInstanceSsh(instanceId).then(() => {
+    addLog.value += 'SSH 连接成功，正在执行添加节点...\n'
+    nextTick(() => { const el = addLogRef.value; if (el) el.scrollTop = el.scrollHeight })
+    return addProxyNodeOnInstance(instanceId, payload)
+  }).then(() => {
+    addLog.value += '节点已保存到数据库。\n'
+    addLogRunning.value = false
+    addLogExitCode.value = 0
+    proxy.$modal.msgSuccess('节点已添加')
+    getList()
+    nextTick(() => { const el = addLogRef.value; if (el) el.scrollTop = el.scrollHeight })
+  }).catch(e => {
+    finishErr(e.msg || e.message || '添加失败')
+  }).finally(() => {
+    httpExecSubmitting.value = false
   })
 }
 
@@ -810,6 +915,15 @@ function handleDetailNodeCommand(command) {
 
 function handleDelete(row) {
   proxy.$modal.confirm(`确认要删除节点"${row.nodeName}"吗？删除将在服务器上执行后再移除数据库记录。`).then(() => {
+    if (props.useHttpExec || !props.instanceId) {
+      proxy.$modal.loading('正在删除节点...')
+      return delProxyNode(row.id).then(() => {
+        proxy.$modal.msgSuccess('节点已删除')
+        getList()
+      }).finally(() => {
+        proxy.$modal.closeLoading()
+      })
+    }
     if (!props.wsConnected) {
       proxy.$modal.msgWarning('请等待 SSH 连接完成')
       return
@@ -897,9 +1011,17 @@ function formatSpeedFromMb(value) {
 function nodeRealtimeSpeedText(row) {
   if (!row || speedSnapshot.value?.error) return '实时：-'
   const port = row.port != null ? String(row.port) : ''
-  const speed = port && speedSnapshot.value?.ports ? speedSnapshot.value.ports[port] : null
+  const snapshot = resolveSpeedSnapshot(row)
+  const speed = port && snapshot?.ports ? snapshot.ports[port] : null
   if (!speed) return '实时：-'
   return '实时：↑ ' + formatSpeedFromMb(speed.upMbps) + ' / ↓ ' + formatSpeedFromMb(speed.downMbps)
+}
+function resolveSpeedSnapshot(row) {
+  if (!speedSnapshot.value) return null
+  if (props.instanceId) return speedSnapshot.value
+  const instanceId = row?.instanceId
+  if (instanceId == null) return null
+  return speedSnapshot.value[String(instanceId)] || speedSnapshot.value[instanceId] || null
 }
 function nodeTrafficTotalText(row, traffic) {
   const stat = traffic || trafficMap.value[row.id]
@@ -962,7 +1084,7 @@ function submitRateLimit() {
       mergeRateLimit(res.data, {
         ...(getRateLimit(rateLimitRow.value) || {}),
         proxyNodeId: rateLimitRow.value.id,
-        instanceId: props.instanceId,
+        instanceId: rateLimitRow.value.instanceId || props.instanceId,
         port: rateLimitRow.value.port,
         status: 'active',
         downloadMbps: payload.downloadMbps,
@@ -1038,9 +1160,8 @@ function isExpired(expireTime) {
 onMounted(() => {
   emit('register-handler', handleWsMessage)
   getList()
-  listCustomer({ pageNum: 1, pageSize: 500 }).then(res => {
-    customerOptions.value = res.rows || []
-  }).catch(() => { customerOptions.value = [] })
+  ensureCustomerOptions()
+  ensureInstanceOptions()
 })
 
 onBeforeUnmount(() => {
@@ -1052,6 +1173,11 @@ watch(() => props.instanceId, () => {
   speedSnapshot.value = null
   rateLimitMap.value = {}
   clearSpeedPolling()
+  getList()
+})
+
+watch(() => props.customerId, () => {
+  queryParams.pageNum = 1
   getList()
 })
 </script>
