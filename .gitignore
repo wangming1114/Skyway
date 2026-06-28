@@ -60,6 +60,7 @@ docker/volumes/redis/data/
 docker/volumes/database/mysql/data/
 
 # Others
+.worktrees/
 *.log
 *.xml.versionsBackup
 *.swp
