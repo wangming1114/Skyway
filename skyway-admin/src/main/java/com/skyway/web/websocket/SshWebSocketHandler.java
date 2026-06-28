@@ -652,9 +652,8 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                 }
 
                 Date expireDate = parseExpireTime(expireTimeStr);
-                String expiryTag = (expireDate == null) ? "permanent" : new SimpleDateFormat("yyyyMMdd").format(expireDate);
                 String customPart = customerIdStr;
-                String targetBaseName = typeLabel + "-" + port + "-" + customPart + "-" + expiryTag;
+                String targetBaseName = buildNodeBaseName(typeLabel, parsed.getAddress(), port, customPart, expireDate);
                 String newJsonName = targetBaseName + ".json";
                 String confDir = "/etc/sing-box/conf";
                 String mvCmd = "mv " + confDir + "/" + oldJsonName + " " + confDir + "/" + newJsonName + " 2>&1";
@@ -709,6 +708,15 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                 if (ssh != null) try { ssh.close(); } catch (IOException ignored) {}
             }
         });
+    }
+
+    private static String buildNodeBaseName(String nodeType, String address, Integer port, String customerId, Date expireDate) {
+        String typePart = StringUtils.isNotEmpty(nodeType) ? nodeType.trim() : "UNKNOWN";
+        String addressPart = StringUtils.isNotEmpty(address) ? address.trim() : "unknown";
+        String portPart = port != null ? String.valueOf(port) : "0";
+        String customerPart = StringUtils.isNotEmpty(customerId) ? customerId.trim() : "0";
+        String expiryTag = expireDate == null ? "permanent" : new SimpleDateFormat("yyyyMMdd").format(expireDate);
+        return typePart + "-" + addressPart + "-" + portPart + "-" + customerPart + "-" + expiryTag;
     }
 
     /**

@@ -829,7 +829,7 @@ function buildNodeNameByExpire(row, expireTime) {
   const tag = now
     ? `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`
     : 'permanent'
-  return `${row.nodeType}-${row.port}-${row.customerId ?? 0}-${tag}`
+  return `${row.nodeType}-${row.address || 'unknown'}-${row.port}-${row.customerId ?? 0}-${tag}`
 }
 
 function submitNodeEdit() {

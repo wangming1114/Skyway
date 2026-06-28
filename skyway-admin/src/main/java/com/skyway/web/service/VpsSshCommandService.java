@@ -1250,9 +1250,8 @@ public class VpsSshCommandService {
                 throw new IllegalStateException("解析 sb 输出失败，请检查服务器上 sing-box 是否正常");
             }
             Date expireDate = parseExpireTime(expireTimeStr);
-            String expiryTag = (expireDate == null) ? "permanent" : new SimpleDateFormat("yyyyMMdd").format(expireDate);
             String customPart = String.valueOf(customerId);
-            String targetBaseName = typeLabel + "-" + port + "-" + customPart + "-" + expiryTag;
+            String targetBaseName = buildNodeBaseName(typeLabel, parsed.getAddress(), port, customPart, expireDate);
             String newJsonName = targetBaseName + ".json";
             String mvCmd = "mv " + CONF_DIR + "/" + oldJsonName + " " + CONF_DIR + "/" + newJsonName + " 2>&1";
             try (Session mvSession = ssh.startSession()) {
@@ -1273,6 +1272,15 @@ public class VpsSshCommandService {
                 try { ssh.close(); } catch (IOException e) { log.debug("SSH close: {}", e.getMessage()); }
             }
         }
+    }
+
+    private static String buildNodeBaseName(String nodeType, String address, Integer port, String customerId, Date expireDate) {
+        String typePart = StringUtils.isNotEmpty(nodeType) ? nodeType.trim() : "UNKNOWN";
+        String addressPart = StringUtils.isNotEmpty(address) ? address.trim() : "unknown";
+        String portPart = port != null ? String.valueOf(port) : "0";
+        String customerPart = StringUtils.isNotEmpty(customerId) ? customerId.trim() : "0";
+        String expiryTag = expireDate == null ? "permanent" : new SimpleDateFormat("yyyyMMdd").format(expireDate);
+        return typePart + "-" + addressPart + "-" + portPart + "-" + customerPart + "-" + expiryTag;
     }
 
     /**

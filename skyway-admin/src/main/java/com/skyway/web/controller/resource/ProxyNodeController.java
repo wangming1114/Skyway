@@ -264,7 +264,7 @@ public class ProxyNodeController extends BaseController {
         boolean expireChanged = hasExpireTime && !isSameTime(existing.getExpireTime(), newExpireTime);
         if (expireChanged) {
             String oldBaseName = normalizeNodeBaseName(existing.getNodeName());
-            String newBaseName = buildNodeBaseName(existing.getNodeType(), existing.getPort(), row.getCustomerId(), newExpireTime);
+            String newBaseName = buildNodeBaseName(existing.getNodeType(), existing.getAddress(), existing.getPort(), row.getCustomerId(), newExpireTime);
             if (!oldBaseName.equals(newBaseName)) {
                 try {
                     boolean currentlyDisabled = "1".equals(existing.getStatus());
@@ -352,12 +352,13 @@ public class ProxyNodeController extends BaseController {
         return name;
     }
 
-    private static String buildNodeBaseName(String nodeType, Integer port, Long customerId, Date expireTime) {
+    private static String buildNodeBaseName(String nodeType, String address, Integer port, Long customerId, Date expireTime) {
         String typePart = StringUtils.isNotEmpty(nodeType) ? nodeType.trim() : "UNKNOWN";
+        String addressPart = StringUtils.isNotEmpty(address) ? address.trim() : "unknown";
         String portPart = port != null ? String.valueOf(port) : "0";
         String customerPart = customerId != null ? String.valueOf(customerId) : "0";
         String expiryTag = expireTime == null ? "permanent" : new SimpleDateFormat("yyyyMMdd").format(expireTime);
-        return typePart + "-" + portPart + "-" + customerPart + "-" + expiryTag;
+        return typePart + "-" + addressPart + "-" + portPart + "-" + customerPart + "-" + expiryTag;
     }
 
     @PreAuthorize("@ss.hasPermi('resource:vps:remove')")
