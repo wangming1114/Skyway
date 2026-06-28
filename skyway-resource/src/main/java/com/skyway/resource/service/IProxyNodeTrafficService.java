@@ -35,6 +35,26 @@ public interface IProxyNodeTrafficService {
     long[] getTotalByNodeId(Long nodeId);
 
     /**
+     * 汇总所有已归属 VPS 实例节点的累计流量（rx+tx）。
+     */
+    long getVpsTrafficTotal();
+
+    /**
+     * 汇总所有已归属客户节点的累计流量（rx+tx）。
+     */
+    long getCustomerTrafficTotal();
+
+    /**
+     * 按 VPS + 日期聚合累计流量，用于首页趋势图。
+     */
+    java.util.List<java.util.Map<String, Object>> getDailyTrafficByInstance(int days);
+
+    /**
+     * 指定天数内客户流量倒序排行。
+     */
+    java.util.List<java.util.Map<String, Object>> getCustomerTrafficRank(int days);
+
+    /**
      * 删除该节点所有流量数据与快照（节点删除时调用，便于同端口重新开通时从 0 开始计）
      */
     void deleteByNodeId(Long nodeId);

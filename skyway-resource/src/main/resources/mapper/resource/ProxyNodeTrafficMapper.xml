@@ -46,6 +46,58 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         group by p.instance_id
     </select>
 
+    <select id="selectVpsTrafficTotal" resultType="java.util.HashMap">
+        select
+            ifnull(sum(t.rx_delta), 0) as totalRx,
+            ifnull(sum(t.tx_delta), 0) as totalTx
+        from res_proxy_node_traffic t
+        inner join res_proxy_node p on t.node_id = p.id
+        where p.instance_id is not null
+    </select>
+
+    <select id="selectCustomerTrafficTotal" resultType="java.util.HashMap">
+        select
+            ifnull(sum(t.rx_delta), 0) as totalRx,
+            ifnull(sum(t.tx_delta), 0) as totalTx
+        from res_proxy_node_traffic t
+        inner join res_proxy_node p on t.node_id = p.id
+        where p.customer_id is not null
+    </select>
+
+    <select id="selectDailyTrafficByInstance" resultType="java.util.HashMap">
+        select
+            p.instance_id as instanceId,
+            i.name as instanceName,
+            i.ip as instanceIp,
+            date(t.stat_time) as statDate,
+            ifnull(sum(t.rx_delta), 0) as totalRx,
+            ifnull(sum(t.tx_delta), 0) as totalTx,
+            count(distinct p.id) as nodeCount
+        from res_proxy_node_traffic t
+        inner join res_proxy_node p on t.node_id = p.id
+        left join res_instance i on p.instance_id = i.id
+        where p.instance_id is not null
+          and t.stat_time &gt;= #{fromTime}
+        group by p.instance_id, i.name, i.ip, date(t.stat_time)
+        order by statDate asc, p.instance_id asc
+    </select>
+
+    <select id="selectCustomerTrafficRank" resultType="java.util.HashMap">
+        select
+            p.customer_id as customerId,
+            c.username as username,
+            ifnull(sum(t.rx_delta), 0) as totalRx,
+            ifnull(sum(t.tx_delta), 0) as totalTx,
+            count(distinct p.id) as nodeCount
+        from res_proxy_node_traffic t
+        inner join res_proxy_node p on t.node_id = p.id
+        left join mb_customer c on p.customer_id = c.id
+        where p.customer_id is not null
+          and t.stat_time &gt;= #{fromTime}
+        group by p.customer_id, c.username
+        order by (ifnull(sum(t.rx_delta), 0) + ifnull(sum(t.tx_delta), 0)) desc
+    </select>
+
     <select id="selectRecentByNodeId" resultMap="ProxyNodeTrafficResult">
         select id, node_id, stat_time, rx_delta, tx_delta
         from res_proxy_node_traffic

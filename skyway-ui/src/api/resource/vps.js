@@ -125,6 +125,22 @@ export function getDashboardSummary() {
   })
 }
 
+export function getDashboardVpsTrafficTrend(days) {
+  return request({
+    url: '/resource/vps/dashboard/vpsTrafficTrend',
+    method: 'get',
+    params: { days }
+  })
+}
+
+export function getDashboardCustomerTrafficRank(days) {
+  return request({
+    url: '/resource/vps/dashboard/customerTrafficRank',
+    method: 'get',
+    params: { days }
+  })
+}
+
 // ========== 代理节点 ==========
 export function listProxyNode(query) {
   return request({

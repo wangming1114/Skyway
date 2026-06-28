@@ -50,6 +50,11 @@ public class ProxyNodeRateLimitServiceImpl implements IProxyNodeRateLimitService
     }
 
     @Override
+    public int countActive() {
+        return proxyNodeRateLimitMapper.countActive();
+    }
+
+    @Override
     public int saveActive(ProxyNodeRateLimit row) {
         row.setStatus(ProxyNodeRateLimit.STATUS_ACTIVE);
         if (row.getId() == null) {

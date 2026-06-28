@@ -4,6 +4,8 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Calendar;
+import java.text.SimpleDateFormat;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import com.skyway.resource.domain.ProxyNodeTraffic;
@@ -48,7 +50,17 @@ public class ProxyNodeTrafficServiceImpl implements IProxyNodeTrafficService {
     /** 兼容 MyBatis SUM 返回 BigDecimal / Long 等 */
     private static long toLong(Object a, Object b) {
         Number n = a instanceof Number ? (Number) a : (b instanceof Number ? (Number) b : null);
-        return n != null ? n.longValue() : 0L;
+        if (n != null) {
+            return n.longValue();
+        }
+        Object value = a != null ? a : b;
+        if (value != null) {
+            try {
+                return Long.parseLong(String.valueOf(value));
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return 0L;
     }
 
     @Override
@@ -106,6 +118,88 @@ public class ProxyNodeTrafficServiceImpl implements IProxyNodeTrafficService {
             totalTx = toLong(sum.get("totalTx"), sum.get("totaltx"));
         }
         return new long[] { totalRx, totalTx };
+    }
+
+    @Override
+    public long getVpsTrafficTotal() {
+        return sumTraffic(proxyNodeTrafficMapper.selectVpsTrafficTotal());
+    }
+
+    @Override
+    public long getCustomerTrafficTotal() {
+        return sumTraffic(proxyNodeTrafficMapper.selectCustomerTrafficTotal());
+    }
+
+    @Override
+    public List<Map<String, Object>> getDailyTrafficByInstance(int days) {
+        List<Map<String, Object>> rows = proxyNodeTrafficMapper.selectDailyTrafficByInstance(daysAgo(days));
+        if (rows == null) {
+            return java.util.Collections.emptyList();
+        }
+        for (Map<String, Object> row : rows) {
+            long totalRx = toLong(row.get("totalRx"), row.get("totalrx"));
+            long totalTx = toLong(row.get("totalTx"), row.get("totaltx"));
+            row.put("instanceId", firstValue(row, "instanceId", "instanceid"));
+            row.put("instanceName", firstValue(row, "instanceName", "instancename"));
+            row.put("instanceIp", firstValue(row, "instanceIp", "instanceip"));
+            row.put("nodeCount", toLong(row.get("nodeCount"), row.get("nodecount")));
+            row.put("totalRx", totalRx);
+            row.put("totalTx", totalTx);
+            row.put("totalTraffic", totalRx + totalTx);
+            row.put("statDate", formatDate(row.get("statDate") != null ? row.get("statDate") : row.get("statdate")));
+        }
+        return rows;
+    }
+
+    @Override
+    public List<Map<String, Object>> getCustomerTrafficRank(int days) {
+        List<Map<String, Object>> rows = proxyNodeTrafficMapper.selectCustomerTrafficRank(daysAgo(days));
+        if (rows == null) {
+            return java.util.Collections.emptyList();
+        }
+        for (Map<String, Object> row : rows) {
+            long totalRx = toLong(row.get("totalRx"), row.get("totalrx"));
+            long totalTx = toLong(row.get("totalTx"), row.get("totaltx"));
+            row.put("customerId", firstValue(row, "customerId", "customerid"));
+            row.put("username", firstValue(row, "username", "USERNAME"));
+            row.put("nodeCount", toLong(row.get("nodeCount"), row.get("nodecount")));
+            row.put("totalRx", totalRx);
+            row.put("totalTx", totalTx);
+            row.put("totalTraffic", totalRx + totalTx);
+        }
+        return rows;
+    }
+
+    private static Date daysAgo(int days) {
+        int safeDays = Math.max(1, Math.min(days, 31));
+        Calendar calendar = Calendar.getInstance();
+        calendar.set(Calendar.HOUR_OF_DAY, 0);
+        calendar.set(Calendar.MINUTE, 0);
+        calendar.set(Calendar.SECOND, 0);
+        calendar.set(Calendar.MILLISECOND, 0);
+        calendar.add(Calendar.DAY_OF_MONTH, -(safeDays - 1));
+        return calendar.getTime();
+    }
+
+    private static String formatDate(Object value) {
+        if (value instanceof Date) {
+            return new SimpleDateFormat("yyyy-MM-dd").format((Date) value);
+        }
+        return value != null ? String.valueOf(value) : "";
+    }
+
+    private static Object firstValue(Map<String, Object> row, String primary, String fallback) {
+        Object value = row.get(primary);
+        return value != null ? value : row.get(fallback);
+    }
+
+    private static long sumTraffic(Map<String, Object> sum) {
+        if (sum == null || sum.isEmpty()) {
+            return 0L;
+        }
+        long totalRx = toLong(sum.get("totalRx"), sum.get("totalrx"));
+        long totalTx = toLong(sum.get("totalTx"), sum.get("totaltx"));
+        return totalRx + totalTx;
     }
 
     @Override

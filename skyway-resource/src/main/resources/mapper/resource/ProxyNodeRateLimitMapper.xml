@@ -61,6 +61,10 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         order by expire_time asc
     </select>
 
+    <select id="countActive" resultType="int">
+        select count(1) from res_proxy_node_rate_limit where status = 'active'
+    </select>
+
     <insert id="insert" parameterType="com.skyway.resource.domain.ProxyNodeRateLimit" useGeneratedKeys="true" keyProperty="id">
         insert into res_proxy_node_rate_limit
             (instance_id, proxy_node_id, port, download_mbps, upload_mbps, expire_time, status, last_apply_result,

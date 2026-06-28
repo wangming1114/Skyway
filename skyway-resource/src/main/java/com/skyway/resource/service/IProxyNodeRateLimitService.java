@@ -19,6 +19,8 @@ public interface IProxyNodeRateLimitService {
 
     List<ProxyNodeRateLimit> listExpiredActive(Date now);
 
+    int countActive();
+
     int saveActive(ProxyNodeRateLimit row);
 
     int markRemoved(Long id, String lastApplyResult, String updateBy);

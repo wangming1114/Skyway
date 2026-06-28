@@ -20,6 +20,8 @@ public interface ProxyNodeRateLimitMapper {
 
     List<ProxyNodeRateLimit> selectExpiredActive(@Param("now") Date now);
 
+    int countActive();
+
     int insert(ProxyNodeRateLimit row);
 
     int update(ProxyNodeRateLimit row);
