@@ -229,6 +229,8 @@ public class ProxyNodeController extends BaseController {
         boolean hasUrl = body != null && body.containsKey("url");
         boolean hasStatus = body != null && body.containsKey("status");
         boolean hasRemark = body != null && body.containsKey("remark");
+        boolean hasRelayText = body != null && body.containsKey("relayText");
+        boolean hasRelayEnabled = body != null && body.containsKey("relayEnabled");
 
         Date newExpireTime = hasExpireTime ? parseExpireTime(body.get("expireTime")) : existing.getExpireTime();
         row.setExpireTime(newExpireTime);
@@ -251,6 +253,43 @@ public class ProxyNodeController extends BaseController {
             row.setRemark(remarkObj == null ? "" : String.valueOf(remarkObj).trim());
         } else {
             row.setRemark(existing.getRemark());
+        }
+
+        if (hasRelayEnabled && !parseBoolean(body.get("relayEnabled"))) {
+            if (!"VLESS-REALITY".equals(existing.getNodeType())) {
+                return AjaxResult.error("当前仅 VLESS-REALITY 支持 SOCKS5 中转");
+            }
+            try {
+                vpsSshCommandService.removeSocks5RelayFromProxyNodeConfig(existing);
+            } catch (Exception e) {
+                log.warn("remove socks5 relay failed: nodeId={}, instanceId={}", existing.getId(), existing.getInstanceId(), e);
+                return AjaxResult.error("中转配置关闭失败: " + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
+            }
+            row.setConfigJson(removeRelayConfigJson(existing.getConfigJson()));
+            row.setRemark("");
+        } else if (hasRelayText) {
+            Object relayObj = body.get("relayText");
+            String relayText = relayObj == null ? "" : String.valueOf(relayObj).trim();
+            if (!"VLESS-REALITY".equals(existing.getNodeType())) {
+                return AjaxResult.error("当前仅 VLESS-REALITY 支持 SOCKS5 中转");
+            }
+            if (StringUtils.isEmpty(relayText)) {
+                return AjaxResult.error("请输入 SOCKS5 中转配置");
+            }
+            VpsSshCommandService.Socks5RelayConfig relay;
+            try {
+                relay = VpsSshCommandService.parseSocks5RelayText(relayText);
+            } catch (IllegalArgumentException e) {
+                return AjaxResult.error(e.getMessage());
+            }
+            try {
+                vpsSshCommandService.applySocks5RelayToProxyNodeConfig(existing, relay);
+            } catch (Exception e) {
+                log.warn("apply socks5 relay failed: nodeId={}, instanceId={}", existing.getId(), existing.getInstanceId(), e);
+                return AjaxResult.error("中转配置更新失败: " + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
+            }
+            row.setConfigJson(updateRelayConfigJson(existing.getConfigJson(), relay));
+            row.setRemark(relayText);
         }
 
         if (body != null && body.containsKey("customerId")) {
@@ -300,6 +339,37 @@ public class ProxyNodeController extends BaseController {
         row.setPort(existing.getPort());
         row.setConfigJson(existing.getConfigJson());
         row.setCustomId(existing.getCustomId());
+    }
+
+    private static String updateRelayConfigJson(String configJson, VpsSshCommandService.Socks5RelayConfig relay) {
+        com.alibaba.fastjson2.JSONObject config;
+        try {
+            config = StringUtils.isNotEmpty(configJson) ? com.alibaba.fastjson2.JSON.parseObject(configJson) : new com.alibaba.fastjson2.JSONObject();
+        } catch (Exception e) {
+            config = new com.alibaba.fastjson2.JSONObject();
+        }
+        config.put("relay", relay.toConfigJson());
+        return config.toJSONString();
+    }
+
+    private static String removeRelayConfigJson(String configJson) {
+        if (StringUtils.isEmpty(configJson)) {
+            return configJson;
+        }
+        try {
+            com.alibaba.fastjson2.JSONObject config = com.alibaba.fastjson2.JSON.parseObject(configJson);
+            config.remove("relay");
+            return config.toJSONString();
+        } catch (Exception e) {
+            return configJson;
+        }
+    }
+
+    private static boolean parseBoolean(Object value) {
+        if (value instanceof Boolean) return (Boolean) value;
+        if (value == null) return false;
+        String s = String.valueOf(value).trim();
+        return "true".equalsIgnoreCase(s) || "1".equals(s) || "yes".equalsIgnoreCase(s);
     }
 
     private static boolean isSameTime(Date a, Date b) {

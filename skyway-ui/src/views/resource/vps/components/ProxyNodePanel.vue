@@ -290,7 +290,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog title="编辑节点" v-model="editNodeVisible" width="520px" append-to-body destroy-on-close>
+    <el-dialog title="编辑节点" v-model="editNodeVisible" width="560px" append-to-body destroy-on-close>
       <el-form label-width="90px">
         <el-form-item label="有效期">
           <div style="display: flex; align-items: center; gap: 10px; width: 100%">
@@ -308,6 +308,33 @@
         <el-form-item label="订阅链接">
           <el-input v-model="editNodeForm.url" type="textarea" :rows="4" maxlength="2000" show-word-limit placeholder="支持手动编辑" />
         </el-form-item>
+        <template v-if="canEditRelay">
+          <el-form-item label="启用中转">
+            <el-switch v-model="editNodeForm.enableRelay" active-text="SOCKS5" />
+          </el-form-item>
+          <template v-if="editNodeForm.enableRelay">
+            <el-form-item label="S5配置">
+              <el-input
+                v-model="editNodeForm.relayText"
+                placeholder="204.1.132.93:35345:lVZjQtlJ:Qat3T6ofak"
+                clearable
+                @input="parseEditRelayTextToForm"
+              />
+            </el-form-item>
+            <el-form-item label="服务器">
+              <el-input v-model="editNodeForm.relayHost" disabled />
+            </el-form-item>
+            <el-form-item label="中转端口">
+              <el-input v-model="editNodeForm.relayPort" disabled />
+            </el-form-item>
+            <el-form-item label="用户名">
+              <el-input v-model="editNodeForm.relayUsername" disabled />
+            </el-form-item>
+            <el-form-item label="密码">
+              <el-input v-model="editNodeForm.relayPassword" disabled show-password />
+            </el-form-item>
+          </template>
+        </template>
       </el-form>
       <template #footer>
         <el-button @click="editNodeVisible = false">取消</el-button>
@@ -660,7 +687,18 @@ const editNodeVisible = ref(false)
 const editNodeSaving = ref(false)
 const editNodeRow = ref(null)
 const editNodePermanent = ref(false)
-const editNodeForm = reactive({ expireTime: null, url: '' })
+const editNodeForm = reactive({
+  expireTime: null,
+  url: '',
+  originalRelay: false,
+  enableRelay: false,
+  relayText: '',
+  relayHost: '',
+  relayPort: '',
+  relayUsername: '',
+  relayPassword: ''
+})
+const canEditRelay = computed(() => editNodeRow.value?.nodeType === 'VLESS-REALITY')
 const rateLimitVisible = ref(false)
 const rateLimitSaving = ref(false)
 const rateLimitFormRef = ref(null)
@@ -735,6 +773,64 @@ function parseRelayTextToForm() {
   addForm.relayPort = parsed.ok ? parsed.port : ''
   addForm.relayUsername = parsed.ok ? parsed.username : ''
   addForm.relayPassword = parsed.ok ? parsed.password : ''
+}
+
+function resetEditRelayForm() {
+  editNodeForm.originalRelay = false
+  editNodeForm.enableRelay = false
+  editNodeForm.relayText = ''
+  editNodeForm.relayHost = ''
+  editNodeForm.relayPort = ''
+  editNodeForm.relayUsername = ''
+  editNodeForm.relayPassword = ''
+}
+
+function parseEditRelayTextToForm() {
+  const parsed = parseSocks5RelayText(editNodeForm.relayText)
+  editNodeForm.relayHost = parsed.ok ? parsed.host : ''
+  editNodeForm.relayPort = parsed.ok ? parsed.port : ''
+  editNodeForm.relayUsername = parsed.ok ? parsed.username : ''
+  editNodeForm.relayPassword = parsed.ok ? parsed.password : ''
+}
+
+function relayTextFromRow(row) {
+  const relay = configFromRow(row)?.relay
+  if (relay?.server && relay?.serverPort && relay?.username && relay?.password) {
+    return `${relay.server}:${relay.serverPort}:${relay.username}:${relay.password}`
+  }
+  const remark = (row?.remark || '').trim()
+  return parseSocks5RelayText(remark).ok ? remark : ''
+}
+
+function configFromRow(row) {
+  if (!row?.configJson) return null
+  try { return JSON.parse(row.configJson) } catch { return null }
+}
+
+function buildConfigJsonWithRelay(configJson, relayText) {
+  const parsed = parseSocks5RelayText(relayText)
+  if (!parsed.ok) return configJson
+  let config = {}
+  try { config = configJson ? JSON.parse(configJson) : {} } catch { config = {} }
+  config.relay = {
+    type: 'socks5',
+    server: parsed.host,
+    serverPort: Number(parsed.port),
+    username: parsed.username,
+    password: parsed.password
+  }
+  return JSON.stringify(config)
+}
+
+function removeRelayFromConfigJson(configJson) {
+  if (!configJson) return configJson
+  try {
+    const config = JSON.parse(configJson)
+    delete config.relay
+    return JSON.stringify(config)
+  } catch {
+    return configJson
+  }
 }
 
 function addRelayPayload(payload) {
@@ -935,6 +1031,16 @@ function openNodeEdit(row) {
   editNodeForm.expireTime = row.expireTime || null
   editNodeForm.url = row.url || ''
   editNodePermanent.value = !row.expireTime
+  resetEditRelayForm()
+  if (row.nodeType === 'VLESS-REALITY') {
+    const relayText = relayTextFromRow(row)
+    if (relayText) {
+      editNodeForm.originalRelay = true
+      editNodeForm.enableRelay = true
+      editNodeForm.relayText = relayText
+      parseEditRelayTextToForm()
+    }
+  }
   editNodeVisible.value = true
 }
 
@@ -953,16 +1059,36 @@ function submitNodeEdit() {
     expireTime: editNodePermanent.value ? null : editNodeForm.expireTime,
     url: (editNodeForm.url || '').trim()
   }
+  if (editNodeForm.enableRelay && canEditRelay.value) {
+    const relayText = (editNodeForm.relayText || '').trim()
+    const parsedRelay = parseSocks5RelayText(relayText)
+    if (!parsedRelay.ok) {
+      proxy.$modal.msgWarning(parsedRelay.message)
+      return
+    }
+    payload.relayText = relayText
+  } else if (editNodeForm.originalRelay && canEditRelay.value) {
+    payload.relayEnabled = false
+  }
   editNodeSaving.value = true
   updateProxyNode(payload).then(() => {
     const row = editNodeRow.value
     row.expireTime = payload.expireTime
     row.url = payload.url
     row.nodeName = buildNodeNameByExpire(row, payload.expireTime)
+    if (payload.relayText) {
+      row.remark = payload.relayText
+      row.configJson = buildConfigJsonWithRelay(row.configJson, payload.relayText)
+    } else if (payload.relayEnabled === false) {
+      row.remark = ''
+      row.configJson = removeRelayFromConfigJson(row.configJson)
+    }
     if (detailData.value?.id === row.id) {
       detailData.value.expireTime = row.expireTime
       detailData.value.url = row.url
       detailData.value.nodeName = row.nodeName
+      detailData.value.remark = row.remark
+      detailData.value.configJson = row.configJson
     }
     proxy.$modal.msgSuccess('节点已更新')
     editNodeVisible.value = false

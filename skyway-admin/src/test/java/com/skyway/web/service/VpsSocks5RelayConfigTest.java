@@ -64,4 +64,54 @@ public class VpsSocks5RelayConfigTest {
         assertThrows(IllegalArgumentException.class,
                 () -> VpsSshCommandService.parseSocks5RelayText("204.1.132.93:70000:user:pass"));
     }
+
+    @Test
+    public void upsertSocks5RelayUpdatesExistingSocksOutboundWithoutChangingRouteTag() {
+        String original = "{\n"
+                + "  \"inbounds\": [{\"tag\":\"VLESS-REALITY-10001.json\",\"type\":\"vless\",\"listen_port\":10001}],\n"
+                + "  \"outbounds\": [\n"
+                + "    {\"tag\":\"SOCKS-Old123\",\"type\":\"socks\",\"server\":\"1.1.1.1\",\"server_port\":1111,\"version\":\"5\",\"username\":\"old\",\"password\":\"oldpass\"},\n"
+                + "    {\"tag\":\"public_key_keep\",\"type\":\"direct\"}\n"
+                + "  ],\n"
+                + "  \"route\": {\"rules\":[{\"inbound\":\"VLESS-REALITY-10001.json\",\"outbound\":\"SOCKS-Old123\"}]}\n"
+                + "}";
+        VpsSshCommandService.Socks5RelayConfig relay =
+                new VpsSshCommandService.Socks5RelayConfig("157.238.146.152", 36160, "EE6Zfs2f", "SpXh9uqFOc");
+
+        String patched = VpsSshCommandService.upsertSocks5RelayToSingBoxConfig(original, relay, "SOCKS-New999");
+        JSONObject root = JSON.parseObject(patched);
+        JSONObject socks = root.getJSONArray("outbounds").getJSONObject(0);
+
+        assertEquals("SOCKS-Old123", socks.getString("tag"));
+        assertEquals("socks", socks.getString("type"));
+        assertEquals("157.238.146.152", socks.getString("server"));
+        assertEquals(36160, socks.getIntValue("server_port"));
+        assertEquals("EE6Zfs2f", socks.getString("username"));
+        assertEquals("SpXh9uqFOc", socks.getString("password"));
+        assertEquals("SOCKS-Old123", root.getJSONObject("route").getJSONArray("rules").getJSONObject(0).getString("outbound"));
+        assertEquals("public_key_keep", root.getJSONArray("outbounds").getJSONObject(1).getString("tag"));
+    }
+
+    @Test
+    public void removeSocks5RelayRestoresDirectOutboundAndRemovesRoute() {
+        String original = "{\n"
+                + "  \"inbounds\": [{\"tag\":\"VLESS-REALITY-10001.json\",\"type\":\"vless\",\"listen_port\":10001}],\n"
+                + "  \"outbounds\": [\n"
+                + "    {\"tag\":\"SOCKS-Old123\",\"type\":\"socks\",\"server\":\"1.1.1.1\",\"server_port\":1111,\"version\":\"5\",\"username\":\"old\",\"password\":\"oldpass\"},\n"
+                + "    {\"tag\":\"public_key_keep\",\"type\":\"direct\"}\n"
+                + "  ],\n"
+                + "  \"route\": {\"rules\":[{\"inbound\":\"VLESS-REALITY-10001.json\",\"outbound\":\"SOCKS-Old123\"}]}\n"
+                + "}";
+
+        String patched = VpsSshCommandService.removeSocks5RelayFromSingBoxConfig(original);
+        JSONObject root = JSON.parseObject(patched);
+        JSONArray outbounds = root.getJSONArray("outbounds");
+        JSONObject firstOutbound = outbounds.getJSONObject(0);
+
+        assertEquals("direct", firstOutbound.getString("type"));
+        assertEquals(null, firstOutbound.getString("tag"));
+        assertEquals("public_key_keep", outbounds.getJSONObject(1).getString("tag"));
+        assertEquals(null, root.getJSONObject("route"));
+        org.junit.jupiter.api.Assertions.assertTrue(patched.matches("(?s).*\\n\\s+\"outbounds\".*"));
+    }
 }

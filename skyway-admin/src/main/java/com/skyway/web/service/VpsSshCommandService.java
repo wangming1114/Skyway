@@ -399,6 +399,85 @@ public class VpsSshCommandService {
         return JSON.toJSONString(root, JSONWriter.Feature.PrettyFormat);
     }
 
+    public static String upsertSocks5RelayToSingBoxConfig(String configJson, Socks5RelayConfig relay, String socksTagIfNew) {
+        if (StringUtils.isEmpty(configJson)) {
+            throw new IllegalArgumentException("sing-box 配置不能为空");
+        }
+        if (relay == null) {
+            return configJson;
+        }
+        JSONObject root = JSON.parseObject(configJson);
+        JSONArray outbounds = root.getJSONArray("outbounds");
+        if (outbounds == null || outbounds.isEmpty()) {
+            return applySocks5RelayToSingBoxConfig(configJson, relay, socksTagIfNew);
+        }
+
+        String existingSocksTag = null;
+        JSONObject route = root.getJSONObject("route");
+        if (route != null) {
+            JSONArray rules = route.getJSONArray("rules");
+            if (rules != null && !rules.isEmpty()) {
+                JSONObject firstRule = rules.getJSONObject(0);
+                if (firstRule != null) {
+                    existingSocksTag = firstRule.getString("outbound");
+                }
+            }
+        }
+
+        JSONObject socksOutbound = null;
+        for (int i = 0; i < outbounds.size(); i++) {
+            JSONObject outbound = outbounds.getJSONObject(i);
+            if (outbound == null) continue;
+            String tag = outbound.getString("tag");
+            boolean routeMatched = StringUtils.isNotEmpty(existingSocksTag) && existingSocksTag.equals(tag);
+            boolean typeMatched = "socks".equals(outbound.getString("type"));
+            if (routeMatched || typeMatched) {
+                socksOutbound = outbound;
+                break;
+            }
+        }
+        if (socksOutbound == null) {
+            return applySocks5RelayToSingBoxConfig(configJson, relay, socksTagIfNew);
+        }
+
+        socksOutbound.put("type", "socks");
+        socksOutbound.put("server", relay.getServer());
+        socksOutbound.put("server_port", relay.getServerPort());
+        socksOutbound.put("version", "5");
+        socksOutbound.put("username", relay.getUsername());
+        socksOutbound.put("password", relay.getPassword());
+        return JSON.toJSONString(root, JSONWriter.Feature.PrettyFormat);
+    }
+
+    public static String removeSocks5RelayFromSingBoxConfig(String configJson) {
+        if (StringUtils.isEmpty(configJson)) {
+            throw new IllegalArgumentException("sing-box 配置不能为空");
+        }
+        JSONObject root = JSON.parseObject(configJson);
+        JSONArray outbounds = root.getJSONArray("outbounds");
+        if (outbounds == null || outbounds.isEmpty()) {
+            root.remove("route");
+            return JSON.toJSONString(root, JSONWriter.Feature.PrettyFormat);
+        }
+
+        int socksIndex = -1;
+        for (int i = 0; i < outbounds.size(); i++) {
+            JSONObject outbound = outbounds.getJSONObject(i);
+            if (outbound != null && "socks".equals(outbound.getString("type"))) {
+                socksIndex = i;
+                break;
+            }
+        }
+        if (socksIndex < 0) {
+            socksIndex = 0;
+        }
+        JSONObject direct = new JSONObject();
+        direct.put("type", "direct");
+        outbounds.set(socksIndex, direct);
+        root.remove("route");
+        return JSON.toJSONString(root, JSONWriter.Feature.PrettyFormat);
+    }
+
     private static String randomRelayTag() {
         StringBuilder sb = new StringBuilder(SOCKS_RELAY_TAG_PREFIX);
         for (int i = 0; i < 8; i++) {
@@ -1149,7 +1228,7 @@ public class VpsSshCommandService {
         if (StringUtils.isEmpty(original)) {
             throw new IOException("读取 sing-box 配置失败: " + confPath);
         }
-        return applySocks5RelayToSingBoxConfig(original, relay, randomRelayTag());
+        return upsertSocks5RelayToSingBoxConfig(original, relay, randomRelayTag());
     }
 
     public void applySocks5RelayToRemoteConfig(SSHClient ssh, String confPath, Socks5RelayConfig relay) throws IOException {
@@ -1164,6 +1243,59 @@ public class VpsSshCommandService {
             writeRemoteTextFile(writeSession, confPath, patchedConfig);
         }
         restartSingBox(ssh);
+    }
+
+    public void applySocks5RelayToProxyNodeConfig(ProxyNode node, Socks5RelayConfig relay) throws IOException {
+        if (node == null || node.getInstanceId() == null) {
+            throw new IllegalArgumentException("节点或实例ID为空");
+        }
+        if (StringUtils.isEmpty(node.getNodeName())) {
+            throw new IllegalArgumentException("节点名称为空");
+        }
+        SSHClient ssh = null;
+        try {
+            ssh = createSshClient(node.getInstanceId());
+            String baseName = normalizeNodeBaseName(node.getNodeName());
+            String suffix = "1".equals(node.getStatus()) ? ".json" + DISABLED_SUFFIX : ".json";
+            String confPath = CONF_DIR + "/" + baseName + suffix;
+            applySocks5RelayToRemoteConfig(ssh, confPath, relay);
+        } finally {
+            if (ssh != null) {
+                try { ssh.close(); } catch (IOException e) { log.debug("SSH close: {}", e.getMessage()); }
+            }
+        }
+    }
+
+    public void removeSocks5RelayFromProxyNodeConfig(ProxyNode node) throws IOException {
+        if (node == null || node.getInstanceId() == null) {
+            throw new IllegalArgumentException("节点或实例ID为空");
+        }
+        if (StringUtils.isEmpty(node.getNodeName())) {
+            throw new IllegalArgumentException("节点名称为空");
+        }
+        SSHClient ssh = null;
+        try {
+            ssh = createSshClient(node.getInstanceId());
+            String baseName = normalizeNodeBaseName(node.getNodeName());
+            String suffix = "1".equals(node.getStatus()) ? ".json" + DISABLED_SUFFIX : ".json";
+            String confPath = CONF_DIR + "/" + baseName + suffix;
+            String original;
+            try (Session readSession = ssh.startSession()) {
+                original = execAndRead(readSession, "cat " + shellQuote(confPath));
+            }
+            if (StringUtils.isEmpty(original)) {
+                throw new IOException("读取 sing-box 配置失败: " + confPath);
+            }
+            String patchedConfig = removeSocks5RelayFromSingBoxConfig(original);
+            try (Session writeSession = ssh.startSession()) {
+                writeRemoteTextFile(writeSession, confPath, patchedConfig);
+            }
+            restartSingBox(ssh);
+        } finally {
+            if (ssh != null) {
+                try { ssh.close(); } catch (IOException e) { log.debug("SSH close: {}", e.getMessage()); }
+            }
+        }
     }
 
     private static void writeRemoteTextFile(Session session, String path, String content) throws IOException {
