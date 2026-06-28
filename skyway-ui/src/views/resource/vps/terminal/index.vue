@@ -2,6 +2,7 @@
   <div class="vps-terminal-page">
     <div class="page-header">
       <el-button link icon="Back" @click="goBack">返回</el-button>
+      <el-button link icon="View" :disabled="!instanceId" @click="goDetail">返回详情</el-button>
       <span class="page-title">{{ instanceName || 'VPS' }}{{ instanceIp ? ' - ' + instanceIp : '' }}</span>
     </div>
     <Splitpanes class="ssh-split">
@@ -561,6 +562,11 @@ function onInstallDrawerClosed() {
 
 function goBack() {
   router.push({ path: '/resource/vps' })
+}
+
+function goDetail() {
+  if (!instanceId.value) return
+  router.push({ path: '/resource/vps-detail/index/' + instanceId.value })
 }
 
 // 切换实例时清空左侧/下方数据，避免串台
