@@ -37,6 +37,7 @@
             :fixed-customer="true"
             :hide-customer-column="true"
             :show-instance-column="true"
+            :link-node-name-to-instance="true"
             :use-http-exec="true"
           />
         </el-tab-pane>

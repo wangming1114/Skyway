@@ -16,7 +16,19 @@
 
     <el-table v-loading="loading" :data="nodeList" border size="small" style="margin-top: 10px" @selection-change="handleSelectionChange">
       <el-table-column type="selection" width="50" align="center" />
-      <el-table-column label="节点名称" prop="nodeName" min-width="120" show-overflow-tooltip />
+      <el-table-column label="节点名称" prop="nodeName" min-width="120" show-overflow-tooltip>
+        <template #default="{ row }">
+          <el-link
+            v-if="linkNodeNameToInstance && row.instanceId"
+            type="primary"
+            :underline="false"
+            @click.stop="goVpsDetail(row.instanceId)"
+          >
+            {{ row.nodeName || '-' }}
+          </el-link>
+          <span v-else>{{ row.nodeName || '-' }}</span>
+        </template>
+      </el-table-column>
       <el-table-column label="节点类型" prop="nodeType" width="160">
         <template #default="{ row }">
           <el-tag size="small" :type="getNodeTypeTagColor(row.nodeType)">{{ row.nodeType }}</el-tag>
@@ -340,6 +352,7 @@ import { parseTime } from '@/utils/skyway'
 import { DocumentCopy, Loading, Edit, Delete } from '@element-plus/icons-vue'
 
 const { proxy } = getCurrentInstance()
+const router = useRouter()
 const { res_proxy_node_status } = proxy.useDict('res_proxy_node_status')
 const userStore = useUserStore()
 const hasEditPermi = computed(() => (userStore.permissions || []).some(p => p === '*:*:*' || p === 'resource:vps:edit'))
@@ -350,6 +363,7 @@ const props = defineProps({
   fixedCustomer: { type: Boolean, default: false },
   hideCustomerColumn: { type: Boolean, default: false },
   showInstanceColumn: { type: Boolean, default: false },
+  linkNodeNameToInstance: { type: Boolean, default: false },
   useHttpExec: { type: Boolean, default: false },
   defaultAddress: { type: String, default: '' },
   wsConnected: { type: Boolean, default: false },
@@ -991,6 +1005,12 @@ function handleDetail(row) {
   detailVisible.value = true
   getProxyNodeTraffic(row.id).then(r => { detailTraffic.value = r.data }).catch(() => {})
 }
+
+function goVpsDetail(instanceId) {
+  if (!instanceId) return
+  router.push({ path: '/resource/vps-detail/index/' + instanceId })
+}
+
 function formatTraffic(bytes) {
   if (bytes == null || bytes === 0) return '0 B'
   const k = 1024
