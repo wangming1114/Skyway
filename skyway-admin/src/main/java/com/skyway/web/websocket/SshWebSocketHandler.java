@@ -533,6 +533,7 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
         Long customerId = obj.getLong("customerId");
         String remark = obj.getString("remark");
         String nodeType = obj.getString("nodeType");
+        String relayText = obj.getString("relayText");
         if (nodeType != null) nodeType = nodeType.trim();
         if (nodeType == null || nodeType.isEmpty()) {
             nodeType = "VLESS-REALITY";
@@ -541,6 +542,21 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
             sendExecError(wsSession, reqId, "不支持的协议类型: " + nodeType);
             sendExecEnd(wsSession, reqId, -1);
             return;
+        }
+        VpsSshCommandService.Socks5RelayConfig relay = null;
+        if (relayText != null && !relayText.trim().isEmpty()) {
+            if (!"VLESS-REALITY".equals(nodeType)) {
+                sendExecError(wsSession, reqId, "当前仅 VLESS-REALITY 支持 SOCKS5 中转");
+                sendExecEnd(wsSession, reqId, -1);
+                return;
+            }
+            try {
+                relay = VpsSshCommandService.parseSocks5RelayText(relayText);
+            } catch (IllegalArgumentException e) {
+                sendExecError(wsSession, reqId, e.getMessage());
+                sendExecEnd(wsSession, reqId, -1);
+                return;
+            }
         }
 
         if (customerId == null) {
@@ -560,6 +576,7 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
         }
         Long instanceId = (Long) instanceIdObj;
         final String nodeTypeFinal = nodeType;
+        final VpsSshCommandService.Socks5RelayConfig relayFinal = relay;
 
         executor.execute(() -> {
             SSHClient ssh = null;
@@ -668,6 +685,13 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                     sendExecError(wsSession, reqId, "重命名失败: 未找到 " + oldJsonName);
                     sendExecEnd(wsSession, reqId, -1);
                     return;
+                }
+                if (relayFinal != null) {
+                    sendExecOutput(wsSession, reqId, "应用 SOCKS5 中转配置并重启 sing-box...\n", false);
+                    vpsSshCommandService.applySocks5RelayToRemoteConfig(ssh, confDir + "/" + newJsonName, relayFinal);
+                    JSONObject config = JSON.parseObject(parsed.getConfigJson());
+                    config.put("relay", relayFinal.toConfigJson());
+                    parsed.setConfigJson(config.toJSONString());
                 }
 
                 parsed.setInstanceId(instanceId);

@@ -117,7 +117,7 @@
 
     <pagination v-show="total > 0" :total="total" v-model:page="queryParams.pageNum" v-model:limit="queryParams.pageSize" @pagination="getList" />
 
-    <el-dialog title="新增节点" v-model="addDialogVisible" width="460px" append-to-body>
+    <el-dialog title="新增节点" v-model="addDialogVisible" width="560px" append-to-body>
       <el-form ref="addFormRef" :model="addForm" :rules="addFormRules" label-width="90px">
         <el-form-item v-if="!fixedCustomer" label="归属客户" prop="customerId">
           <el-select v-model="addForm.customerId" placeholder="请选择客户" style="width: 100%" filterable>
@@ -146,6 +146,33 @@
         <el-form-item label="端口" prop="port">
           <el-input-number v-model="addForm.port" :min="1" :max="65535" controls-position="right" style="width: 100%" placeholder="如 5000" />
         </el-form-item>
+        <template v-if="canConfigureRelay">
+          <el-form-item label="启用中转">
+            <el-switch v-model="addForm.enableRelay" active-text="SOCKS5" />
+          </el-form-item>
+          <template v-if="addForm.enableRelay">
+            <el-form-item label="S5配置" prop="relayText">
+              <el-input
+                v-model="addForm.relayText"
+                placeholder="204.1.132.93:35345:lVZjQtlJ:Qat3T6ofak"
+                clearable
+                @input="parseRelayTextToForm"
+              />
+            </el-form-item>
+            <el-form-item label="服务器">
+              <el-input v-model="addForm.relayHost" disabled />
+            </el-form-item>
+            <el-form-item label="中转端口">
+              <el-input v-model="addForm.relayPort" disabled />
+            </el-form-item>
+            <el-form-item label="用户名">
+              <el-input v-model="addForm.relayUsername" disabled />
+            </el-form-item>
+            <el-form-item label="密码">
+              <el-input v-model="addForm.relayPassword" disabled show-password />
+            </el-form-item>
+          </template>
+        </template>
         <el-form-item label="有效期">
           <div style="display: flex; align-items: center; gap: 10px; width: 100%">
             <el-date-picker
@@ -219,6 +246,12 @@
           <el-descriptions-item label="SNI">{{ detailConfig.sni || '-' }}</el-descriptions-item>
           <el-descriptions-item label="指纹">{{ detailConfig.fingerprint || '-' }}</el-descriptions-item>
           <el-descriptions-item label="公钥" :span="2">{{ detailConfig.publicKey || '-' }}</el-descriptions-item>
+          <template v-if="detailConfig.relay">
+            <el-descriptions-item label="中转类型">{{ detailConfig.relay.type || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="中转地址">{{ detailConfig.relay.server || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="中转端口">{{ detailConfig.relay.serverPort || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="中转用户">{{ detailConfig.relay.username || '-' }}</el-descriptions-item>
+          </template>
         </template>
         <el-descriptions-item label="备注" :span="2">{{ detailData.remark || '-' }}</el-descriptions-item>
       </el-descriptions>
@@ -580,13 +613,42 @@ const addDialogVisible = ref(false)
 const addFormRef = ref(null)
 const customerOptions = ref([])
 const instanceOptions = ref([])
-const addForm = reactive({ customerId: undefined, instanceId: undefined, nodeType: 'VLESS-REALITY', port: undefined, expireTime: null, remark: '' })
+const addForm = reactive({
+  customerId: undefined,
+  instanceId: undefined,
+  nodeType: 'VLESS-REALITY',
+  port: undefined,
+  enableRelay: false,
+  relayText: '',
+  relayHost: '',
+  relayPort: '',
+  relayUsername: '',
+  relayPassword: '',
+  expireTime: null,
+  remark: ''
+})
 const addFormPermanent = ref(true)
+const canConfigureRelay = computed(() => addForm.nodeType === 'VLESS-REALITY')
 const addFormRules = {
   customerId: [{ required: true, message: '请选择归属客户', trigger: 'change' }],
   instanceId: [{ required: true, message: '请选择服务器', trigger: 'change' }],
   nodeType: [{ required: true, message: '请选择协议类型', trigger: 'change' }],
-  port: [{ required: true, message: '请输入端口', trigger: 'blur' }]
+  port: [{ required: true, message: '请输入端口', trigger: 'blur' }],
+  relayText: [{
+    validator: (rule, value, callback) => {
+      if (!addForm.enableRelay || !canConfigureRelay.value) {
+        callback()
+        return
+      }
+      const parsed = parseSocks5RelayText(value)
+      if (!parsed.ok) {
+        callback(new Error(parsed.message))
+        return
+      }
+      callback()
+    },
+    trigger: ['blur', 'change']
+  }]
 }
 const httpExecSubmitting = ref(false)
 
@@ -638,11 +700,57 @@ function endLogStateAsFailed(message) {
   if (message && addLog.value !== undefined) addLog.value += '\n' + message
 }
 
+function resetRelayForm() {
+  addForm.enableRelay = false
+  addForm.relayText = ''
+  addForm.relayHost = ''
+  addForm.relayPort = ''
+  addForm.relayUsername = ''
+  addForm.relayPassword = ''
+}
+
+function parseSocks5RelayText(value) {
+  const text = (value || '').trim()
+  if (!text) return { ok: false, message: '请输入 SOCKS5 中转配置' }
+  const parts = text.split(':')
+  if (parts.length !== 4 || parts.some(part => !part.trim())) {
+    return { ok: false, message: '格式应为 host:port:username:password' }
+  }
+  const port = Number(parts[1].trim())
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    return { ok: false, message: 'SOCKS5 端口范围为 1-65535' }
+  }
+  return {
+    ok: true,
+    host: parts[0].trim(),
+    port: String(port),
+    username: parts[2].trim(),
+    password: parts[3].trim()
+  }
+}
+
+function parseRelayTextToForm() {
+  const parsed = parseSocks5RelayText(addForm.relayText)
+  addForm.relayHost = parsed.ok ? parsed.host : ''
+  addForm.relayPort = parsed.ok ? parsed.port : ''
+  addForm.relayUsername = parsed.ok ? parsed.username : ''
+  addForm.relayPassword = parsed.ok ? parsed.password : ''
+}
+
+function addRelayPayload(payload) {
+  if (!addForm.enableRelay || !canConfigureRelay.value) return payload
+  return {
+    ...payload,
+    relayText: (addForm.relayText || '').trim()
+  }
+}
+
 function handleAdd() {
   addForm.customerId = props.fixedCustomer ? props.customerId : undefined
   addForm.instanceId = props.instanceId || undefined
   addForm.nodeType = 'VLESS-REALITY'
   addForm.port = undefined
+  resetRelayForm()
   addForm.expireTime = null
   addForm.remark = ''
   addFormPermanent.value = true
@@ -699,7 +807,7 @@ function submitAddForm() {
     execLogTitle.value = '添加节点 - 执行日志'
     addLogDrawerVisible.value = true
     clearExecTimeout()
-    const sent = props.sendWs({
+    const sent = props.sendWs(addRelayPayload({
       type: 'add_proxy_node',
       customerId: addForm.customerId,
       nodeType: addForm.nodeType,
@@ -707,7 +815,7 @@ function submitAddForm() {
       expireTime: addFormPermanent.value ? null : addForm.expireTime,
       remark: addForm.remark ? String(addForm.remark).trim() : undefined,
       reqId: addNodeReqId
-    })
+    }))
     if (sent === false) {
       endLogStateAsFailed('消息发送失败，连接可能已断开。')
       proxy.$modal.msgWarning('发送失败，请检查连接后重试')
@@ -736,13 +844,13 @@ function submitAddFormByHttp() {
   execLogTitle.value = '添加节点 - 执行日志'
   addLogDrawerVisible.value = true
   httpExecSubmitting.value = true
-  const payload = {
+  const payload = addRelayPayload({
     customerId: addForm.customerId,
     nodeType: addForm.nodeType,
     port: addForm.port,
     expireTime: addFormPermanent.value ? null : addForm.expireTime,
     remark: addForm.remark ? String(addForm.remark).trim() : undefined
-  }
+  })
   const finishErr = (msg) => {
     addLog.value += msg + '\n'
     addLogRunning.value = false
@@ -813,6 +921,12 @@ watch(() => props.wsConnected, (connected) => {
     deletingNodeId.value = null
     endLogStateAsFailed('连接已断开，本次操作已中止，状态未知。')
     proxy.$modal.msgWarning('连接已断开，请等待自动重连或刷新页面')
+  }
+})
+
+watch(() => addForm.nodeType, (nodeType) => {
+  if (nodeType !== 'VLESS-REALITY') {
+    resetRelayForm()
   }
 })
 

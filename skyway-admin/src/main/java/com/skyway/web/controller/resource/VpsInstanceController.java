@@ -259,7 +259,17 @@ public class VpsInstanceController extends BaseController {
             return AjaxResult.error("端口范围为 1-65535");
         }
         try {
-            ProxyNode node = vpsSshCommandService.addProxyNodeOnInstance(instanceId, customerId, port, expireTimeStr, nodeType);
+            String relayText = body != null && body.get("relayText") != null ? body.get("relayText").toString().trim() : null;
+            VpsSshCommandService.Socks5RelayConfig relay = null;
+            if (relayText != null && !relayText.isEmpty()) {
+                if (!"VLESS-REALITY".equals(nodeType)) {
+                    return AjaxResult.error("当前仅 VLESS-REALITY 支持 SOCKS5 中转");
+                }
+                relay = VpsSshCommandService.parseSocks5RelayText(relayText);
+            }
+            ProxyNode node = relay == null
+                    ? vpsSshCommandService.addProxyNodeOnInstance(instanceId, customerId, port, expireTimeStr, nodeType)
+                    : vpsSshCommandService.addProxyNodeOnInstance(instanceId, customerId, port, expireTimeStr, nodeType, relay);
             node.setCreateBy(getUsername());
             if (remark != null) node.setRemark(remark);
             proxyNodeService.insert(node);

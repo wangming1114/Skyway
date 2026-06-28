@@ -3,6 +3,7 @@ package com.skyway.web.service;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.security.SecureRandom;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -21,6 +22,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.skyway.common.utils.StringUtils;
 import com.skyway.resource.domain.ProxyNode;
@@ -41,6 +43,9 @@ public class VpsSshCommandService {
     private static final String SPEED_SCRIPT_PATH = "/root/singbox_speed.sh";
     private static final String TC_MANAGER_SCRIPT_PATH = "/root/tc_manager.sh";
     private static final String TC_PORT_RULES_CONF = "/etc/tc_ports_rules.conf";
+    private static final String SOCKS_RELAY_TAG_PREFIX = "SOCKS-";
+    private static final String RELAY_TAG_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
     private static final Pattern SPEED_LINE = Pattern.compile("^\\s*(\\d{1,5})\\s*\\|\\s*([0-9]+(?:\\.[0-9]+)?)\\s*\\|\\s*([0-9]+(?:\\.[0-9]+)?)\\s*$");
     private static final Pattern TC_RULE_LINE = Pattern.compile("^\\s*(\\d{1,5})\\s*:\\s*(\\d+)\\s*:\\s*(\\d+)\\s*$");
     private static final String TC_MANAGER_SCRIPT = "#!/bin/bash\n"
@@ -277,6 +282,129 @@ public class VpsSshCommandService {
 
     @Autowired
     private IVpsInstanceService vpsInstanceService;
+
+    public static final class Socks5RelayConfig {
+        private final String server;
+        private final int serverPort;
+        private final String username;
+        private final String password;
+
+        public Socks5RelayConfig(String server, int serverPort, String username, String password) {
+            if (StringUtils.isEmpty(server)) {
+                throw new IllegalArgumentException("SOCKS5 服务器不能为空");
+            }
+            if (serverPort < 1 || serverPort > 65535) {
+                throw new IllegalArgumentException("SOCKS5 端口范围为 1-65535");
+            }
+            if (StringUtils.isEmpty(username)) {
+                throw new IllegalArgumentException("SOCKS5 用户名不能为空");
+            }
+            if (StringUtils.isEmpty(password)) {
+                throw new IllegalArgumentException("SOCKS5 密码不能为空");
+            }
+            this.server = server.trim();
+            this.serverPort = serverPort;
+            this.username = username.trim();
+            this.password = password.trim();
+        }
+
+        public String getServer() {
+            return server;
+        }
+
+        public int getServerPort() {
+            return serverPort;
+        }
+
+        public String getUsername() {
+            return username;
+        }
+
+        public String getPassword() {
+            return password;
+        }
+
+        public JSONObject toConfigJson() {
+            JSONObject relay = new JSONObject();
+            relay.put("type", "socks5");
+            relay.put("server", server);
+            relay.put("serverPort", serverPort);
+            relay.put("username", username);
+            relay.put("password", password);
+            return relay;
+        }
+    }
+
+    public static Socks5RelayConfig parseSocks5RelayText(String text) {
+        if (StringUtils.isEmpty(text)) {
+            return null;
+        }
+        String[] parts = text.trim().split(":", -1);
+        if (parts.length != 4) {
+            throw new IllegalArgumentException("SOCKS5 中转格式应为 host:port:username:password");
+        }
+        int port;
+        try {
+            port = Integer.parseInt(parts[1].trim());
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("SOCKS5 端口无效");
+        }
+        return new Socks5RelayConfig(parts[0], port, parts[2], parts[3]);
+    }
+
+    public static String applySocks5RelayToSingBoxConfig(String configJson, Socks5RelayConfig relay, String socksTag) {
+        if (StringUtils.isEmpty(configJson)) {
+            throw new IllegalArgumentException("sing-box 配置不能为空");
+        }
+        if (relay == null) {
+            return configJson;
+        }
+        if (StringUtils.isEmpty(socksTag)) {
+            throw new IllegalArgumentException("SOCKS5 outbound tag 不能为空");
+        }
+        JSONObject root = JSON.parseObject(configJson);
+        JSONArray inbounds = root.getJSONArray("inbounds");
+        if (inbounds == null || inbounds.isEmpty()) {
+            throw new IllegalArgumentException("sing-box 配置缺少 inbounds");
+        }
+        JSONObject firstInbound = inbounds.getJSONObject(0);
+        String inboundTag = firstInbound != null ? firstInbound.getString("tag") : null;
+        if (StringUtils.isEmpty(inboundTag)) {
+            throw new IllegalArgumentException("sing-box inbound tag 不能为空");
+        }
+        JSONArray outbounds = root.getJSONArray("outbounds");
+        if (outbounds == null || outbounds.isEmpty()) {
+            throw new IllegalArgumentException("sing-box 配置缺少 outbounds");
+        }
+
+        JSONObject socksOutbound = new JSONObject();
+        socksOutbound.put("tag", socksTag);
+        socksOutbound.put("type", "socks");
+        socksOutbound.put("server", relay.getServer());
+        socksOutbound.put("server_port", relay.getServerPort());
+        socksOutbound.put("version", "5");
+        socksOutbound.put("username", relay.getUsername());
+        socksOutbound.put("password", relay.getPassword());
+        outbounds.set(0, socksOutbound);
+
+        JSONObject rule = new JSONObject();
+        rule.put("inbound", inboundTag);
+        rule.put("outbound", socksTag);
+        JSONArray rules = new JSONArray();
+        rules.add(rule);
+        JSONObject route = new JSONObject();
+        route.put("rules", rules);
+        root.put("route", route);
+        return root.toJSONString();
+    }
+
+    private static String randomRelayTag() {
+        StringBuilder sb = new StringBuilder(SOCKS_RELAY_TAG_PREFIX);
+        for (int i = 0; i < 8; i++) {
+            sb.append(RELAY_TAG_CHARS.charAt(SECURE_RANDOM.nextInt(RELAY_TAG_CHARS.length())));
+        }
+        return sb.toString();
+    }
 
     /**
      * 在服务器上重命名节点配置文件：停用加 .disabled 后缀，启用则去掉。
@@ -1012,6 +1140,40 @@ public class VpsSshCommandService {
         }
     }
 
+    private String readAndApplySocksRelay(SSHClient ssh, String confPath, Socks5RelayConfig relay) throws IOException {
+        String original;
+        try (Session readSession = ssh.startSession()) {
+            original = execAndRead(readSession, "cat " + shellQuote(confPath));
+        }
+        if (StringUtils.isEmpty(original)) {
+            throw new IOException("读取 sing-box 配置失败: " + confPath);
+        }
+        return applySocks5RelayToSingBoxConfig(original, relay, randomRelayTag());
+    }
+
+    public void applySocks5RelayToRemoteConfig(SSHClient ssh, String confPath, Socks5RelayConfig relay) throws IOException {
+        if (ssh == null) {
+            throw new IOException("SSH 连接为空");
+        }
+        if (relay == null) {
+            return;
+        }
+        String patchedConfig = readAndApplySocksRelay(ssh, confPath, relay);
+        try (Session writeSession = ssh.startSession()) {
+            writeRemoteTextFile(writeSession, confPath, patchedConfig);
+        }
+        restartSingBox(ssh);
+    }
+
+    private static void writeRemoteTextFile(Session session, String path, String content) throws IOException {
+        String encoded = Base64.getEncoder().encodeToString(content.getBytes(StandardCharsets.UTF_8));
+        String command = "printf '%s' " + shellQuote(encoded) + " | base64 -d > " + shellQuote(path);
+        String out = execAndRead(session, "sh -c " + quoteSh(command) + " 2>&1");
+        if (out != null && (out.contains("Permission denied") || out.toLowerCase().contains("base64"))) {
+            throw new IOException("写入 sing-box 配置失败: " + out.trim());
+        }
+    }
+
     /**
      * 执行命令并读取输出，带超时。超时后关闭 session 以解除阻塞，并抛出 IOException。
      * 用于 sb 等可能卡住不结束的命令（如等待 TTY 输入）。
@@ -1201,10 +1363,22 @@ public class VpsSshCommandService {
      * 在指定实例上添加节点（执行 sb、重命名、解析），返回可入库的节点对象。支持 VLESS-REALITY、VMess-TCP。
      */
     public ProxyNode addProxyNodeOnInstance(Long instanceId, Long customerId, int port, String expireTimeStr, String nodeType) throws IOException {
+        return addProxyNodeOnInstance(instanceId, customerId, port, expireTimeStr, nodeType, null);
+    }
+
+    /**
+     * 在指定实例上添加节点（执行 sb、重命名、解析），返回可入库的节点对象。支持 VLESS-REALITY、VMess-TCP。
+     * relay 仅对 VLESS-REALITY 生效；为空时保持原创建流程不变。
+     */
+    public ProxyNode addProxyNodeOnInstance(Long instanceId, Long customerId, int port, String expireTimeStr, String nodeType,
+                                            Socks5RelayConfig relay) throws IOException {
         if (customerId == null) throw new IllegalArgumentException("请选择归属客户");
         if (nodeType == null || nodeType.isEmpty()) nodeType = "VLESS-REALITY";
         if (!"VLESS-REALITY".equals(nodeType) && !"VMess-TCP".equals(nodeType)) {
             throw new IllegalArgumentException("不支持的协议类型: " + nodeType);
+        }
+        if (relay != null && !"VLESS-REALITY".equals(nodeType)) {
+            throw new IllegalArgumentException("当前仅 VLESS-REALITY 支持 SOCKS5 中转");
         }
         SSHClient ssh = null;
         try {
@@ -1259,6 +1433,13 @@ public class VpsSshCommandService {
                 if (mvOut != null && mvOut.toLowerCase().contains("no such file")) {
                     throw new IOException("重命名失败: 未找到 " + oldJsonName);
                 }
+            }
+            if (relay != null) {
+                String confPath = CONF_DIR + "/" + newJsonName;
+                applySocks5RelayToRemoteConfig(ssh, confPath, relay);
+                JSONObject config = JSON.parseObject(parsed.getConfigJson());
+                config.put("relay", relay.toConfigJson());
+                parsed.setConfigJson(config.toJSONString());
             }
             parsed.setInstanceId(instanceId);
             parsed.setCustomerId(customerId);
