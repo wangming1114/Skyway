@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.skyway.resource.mapper.ProxyNodeRateLimitMapper">
+
+    <resultMap type="com.skyway.resource.domain.ProxyNodeRateLimit" id="ProxyNodeRateLimitResult">
+        <id     property="id"              column="id"                />
+        <result property="instanceId"      column="instance_id"       />
+        <result property="proxyNodeId"     column="proxy_node_id"     />
+        <result property="port"            column="port"              />
+        <result property="downloadMbps"    column="download_mbps"     />
+        <result property="uploadMbps"      column="upload_mbps"       />
+        <result property="expireTime"      column="expire_time"       />
+        <result property="status"          column="status"            />
+        <result property="lastApplyResult" column="last_apply_result" />
+        <result property="remark"          column="remark"            />
+        <result property="createBy"        column="create_by"         />
+        <result property="createTime"      column="create_time"       />
+        <result property="updateBy"        column="update_by"         />
+        <result property="updateTime"      column="update_time"       />
+    </resultMap>
+
+    <sql id="selectProxyNodeRateLimitVo">
+        select id, instance_id, proxy_node_id, port, download_mbps, upload_mbps, expire_time, status, last_apply_result,
+               remark, create_by, create_time, update_by, update_time
+        from res_proxy_node_rate_limit
+    </sql>
+
+    <select id="selectById" parameterType="Long" resultMap="ProxyNodeRateLimitResult">
+        <include refid="selectProxyNodeRateLimitVo"/>
+        where id = #{id}
+    </select>
+
+    <select id="selectActiveByNodeId" resultMap="ProxyNodeRateLimitResult">
+        <include refid="selectProxyNodeRateLimitVo"/>
+        where proxy_node_id = #{proxyNodeId} and status = 'active'
+        order by update_time desc, id desc
+        limit 1
+    </select>
+
+    <select id="selectActiveByNodeIds" resultMap="ProxyNodeRateLimitResult">
+        <include refid="selectProxyNodeRateLimitVo"/>
+        where status = 'active'
+        and proxy_node_id in
+        <foreach item="id" collection="nodeIds" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+        order by update_time desc, id desc
+    </select>
+
+    <select id="selectActiveByInstanceId" resultMap="ProxyNodeRateLimitResult">
+        <include refid="selectProxyNodeRateLimitVo"/>
+        where instance_id = #{instanceId} and status = 'active'
+        order by update_time desc, id desc
+    </select>
+
+    <select id="selectExpiredActive" resultMap="ProxyNodeRateLimitResult">
+        <include refid="selectProxyNodeRateLimitVo"/>
+        where status = 'active' and expire_time is not null and expire_time &lt;= #{now}
+        order by expire_time asc
+    </select>
+
+    <insert id="insert" parameterType="com.skyway.resource.domain.ProxyNodeRateLimit" useGeneratedKeys="true" keyProperty="id">
+        insert into res_proxy_node_rate_limit
+            (instance_id, proxy_node_id, port, download_mbps, upload_mbps, expire_time, status, last_apply_result,
+             remark, create_by, create_time, update_time)
+        values
+            (#{instanceId}, #{proxyNodeId}, #{port}, #{downloadMbps}, #{uploadMbps}, #{expireTime}, #{status}, #{lastApplyResult},
+             #{remark}, #{createBy}, sysdate(), sysdate())
+    </insert>
+
+    <update id="update" parameterType="com.skyway.resource.domain.ProxyNodeRateLimit">
+        update res_proxy_node_rate_limit
+        <set>
+            <if test="instanceId != null">instance_id = #{instanceId},</if>
+            <if test="proxyNodeId != null">proxy_node_id = #{proxyNodeId},</if>
+            <if test="port != null">port = #{port},</if>
+            <if test="downloadMbps != null">download_mbps = #{downloadMbps},</if>
+            <if test="uploadMbps != null">upload_mbps = #{uploadMbps},</if>
+            expire_time = #{expireTime},
+            <if test="status != null">status = #{status},</if>
+            <if test="lastApplyResult != null">last_apply_result = #{lastApplyResult},</if>
+            <if test="remark != null">remark = #{remark},</if>
+            <if test="updateBy != null and updateBy != ''">update_by = #{updateBy},</if>
+            update_time = sysdate()
+        </set>
+        where id = #{id}
+    </update>
+
+    <update id="markStatus">
+        update res_proxy_node_rate_limit
+        set status = #{status},
+            last_apply_result = #{lastApplyResult},
+            update_by = #{updateBy},
+            update_time = sysdate()
+        where id = #{id}
+    </update>
+</mapper>

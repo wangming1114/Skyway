@@ -39,6 +39,15 @@
           <span v-else class="text-placeholder">-</span>
         </template>
       </el-table-column>
+      <el-table-column label="限速" min-width="210" align="center">
+        <template #default="{ row }">
+          <div class="rate-limit-cell">
+            <div>{{ rateLimitLogicText(row) }}</div>
+            <div class="rate-limit-sub">{{ rateLimitDurationText(row) }}</div>
+            <div class="rate-limit-rule">{{ rateLimitRuleText(row) }}</div>
+          </div>
+        </template>
+      </el-table-column>
       <el-table-column label="状态" width="100" align="center">
         <template #default="{ row }">
           <span class="status-cell">
@@ -63,10 +72,11 @@
           <span v-else>{{ row.remark || '-' }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="250" align="center">
+      <el-table-column label="操作" width="320" align="center">
         <template #default="{ row }">
           <el-button link type="primary" size="small" @click="handleDetail(row)">详情</el-button>
           <el-button link type="primary" size="small" @click="openNodeEdit(row)" v-hasPermi="['resource:vps:edit']">编辑</el-button>
+          <el-button link type="primary" size="small" @click="openRateLimitDialog(row)" v-hasPermi="['resource:vps:edit']">设置限速</el-button>
           <el-button link type="primary" size="small" @click="handleCopyUrl(row)">复制链接</el-button>
           <el-button link type="danger" size="small" icon="Delete" :loading="deletingNodeId === row.id || (batchDeleteLoading && selectedIds.includes(row.id))" @click="handleDelete(row)" v-hasPermi="['resource:vps:remove']">删除</el-button>
         </template>
@@ -224,14 +234,69 @@
         <el-button type="primary" :loading="editNodeSaving" @click="submitNodeEdit">确定</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog :title="rateLimitDialogTitle" v-model="rateLimitVisible" width="480px" append-to-body destroy-on-close>
+      <el-form ref="rateLimitFormRef" :model="rateLimitForm" :rules="rateLimitRules" label-width="96px" class="rate-limit-form">
+        <el-form-item label="节点端口">
+          <el-input :model-value="rateLimitRow?.port || '-'" disabled />
+        </el-form-item>
+        <el-form-item label="下载限速" prop="downloadMbps">
+          <div class="rate-limit-input-row">
+            <el-input-number v-model="rateLimitForm.downloadMbps" :min="1" :max="100000" controls-position="right" class="rate-limit-input-number" />
+            <span class="rate-limit-unit">Mbps</span>
+          </div>
+        </el-form-item>
+        <el-form-item label="上传限速" prop="uploadMbps">
+          <div class="rate-limit-input-row">
+            <el-input-number v-model="rateLimitForm.uploadMbps" :min="1" :max="100000" controls-position="right" class="rate-limit-input-number" />
+            <span class="rate-limit-unit">Mbps</span>
+          </div>
+        </el-form-item>
+        <el-form-item label="限速时长">
+          <div class="rate-limit-duration-row">
+            <el-date-picker
+              v-model="rateLimitForm.expireTime"
+              type="datetime"
+              placeholder="选择到期时间"
+              :disabled="rateLimitPermanent"
+              style="flex: 1"
+              value-format="YYYY-MM-DD HH:mm:ss"
+            />
+            <el-checkbox v-model="rateLimitPermanent" @change="v => v && (rateLimitForm.expireTime = null)">永久</el-checkbox>
+          </div>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button
+          v-if="currentRateLimit"
+          type="danger"
+          plain
+          :loading="rateLimitSaving"
+          @click="submitRemoveRateLimit"
+        >移除限速</el-button>
+        <el-button @click="rateLimitVisible = false">取消</el-button>
+        <el-button type="primary" :loading="rateLimitSaving" @click="submitRateLimit">确定</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import useUserStore from '@/store/modules/user'
-import { listProxyNode, updateProxyNode, delProxyNode, getProxyNodeTraffic, getRecommendPort, getInstanceSpeed } from '@/api/resource/vps'
+import {
+  listProxyNode,
+  updateProxyNode,
+  delProxyNode,
+  getProxyNodeTraffic,
+  getRecommendPort,
+  getInstanceSpeed,
+  listProxyNodeRateLimit,
+  setProxyNodeRateLimit,
+  removeProxyNodeRateLimit
+} from '@/api/resource/vps'
 import { listCustomer } from '@/api/member/customer'
+import { parseTime } from '@/utils/skyway'
 import { DocumentCopy, Loading, Edit, Delete } from '@element-plus/icons-vue'
 
 const { proxy } = getCurrentInstance()
@@ -296,10 +361,98 @@ function getList() {
     nodeList.value = res.rows
     total.value = res.total
     loading.value = false
+    syncRateLimitsFromRows(nodeList.value)
     fetchTrafficForList(nodeList.value)
+    fetchRateLimits()
     refreshInstanceSpeed()
     restartSpeedPolling()
   }).catch(() => { loading.value = false })
+}
+
+function syncRateLimitsFromRows(rows) {
+  const map = { ...rateLimitMap.value }
+  ;(rows || []).forEach(row => {
+    if (!row || row.id == null) return
+    delete map[row.id]
+    if (row.rateLimit) {
+      map[row.id] = row.rateLimit
+    }
+  })
+  rateLimitMap.value = buildRateLimitMap(Object.values(map))
+}
+
+function fetchRateLimits() {
+  if (!props.instanceId) {
+    rateLimitMap.value = {}
+    return
+  }
+  listProxyNodeRateLimit({ instanceId: props.instanceId }).then(res => {
+    const map = buildRateLimitMap([
+      ...Object.values(rateLimitMap.value || {}),
+      ...(res.data || [])
+    ])
+    rateLimitMap.value = map
+    applyRateLimitMapToRows(map)
+  }).catch(() => {
+    rateLimitMap.value = { ...rateLimitMap.value }
+  })
+}
+
+function buildRateLimitMap(rows) {
+  const map = {}
+  ;(rows || []).forEach(item => {
+    if (!item || item.proxyNodeId == null) return
+    const current = map[item.proxyNodeId]
+    if (!current || compareRateLimit(item, current) > 0) {
+      map[item.proxyNodeId] = item
+    }
+  })
+  return map
+}
+
+function compareRateLimit(a, b) {
+  const timeA = new Date(a.updateTime || a.createTime || 0).getTime() || 0
+  const timeB = new Date(b.updateTime || b.createTime || 0).getTime() || 0
+  if (timeA !== timeB) return timeA - timeB
+  return Number(a.id || 0) - Number(b.id || 0)
+}
+
+function mergeRateLimit(limit, fallback) {
+  const normalized = {
+    ...(fallback || {}),
+    ...(limit || {})
+  }
+  if (normalized.proxyNodeId == null) return
+  normalized.updateTime = normalized.updateTime || parseTime(new Date(), '{y}-{m}-{d} {h}:{i}:{s}')
+  rateLimitMap.value = {
+    ...rateLimitMap.value,
+    [normalized.proxyNodeId]: normalized
+  }
+  const row = nodeList.value.find(item => item.id === normalized.proxyNodeId)
+  if (row) {
+    row.rateLimit = normalized
+  }
+}
+
+function applyRateLimitMapToRows(map) {
+  ;(nodeList.value || []).forEach(row => {
+    if (!row || row.id == null) return
+    const limit = map[row.id]
+    if (limit || row.rateLimit) {
+      row.rateLimit = limit || null
+    }
+  })
+}
+
+function removeRateLimitFromMap(proxyNodeId) {
+  if (proxyNodeId == null) return
+  const map = { ...rateLimitMap.value }
+  delete map[proxyNodeId]
+  rateLimitMap.value = map
+  const row = nodeList.value.find(item => item.id === proxyNodeId)
+  if (row) {
+    row.rateLimit = null
+  }
 }
 
 function restartSpeedPolling() {
@@ -365,6 +518,21 @@ const editNodeSaving = ref(false)
 const editNodeRow = ref(null)
 const editNodePermanent = ref(false)
 const editNodeForm = reactive({ expireTime: null, url: '' })
+const rateLimitVisible = ref(false)
+const rateLimitSaving = ref(false)
+const rateLimitFormRef = ref(null)
+const rateLimitRow = ref(null)
+const rateLimitPermanent = ref(true)
+const rateLimitForm = reactive({ downloadMbps: 50, uploadMbps: 20, expireTime: null })
+const rateLimitRules = {
+  downloadMbps: [{ required: true, message: '请输入下载限速', trigger: 'blur' }],
+  uploadMbps: [{ required: true, message: '请输入上传限速', trigger: 'blur' }]
+}
+const currentRateLimit = computed(() => {
+  const rowId = rateLimitRow.value?.id
+  return rowId != null ? rateLimitMap.value[rowId] : null
+})
+const rateLimitDialogTitle = computed(() => currentRateLimit.value ? '修改端口限速' : '设置端口限速')
 
 const addLogDrawerVisible = ref(false)
 const execLogTitle = ref('添加节点 - 执行日志')
@@ -633,6 +801,7 @@ const batchDeleteLoading = ref(false)
 const statusLoadingId = ref(null)
 const deletingNodeId = ref(null)
 const trafficMap = ref({})
+const rateLimitMap = ref({})
 
 const detailVisible = ref(false)
 const detailData = ref(null)
@@ -675,6 +844,92 @@ function nodeRealtimeSpeedText(row) {
 function nodeTrafficTotalText(row, traffic) {
   const stat = traffic || trafficMap.value[row.id]
   return '累计：' + (stat ? '↑ ' + formatTraffic(stat.totalTx) + ' / ↓ ' + formatTraffic(stat.totalRx) : '-')
+}
+function getRateLimit(row) {
+  if (!row || row.id == null) return null
+  return buildRateLimitMap([row.rateLimit, rateLimitMap.value[row.id]])[row.id] || null
+}
+function isRateLimitExpired(limit) {
+  return limit?.expireTime ? new Date(limit.expireTime) <= new Date() : false
+}
+function rateLimitLogicText(row) {
+  const limit = getRateLimit(row)
+  if (!limit) return '未限速'
+  if (limit.status === 'failed') return '应用失败'
+  if (isRateLimitExpired(limit)) return '已过期'
+  return '端口独立限速'
+}
+function rateLimitDurationText(row) {
+  const limit = getRateLimit(row)
+  if (!limit) return '-'
+  if (!limit.expireTime) return '永久'
+  return '至 ' + parseTime(limit.expireTime, '{y}-{m}-{d} {h}:{i}')
+}
+function rateLimitRuleText(row) {
+  const limit = getRateLimit(row)
+  if (!limit) return '-'
+  return '↓ ' + limit.downloadMbps + ' Mbps / ↑ ' + limit.uploadMbps + ' Mbps'
+}
+function openRateLimitDialog(row) {
+  rateLimitRow.value = row
+  const existing = getRateLimit(row)
+  rateLimitForm.downloadMbps = existing?.downloadMbps || 50
+  rateLimitForm.uploadMbps = existing?.uploadMbps || 20
+  rateLimitForm.expireTime = existing?.expireTime || null
+  rateLimitPermanent.value = !rateLimitForm.expireTime
+  rateLimitVisible.value = true
+  nextTick(() => rateLimitFormRef.value?.clearValidate())
+}
+function submitRateLimit() {
+  if (!rateLimitRow.value?.id) return
+  rateLimitFormRef.value.validate(valid => {
+    if (!valid) return
+    const payload = {
+      downloadMbps: rateLimitForm.downloadMbps,
+      uploadMbps: rateLimitForm.uploadMbps,
+      expireTime: rateLimitPermanent.value ? null : rateLimitForm.expireTime
+    }
+    if (!payload.downloadMbps || payload.downloadMbps <= 0 || !payload.uploadMbps || payload.uploadMbps <= 0) {
+      proxy.$modal.msgWarning('限速带宽必须大于 0')
+      return
+    }
+    if (!rateLimitPermanent.value && !payload.expireTime) {
+      proxy.$modal.msgWarning('请选择限速到期时间')
+      return
+    }
+    rateLimitSaving.value = true
+    setProxyNodeRateLimit(rateLimitRow.value.id, payload).then(res => {
+      mergeRateLimit(res.data, {
+        ...(getRateLimit(rateLimitRow.value) || {}),
+        proxyNodeId: rateLimitRow.value.id,
+        instanceId: props.instanceId,
+        port: rateLimitRow.value.port,
+        status: 'active',
+        downloadMbps: payload.downloadMbps,
+        uploadMbps: payload.uploadMbps,
+        expireTime: payload.expireTime
+      })
+      proxy.$modal.msgSuccess('限速已应用')
+      rateLimitVisible.value = false
+      fetchRateLimits()
+    }).catch(() => {}).finally(() => {
+      rateLimitSaving.value = false
+    })
+  })
+}
+function submitRemoveRateLimit() {
+  if (!rateLimitRow.value?.id) return
+  proxy.$modal.confirm(`确认要移除端口 ${rateLimitRow.value.port} 的限速吗？`).then(() => {
+    rateLimitSaving.value = true
+    return removeProxyNodeRateLimit(rateLimitRow.value.id)
+  }).then(() => {
+    removeRateLimitFromMap(rateLimitRow.value.id)
+    proxy.$modal.msgSuccess('限速已移除')
+    rateLimitVisible.value = false
+    fetchRateLimits()
+  }).catch(() => {}).finally(() => {
+    rateLimitSaving.value = false
+  })
 }
 function formatBytes(bytes) {
   if (bytes == null || bytes === 0) return '0 B'
@@ -735,6 +990,7 @@ onBeforeUnmount(() => {
 
 watch(() => props.instanceId, () => {
   speedSnapshot.value = null
+  rateLimitMap.value = {}
   clearSpeedPolling()
   getList()
 })
@@ -801,6 +1057,47 @@ watch(() => props.instanceId, () => {
 .traffic-cell-speed {
   color: var(--el-text-color-secondary);
   font-size: 12px;
+}
+.rate-limit-cell {
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+.rate-limit-sub {
+  color: var(--el-text-color-secondary);
+}
+.rate-limit-rule {
+  color: var(--el-color-primary);
+}
+.rate-limit-form :deep(.el-form-item__label) {
+  white-space: nowrap;
+}
+.rate-limit-input-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 54px;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+.rate-limit-input-number {
+  width: 100%;
+}
+.rate-limit-unit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  border: 1px solid var(--el-border-color);
+  border-radius: 4px;
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+.rate-limit-duration-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
 }
 .add-log-body {
   padding: 12px;

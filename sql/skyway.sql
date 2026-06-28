@@ -568,6 +568,31 @@ CREATE TABLE `res_proxy_node` (
 ) ENGINE=InnoDB AUTO_INCREMENT=328 DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='代理节点表';
 
 -- ----------------------------
+-- Table structure for res_proxy_node_rate_limit
+-- ----------------------------
+DROP TABLE IF EXISTS `res_proxy_node_rate_limit`;
+CREATE TABLE `res_proxy_node_rate_limit` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `instance_id` bigint(20) NOT NULL COMMENT 'VPS实例ID(res_instance.id)',
+  `proxy_node_id` bigint(20) NOT NULL COMMENT '代理节点ID(res_proxy_node.id)',
+  `port` int(11) NOT NULL COMMENT '限速端口',
+  `download_mbps` int(11) NOT NULL COMMENT '下载限速Mbps',
+  `upload_mbps` int(11) NOT NULL COMMENT '上传限速Mbps',
+  `expire_time` datetime DEFAULT NULL COMMENT '限速到期时间(null=永久)',
+  `status` varchar(20) DEFAULT 'active' COMMENT '状态(active/removed/expired/failed)',
+  `last_apply_result` text COMMENT '最近一次远端应用结果',
+  `remark` varchar(500) DEFAULT NULL COMMENT '备注',
+  `create_by` varchar(64) DEFAULT '' COMMENT '创建者',
+  `create_time` datetime DEFAULT NULL COMMENT '创建时间',
+  `update_by` varchar(64) DEFAULT '' COMMENT '更新者',
+  `update_time` datetime DEFAULT NULL COMMENT '更新时间',
+  PRIMARY KEY (`id`) USING BTREE,
+  KEY `idx_rate_limit_node_status` (`proxy_node_id`, `status`) USING BTREE,
+  KEY `idx_rate_limit_instance_status` (`instance_id`, `status`) USING BTREE,
+  KEY `idx_rate_limit_expire_status` (`expire_time`, `status`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='代理节点端口限速表';
+
+-- ----------------------------
 -- Records of res_proxy_node
 -- ----------------------------
 BEGIN;
@@ -1213,7 +1238,7 @@ CREATE TABLE `sys_job` (
   `update_time` datetime DEFAULT NULL COMMENT '更新时间',
   `remark` varchar(500) DEFAULT '' COMMENT '备注信息',
   PRIMARY KEY (`job_id`,`job_name`,`job_group`) USING BTREE
-) ENGINE=InnoDB AUTO_INCREMENT=7 DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='定时任务调度表';
+) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='定时任务调度表';
 
 -- ----------------------------
 -- Records of sys_job
@@ -1225,6 +1250,7 @@ INSERT INTO `sys_job` (`job_id`, `job_name`, `job_group`, `invoke_target`, `cron
 INSERT INTO `sys_job` (`job_id`, `job_name`, `job_group`, `invoke_target`, `cron_expression`, `misfire_policy`, `concurrent`, `status`, `create_by`, `create_time`, `update_by`, `update_time`, `remark`) VALUES (4, '节点流量采集', 'DEFAULT', 'proxyNodeTrafficTask.collect', '0 */5 * * * ?', '3', '1', '0', 'admin', '2026-02-15 06:56:41', '', '2026-05-10 16:52:21', '节点端口流量累计采集（每5分钟）');
 INSERT INTO `sys_job` (`job_id`, `job_name`, `job_group`, `invoke_target`, `cron_expression`, `misfire_policy`, `concurrent`, `status`, `create_by`, `create_time`, `update_by`, `update_time`, `remark`) VALUES (5, 'VPS状态同步', 'DEFAULT', 'vpsInstanceStatusSyncTask.sync', '0 */10 * * * ?', '3', '1', '0', 'admin', '2026-02-16 22:16:59', '', NULL, 'SSH 探测各 VPS 可达性并更新状态（每10分钟）');
 INSERT INTO `sys_job` (`job_id`, `job_name`, `job_group`, `invoke_target`, `cron_expression`, `misfire_policy`, `concurrent`, `status`, `create_by`, `create_time`, `update_by`, `update_time`, `remark`) VALUES (6, '节点到期停用与通知', 'DEFAULT', 'proxyNodeExpireTask.processExpired', '0 0 * * * ?', '3', '1', '0', 'admin', '2026-02-19 01:57:14', '', NULL, '到期节点自动停用并邮件通知管理员与客户（每小时）');
+INSERT INTO `sys_job` (`job_id`, `job_name`, `job_group`, `invoke_target`, `cron_expression`, `misfire_policy`, `concurrent`, `status`, `create_by`, `create_time`, `update_by`, `update_time`, `remark`) VALUES (7, '端口限速到期清理', 'DEFAULT', 'proxyNodeRateLimitExpireTask.processExpired', '0 */1 * * * ?', '3', '1', '0', 'admin', '2026-06-28 14:35:00', '', NULL, '到期限速规则自动 SSH 删除远端端口限速并重载 TC 规则（每分钟）');
 COMMIT;
 
 -- ----------------------------

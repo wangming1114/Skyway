@@ -4,10 +4,12 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
@@ -37,7 +39,97 @@ public class VpsSshCommandService {
     private static final String CONF_DIR = "/etc/sing-box/conf";
     private static final String DISABLED_SUFFIX = ".disabled";
     private static final String SPEED_SCRIPT_PATH = "/root/singbox_speed.sh";
+    private static final String TC_MANAGER_SCRIPT_PATH = "/root/tc_manager.sh";
+    private static final String TC_PORT_RULES_CONF = "/etc/tc_ports_rules.conf";
     private static final Pattern SPEED_LINE = Pattern.compile("^\\s*(\\d{1,5})\\s*\\|\\s*([0-9]+(?:\\.[0-9]+)?)\\s*\\|\\s*([0-9]+(?:\\.[0-9]+)?)\\s*$");
+    private static final Pattern TC_RULE_LINE = Pattern.compile("^\\s*(\\d{1,5})\\s*:\\s*(\\d+)\\s*:\\s*(\\d+)\\s*$");
+    private static final String TC_MANAGER_SCRIPT = "#!/bin/bash\n"
+            + "CONF_FILE=\"/etc/tc_ports_rules.conf\"\n"
+            + "GLOBAL_CONF=\"/etc/tc_global_rules.conf\"\n"
+            + "IFB_DEV=\"ifb0\"\n"
+            + "[ ! -f \"$CONF_FILE\" ] && touch \"$CONF_FILE\"\n"
+            + "[ ! -f \"$GLOBAL_CONF\" ] && echo \"OFF:0:0\" > \"$GLOBAL_CONF\"\n"
+            + "get_interfaces() {\n"
+            + "  ip -o link show | awk -F': ' '{print $2}' | awk -F'@' '{print $1}' | grep -vE '^(lo|docker.*|br-.*|veth.*|ifb.*)$'\n"
+            + "}\n"
+            + "stop_limits() {\n"
+            + "  local interfaces=$(get_interfaces)\n"
+            + "  for IFACE in $interfaces; do\n"
+            + "    tc qdisc del dev \"$IFACE\" root 2>/dev/null\n"
+            + "    tc qdisc del dev \"$IFACE\" ingress 2>/dev/null\n"
+            + "  done\n"
+            + "  tc qdisc del dev $IFB_DEV root 2>/dev/null\n"
+            + "  ip link set dev $IFB_DEV down 2>/dev/null\n"
+            + "}\n"
+            + "apply_limits() {\n"
+            + "  local interfaces=$(get_interfaces)\n"
+            + "  if [ -z \"$interfaces\" ]; then echo \"[错误] 未检测到符合条件的物理网卡。\"; return 1; fi\n"
+            + "  local global_status=\"OFF\" g_dn=\"0\" g_up=\"0\"\n"
+            + "  IFS=':' read -r global_status g_dn g_up < \"$GLOBAL_CONF\"\n"
+            + "  if [ \"$global_status\" = \"ON\" ]; then\n"
+            + "    echo \"[提示] 全局限速模式已开启！正在覆盖挂起所有端口规则...\"\n"
+            + "    stop_limits >/dev/null 2>&1\n"
+            + "    modprobe ifb numifbs=1 2>/dev/null\n"
+            + "    ip link set dev $IFB_DEV up\n"
+            + "    tc qdisc add dev $IFB_DEV root handle 1: htb default 10\n"
+            + "    tc class add dev $IFB_DEV parent 1: classid 1:10 htb rate \"${g_dn}mbit\"\n"
+            + "    for IFACE in $interfaces; do\n"
+            + "      echo \" -> 正在全局限制物理网卡: $IFACE\"\n"
+            + "      tc qdisc add dev \"$IFACE\" root handle 1: htb default 10\n"
+            + "      tc class add dev \"$IFACE\" parent 1: classid 1:10 htb rate \"${g_up}mbit\"\n"
+            + "      tc qdisc add dev \"$IFACE\" handle ffff: ingress\n"
+            + "      tc filter add dev \"$IFACE\" parent ffff: protocol ip u32 match u32 0 0 action mirred egress redirect dev $IFB_DEV\n"
+            + "      tc filter add dev \"$IFACE\" parent ffff: protocol ipv6 u32 match u32 0 0 action mirred egress redirect dev $IFB_DEV\n"
+            + "    done\n"
+            + "    echo \"[成功] 全局限速 (下载: ${g_dn}Mbps | 上传: ${g_up}Mbps) 已强制生效！\"\n"
+            + "    return 0\n"
+            + "  fi\n"
+            + "  if [ ! -s \"$CONF_FILE\" ]; then\n"
+            + "    echo \"[提示] 配置文件中无任何端口规则，正在卸载底层限速...\"\n"
+            + "    stop_limits >/dev/null 2>&1\n"
+            + "    echo \"[成功] 限速已全部取消，恢复默认网络状态。\"\n"
+            + "    return 0\n"
+            + "  fi\n"
+            + "  echo \"正在清理旧规则并应用端口配置...\"\n"
+            + "  stop_limits >/dev/null 2>&1\n"
+            + "  modprobe ifb numifbs=1 2>/dev/null\n"
+            + "  ip link set dev $IFB_DEV up\n"
+            + "  tc qdisc add dev $IFB_DEV root handle 1: htb default 20\n"
+            + "  tc class add dev $IFB_DEV parent 1: classid 1:20 htb rate 10gbit\n"
+            + "  for IFACE in $interfaces; do\n"
+            + "    echo \" -> 正在挂载物理网卡: $IFACE\"\n"
+            + "    tc qdisc add dev \"$IFACE\" root handle 1: htb default 20\n"
+            + "    tc class add dev \"$IFACE\" parent 1: classid 1:20 htb rate 10gbit\n"
+            + "    tc qdisc add dev \"$IFACE\" handle ffff: ingress\n"
+            + "    local index=100\n"
+            + "    while IFS=':' read -r port dn_rate up_rate || [ -n \"$port\" ]; do\n"
+            + "      [[ -z \"$port\" || \"$port\" == \\#* ]] && continue\n"
+            + "      local class_id=\"1:${index}\"\n"
+            + "      tc class add dev \"$IFACE\" parent 1: classid \"$class_id\" htb rate \"${up_rate}mbit\"\n"
+            + "      tc filter add dev \"$IFACE\" protocol ip parent 1:0 prio 1 u32 match ip sport \"$port\" 0xffff flowid \"$class_id\"\n"
+            + "      tc filter add dev \"$IFACE\" protocol ipv6 parent 1:0 prio 1 u32 match ip6 sport \"$port\" 0xffff flowid \"$class_id\"\n"
+            + "      tc class add dev $IFB_DEV parent 1: classid \"$class_id\" htb rate \"${dn_rate}mbit\"\n"
+            + "      tc filter add dev \"$IFACE\" parent ffff: protocol ip prio 1 u32 match ip dport \"$port\" 0xffff action mirred egress redirect dev $IFB_DEV\n"
+            + "      tc filter add dev \"$IFACE\" parent ffff: protocol ipv6 prio 1 u32 match ip6 dport \"$port\" 0xffff action mirred egress redirect dev $IFB_DEV\n"
+            + "      tc filter add dev $IFB_DEV protocol ip parent 1:0 prio 1 u32 match ip dport \"$port\" 0xffff flowid \"$class_id\"\n"
+            + "      tc filter add dev $IFB_DEV protocol ipv6 parent 1:0 prio 1 u32 match ip6 dport \"$port\" 0xffff flowid \"$class_id\"\n"
+            + "      echo \"    └─ 端口 ${port} (下行: ${dn_rate}Mbps | 上行: ${up_rate}Mbps)\"\n"
+            + "      index=$((index + 1))\n"
+            + "    done < \"$CONF_FILE\"\n"
+            + "  done\n"
+            + "  echo \"[成功] 独立端口限速规则已全部生效！\"\n"
+            + "}\n"
+            + "menu_list_rules() { cat \"$CONF_FILE\"; read -p \"按回车键继续...\"; }\n"
+            + "while true; do\n"
+            + "  read -p \"请选择操作 [0-7]: \" choice\n"
+            + "  case $choice in\n"
+            + "    3) menu_list_rules ;;\n"
+            + "    5) apply_limits; read -p \"按回车键继续...\" ;;\n"
+            + "    6) stop_limits; echo \"[成功] 所有限速规则已清除，恢复无限制的默认网络状态。\"; read -p \"按回车键继续...\" ;;\n"
+            + "    0) exit 0 ;;\n"
+            + "    *) echo \"无效选项\" ;;\n"
+            + "  esac\n"
+            + "done\n";
     private static final String SINGBOX_SPEED_SCRIPT = "#!/bin/bash\n"
             + "\n"
             + "# 捕获 Ctrl+C 信号，优雅退出并恢复光标\n"
@@ -553,6 +645,128 @@ public class VpsSshCommandService {
         return snapshot;
     }
 
+    public PortRateLimitRemoteResult setPortRateLimit(Long instanceId, int port, int downloadMbps, int uploadMbps) throws IOException {
+        String line = buildTcPortRuleLine(port, downloadMbps, uploadMbps);
+        SSHClient ssh = null;
+        try {
+            ssh = createSshClient(instanceId);
+            ensureTcManagerScript(ssh);
+            try (Session session = ssh.startSession()) {
+                String script = "touch " + TC_PORT_RULES_CONF + "; "
+                        + "sed -i '/^" + port + ":/d' " + TC_PORT_RULES_CONF + "; "
+                        + "printf '%s\\n' " + shellQuote(line) + " >> " + TC_PORT_RULES_CONF + "; "
+                        + "printf '5\\n\\n0\\n' | " + TC_MANAGER_SCRIPT_PATH + " 2>&1";
+                String out = execAndReadWithTimeout(session, "sh -c " + quoteSh(script), 45);
+                return new PortRateLimitRemoteResult(port, normalizeApplyOutput(out));
+            }
+        } finally {
+            if (ssh != null) {
+                try { ssh.close(); } catch (IOException e) { log.debug("SSH close: {}", e.getMessage()); }
+            }
+        }
+    }
+
+    public PortRateLimitRemoteResult removePortRateLimit(Long instanceId, int port) throws IOException {
+        validatePortRateLimit(port, 1, 1);
+        SSHClient ssh = null;
+        try {
+            ssh = createSshClient(instanceId);
+            ensureTcManagerScript(ssh);
+            try (Session session = ssh.startSession()) {
+                String script = "touch " + TC_PORT_RULES_CONF + "; "
+                        + "sed -i '/^" + port + ":/d' " + TC_PORT_RULES_CONF + "; "
+                        + "printf '5\\n\\n0\\n' | " + TC_MANAGER_SCRIPT_PATH + " 2>&1";
+                String out = execAndReadWithTimeout(session, "sh -c " + quoteSh(script), 45);
+                return new PortRateLimitRemoteResult(port, normalizeApplyOutput(out));
+            }
+        } finally {
+            if (ssh != null) {
+                try { ssh.close(); } catch (IOException e) { log.debug("SSH close: {}", e.getMessage()); }
+            }
+        }
+    }
+
+    public List<PortRateLimitRule> listRemotePortRateLimits(Long instanceId) throws IOException {
+        SSHClient ssh = null;
+        try {
+            ssh = createSshClient(instanceId);
+            ensureTcManagerScript(ssh);
+            try (Session session = ssh.startSession()) {
+                String out = execAndRead(session, "sh -c " + quoteSh("touch " + TC_PORT_RULES_CONF + "; cat " + TC_PORT_RULES_CONF));
+                return parseTcPortRules(out);
+            }
+        } finally {
+            if (ssh != null) {
+                try { ssh.close(); } catch (IOException e) { log.debug("SSH close: {}", e.getMessage()); }
+            }
+        }
+    }
+
+    public static String buildTcPortRuleLine(int port, int downloadMbps, int uploadMbps) {
+        validatePortRateLimit(port, downloadMbps, uploadMbps);
+        return port + ":" + downloadMbps + ":" + uploadMbps;
+    }
+
+    public static List<PortRateLimitRule> parseTcPortRules(String output) {
+        List<PortRateLimitRule> rules = new ArrayList<>();
+        if (output == null || output.trim().isEmpty()) {
+            return rules;
+        }
+        for (String line : output.replace('\r', '\n').split("\\n")) {
+            String trimmed = line.trim();
+            if (trimmed.isEmpty() || trimmed.startsWith("#")) {
+                continue;
+            }
+            Matcher matcher = TC_RULE_LINE.matcher(trimmed);
+            if (!matcher.matches()) {
+                continue;
+            }
+            int port = Integer.parseInt(matcher.group(1));
+            int down = Integer.parseInt(matcher.group(2));
+            int up = Integer.parseInt(matcher.group(3));
+            if (isValidPort(port) && down > 0 && up > 0) {
+                rules.add(new PortRateLimitRule(port, down, up));
+            }
+        }
+        return rules;
+    }
+
+    private void ensureTcManagerScript(SSHClient ssh) throws IOException {
+        try (Session session = ssh.startSession()) {
+            String encodedScript = Base64.getEncoder().encodeToString(TC_MANAGER_SCRIPT.getBytes(StandardCharsets.UTF_8));
+            String install = "if [ ! -x " + TC_MANAGER_SCRIPT_PATH + " ]; then "
+                    + "printf '%s' " + shellQuote(encodedScript) + " | base64 -d > " + TC_MANAGER_SCRIPT_PATH
+                    + " && chmod +x " + TC_MANAGER_SCRIPT_PATH + "; fi; "
+                    + "touch " + TC_PORT_RULES_CONF + "; "
+                    + "[ -f /etc/tc_global_rules.conf ] || echo 'OFF:0:0' > /etc/tc_global_rules.conf";
+            String out = execAndReadWithTimeout(session, "sh -c " + quoteSh(install) + " 2>&1", 30);
+            if (out != null && (out.contains("Permission denied") || out.contains("base64:"))) {
+                throw new IOException("TC 管理脚本安装失败: " + out.trim());
+            }
+        }
+    }
+
+    private static void validatePortRateLimit(int port, int downloadMbps, int uploadMbps) {
+        if (!isValidPort(port)) {
+            throw new IllegalArgumentException("端口范围为 1-65535");
+        }
+        if (downloadMbps <= 0 || uploadMbps <= 0) {
+            throw new IllegalArgumentException("限速带宽必须大于 0 Mbps");
+        }
+    }
+
+    private static boolean isValidPort(int port) {
+        return port >= 1 && port <= 65535;
+    }
+
+    private static String normalizeApplyOutput(String output) {
+        String text = stripAnsi(output == null ? "" : output).trim();
+        if (text.length() > 2000) {
+            return text.substring(text.length() - 2000);
+        }
+        return text;
+    }
+
     private static double parseDouble(String value) {
         try {
             return Double.parseDouble(value);
@@ -607,6 +821,48 @@ public class VpsSshCommandService {
                 totalUpMbps += speed.getUpMbps();
                 totalDownMbps += speed.getDownMbps();
             }
+        }
+    }
+
+    public static final class PortRateLimitRule {
+        private final int port;
+        private final int downloadMbps;
+        private final int uploadMbps;
+
+        public PortRateLimitRule(int port, int downloadMbps, int uploadMbps) {
+            this.port = port;
+            this.downloadMbps = downloadMbps;
+            this.uploadMbps = uploadMbps;
+        }
+
+        public int getPort() {
+            return port;
+        }
+
+        public int getDownloadMbps() {
+            return downloadMbps;
+        }
+
+        public int getUploadMbps() {
+            return uploadMbps;
+        }
+    }
+
+    public static final class PortRateLimitRemoteResult {
+        private final int port;
+        private final String output;
+
+        public PortRateLimitRemoteResult(int port, String output) {
+            this.port = port;
+            this.output = output;
+        }
+
+        public int getPort() {
+            return port;
+        }
+
+        public String getOutput() {
+            return output;
         }
     }
 

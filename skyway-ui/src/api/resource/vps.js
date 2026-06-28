@@ -142,6 +142,40 @@ export function getProxyNodeTraffic(nodeId) {
   })
 }
 
+/** 指定实例下的节点端口限速规则 */
+export function listProxyNodeRateLimit(query) {
+  return request({
+    url: '/resource/vps/proxyNode/rateLimit/list',
+    method: 'get',
+    params: query
+  })
+}
+
+/** 单个节点端口限速规则 */
+export function getProxyNodeRateLimit(nodeId) {
+  return request({
+    url: '/resource/vps/proxyNode/' + nodeId + '/rateLimit',
+    method: 'get'
+  })
+}
+
+/** 设置或修改节点端口限速 */
+export function setProxyNodeRateLimit(nodeId, data) {
+  return request({
+    url: '/resource/vps/proxyNode/' + nodeId + '/rateLimit',
+    method: 'post',
+    data: data
+  })
+}
+
+/** 移除节点端口限速 */
+export function removeProxyNodeRateLimit(nodeId) {
+  return request({
+    url: '/resource/vps/proxyNode/' + nodeId + '/rateLimit',
+    method: 'delete'
+  })
+}
+
 export function addProxyNode(data) {
   return request({
     url: '/resource/vps/proxyNode',

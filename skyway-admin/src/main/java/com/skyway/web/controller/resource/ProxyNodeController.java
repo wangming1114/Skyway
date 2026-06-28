@@ -1,7 +1,9 @@
 package com.skyway.web.controller.resource;
 
 import java.text.SimpleDateFormat;
+import java.util.HashMap;
 import java.util.Date;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -15,6 +17,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import com.skyway.common.annotation.Log;
@@ -24,9 +27,12 @@ import com.skyway.common.core.page.TableDataInfo;
 import com.skyway.common.enums.BusinessType;
 import com.skyway.common.utils.StringUtils;
 import com.skyway.resource.domain.ProxyNode;
+import com.skyway.resource.domain.ProxyNodeRateLimit;
 import com.skyway.resource.service.IProxyNodeService;
+import com.skyway.resource.service.IProxyNodeRateLimitService;
 import com.skyway.resource.service.IProxyNodeTrafficService;
 import com.skyway.web.service.VpsSshCommandService;
+import com.skyway.web.service.VpsSshCommandService.PortRateLimitRemoteResult;
 
 /**
  * 代理节点
@@ -46,24 +52,140 @@ public class ProxyNodeController extends BaseController {
     @Autowired
     private IProxyNodeTrafficService proxyNodeTrafficService;
 
+    @Autowired
+    private IProxyNodeRateLimitService proxyNodeRateLimitService;
+
     @PreAuthorize("@ss.hasPermi('resource:vps:list')")
     @GetMapping("/list")
     public TableDataInfo list(ProxyNode proxyNode) {
         startPage();
         List<ProxyNode> list = proxyNodeService.selectList(proxyNode);
+        fillRateLimits(list);
         return getDataTable(list);
     }
 
     @PreAuthorize("@ss.hasPermi('resource:vps:query')")
     @GetMapping("/{id}")
     public AjaxResult getInfo(@PathVariable Long id) {
-        return success(proxyNodeService.getById(id));
+        ProxyNode node = proxyNodeService.getById(id);
+        if (node != null) {
+            node.setRateLimit(proxyNodeRateLimitService.getActiveByNodeId(id));
+        }
+        return success(node);
     }
 
     @PreAuthorize("@ss.hasPermi('resource:vps:query')")
     @GetMapping("/{id}/traffic")
     public AjaxResult getTraffic(@PathVariable Long id) {
         return success(proxyNodeTrafficService.getTrafficByNodeId(id));
+    }
+
+    @PreAuthorize("@ss.hasPermi('resource:vps:list')")
+    @GetMapping("/rateLimit/list")
+    public AjaxResult listRateLimit(@RequestParam(required = false) Long instanceId) {
+        return success(proxyNodeRateLimitService.listActiveByInstanceId(instanceId));
+    }
+
+    @PreAuthorize("@ss.hasPermi('resource:vps:query')")
+    @GetMapping("/{id}/rateLimit")
+    public AjaxResult getRateLimit(@PathVariable Long id) {
+        return success(proxyNodeRateLimitService.getActiveByNodeId(id));
+    }
+
+    @PreAuthorize("@ss.hasPermi('resource:vps:edit')")
+    @Log(title = "代理节点端口限速", businessType = BusinessType.UPDATE)
+    @PostMapping("/{id}/rateLimit")
+    public AjaxResult setRateLimit(@PathVariable Long id, @RequestBody Map<String, Object> body) {
+        ProxyNode node = proxyNodeService.getById(id);
+        if (node == null) {
+            return AjaxResult.error("节点不存在");
+        }
+        if (node.getInstanceId() == null || node.getPort() == null || node.getPort() <= 0) {
+            return AjaxResult.error("节点实例或端口信息不完整");
+        }
+        Integer downloadMbps = parseInteger(body != null ? body.get("downloadMbps") : null);
+        Integer uploadMbps = parseInteger(body != null ? body.get("uploadMbps") : null);
+        if (downloadMbps == null || downloadMbps <= 0) {
+            return AjaxResult.error("请输入有效的下载限速 Mbps");
+        }
+        if (uploadMbps == null || uploadMbps <= 0) {
+            return AjaxResult.error("请输入有效的上传限速 Mbps");
+        }
+        Date expireTime = parseExpireTime(body != null ? body.get("expireTime") : null);
+        if (expireTime != null && !expireTime.after(new Date())) {
+            return AjaxResult.error("限速到期时间必须晚于当前时间");
+        }
+        try {
+            PortRateLimitRemoteResult remoteResult = vpsSshCommandService.setPortRateLimit(
+                    node.getInstanceId(), node.getPort(), downloadMbps, uploadMbps);
+            ProxyNodeRateLimit existing = proxyNodeRateLimitService.getActiveByNodeId(id);
+            ProxyNodeRateLimit row = existing != null ? existing : new ProxyNodeRateLimit();
+            row.setInstanceId(node.getInstanceId());
+            row.setProxyNodeId(node.getId());
+            row.setPort(node.getPort());
+            row.setDownloadMbps(downloadMbps);
+            row.setUploadMbps(uploadMbps);
+            row.setExpireTime(expireTime);
+            row.setLastApplyResult(remoteResult.getOutput());
+            row.setUpdateBy(getUsername());
+            if (row.getId() == null) {
+                row.setCreateBy(getUsername());
+            }
+            proxyNodeRateLimitService.saveActive(row);
+            return success(proxyNodeRateLimitService.getActiveByNodeId(id));
+        } catch (Exception e) {
+            log.warn("set rate limit failed: nodeId={}, port={}", id, node.getPort(), e);
+            return AjaxResult.error("限速应用失败: " + (e.getMessage() != null ? e.getMessage() : "服务器操作异常"));
+        }
+    }
+
+    private void fillRateLimits(List<ProxyNode> list) {
+        if (list == null || list.isEmpty()) {
+            return;
+        }
+        List<Long> nodeIds = new ArrayList<>();
+        for (ProxyNode node : list) {
+            if (node != null && node.getId() != null) {
+                nodeIds.add(node.getId());
+            }
+        }
+        if (nodeIds.isEmpty()) {
+            return;
+        }
+        List<ProxyNodeRateLimit> limits = proxyNodeRateLimitService.listActiveByNodeIds(nodeIds);
+        Map<Long, ProxyNodeRateLimit> limitMap = new HashMap<>();
+        for (ProxyNodeRateLimit limit : limits) {
+            if (limit != null && limit.getProxyNodeId() != null && !limitMap.containsKey(limit.getProxyNodeId())) {
+                limitMap.put(limit.getProxyNodeId(), limit);
+            }
+        }
+        for (ProxyNode node : list) {
+            if (node != null) {
+                node.setRateLimit(limitMap.get(node.getId()));
+            }
+        }
+    }
+
+    @PreAuthorize("@ss.hasPermi('resource:vps:edit')")
+    @Log(title = "代理节点端口限速", businessType = BusinessType.DELETE)
+    @DeleteMapping("/{id}/rateLimit")
+    public AjaxResult removeRateLimit(@PathVariable Long id) {
+        ProxyNode node = proxyNodeService.getById(id);
+        if (node == null) {
+            return AjaxResult.error("节点不存在");
+        }
+        ProxyNodeRateLimit existing = proxyNodeRateLimitService.getActiveByNodeId(id);
+        if (existing == null) {
+            return success();
+        }
+        try {
+            PortRateLimitRemoteResult remoteResult = vpsSshCommandService.removePortRateLimit(existing.getInstanceId(), existing.getPort());
+            proxyNodeRateLimitService.markRemoved(existing.getId(), remoteResult.getOutput(), getUsername());
+            return success();
+        } catch (Exception e) {
+            log.warn("remove rate limit failed: nodeId={}, port={}", id, existing.getPort(), e);
+            return AjaxResult.error("限速移除失败: " + (e.getMessage() != null ? e.getMessage() : "服务器操作异常"));
+        }
     }
 
     @PreAuthorize("@ss.hasPermi('resource:vps:add')")
@@ -190,6 +312,16 @@ public class ProxyNodeController extends BaseController {
         if (value instanceof Number) return ((Number) value).longValue();
         try {
             return Long.parseLong(String.valueOf(value).trim());
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static Integer parseInteger(Object value) {
+        if (value == null) return null;
+        if (value instanceof Number) return ((Number) value).intValue();
+        try {
+            return Integer.parseInt(String.valueOf(value).trim());
         } catch (Exception e) {
             return null;
         }

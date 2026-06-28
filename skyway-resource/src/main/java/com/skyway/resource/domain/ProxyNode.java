@@ -56,6 +56,9 @@ public class ProxyNode extends BaseEntity {
     /** 状态(0=正常 1=停用) */
     private String status;
 
+    /** 当前端口限速规则 */
+    private ProxyNodeRateLimit rateLimit;
+
     public Long getId() {
         return id;
     }
@@ -164,6 +167,14 @@ public class ProxyNode extends BaseEntity {
         this.status = status;
     }
 
+    public ProxyNodeRateLimit getRateLimit() {
+        return rateLimit;
+    }
+
+    public void setRateLimit(ProxyNodeRateLimit rateLimit) {
+        this.rateLimit = rateLimit;
+    }
+
     @Override
     public String toString() {
         return new ToStringBuilder(this, ToStringStyle.MULTI_LINE_STYLE)
@@ -178,6 +189,7 @@ public class ProxyNode extends BaseEntity {
                 .append("expireTime", getExpireTime())
                 .append("customId", getCustomId())
                 .append("status", getStatus())
+                .append("rateLimit", getRateLimit())
                 .append("remark", getRemark())
                 .append("createBy", getCreateBy())
                 .append("createTime", getCreateTime())
