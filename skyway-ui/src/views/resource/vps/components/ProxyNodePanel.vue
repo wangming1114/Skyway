@@ -3,8 +3,13 @@
     <div class="toolbar">
       <el-button type="primary" size="small" icon="Plus" @click="handleAdd" v-hasPermi="['resource:vps:add']">新增节点</el-button>
       <el-button type="danger" plain size="small" icon="Delete" :disabled="selectedIds.length === 0" @click="handleBatchDelete" v-hasPermi="['resource:vps:remove']">批量删除</el-button>
-      <el-select v-model="queryParams.nodeType" placeholder="全部类型" clearable size="small" style="width: 180px; margin-left: 10px" @change="getList">
+      <el-select v-model="queryParams.nodeType" placeholder="全部类型" clearable size="small" style="width: 180px; margin-left: 10px" @change="handleFilterChange">
         <el-option v-for="t in nodeTypeOptions" :key="t.value" :label="t.label" :value="t.value" />
+      </el-select>
+      <el-select v-model="queryParams.expireStatus" placeholder="过期状态" size="small" style="width: 120px; margin-left: 8px" @change="handleFilterChange">
+        <el-option label="未过期" value="unexpired" />
+        <el-option label="已过期" value="expired" />
+        <el-option label="全部" value="all" />
       </el-select>
       <el-button icon="Refresh" size="small" circle style="margin-left: 8px" @click="getList" />
     </div>
@@ -72,13 +77,23 @@
           <span v-else>{{ row.remark || '-' }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="320" align="center">
+      <el-table-column label="操作" width="210" align="center">
         <template #default="{ row }">
-          <el-button link type="primary" size="small" @click="handleDetail(row)">详情</el-button>
-          <el-button link type="primary" size="small" @click="openNodeEdit(row)" v-hasPermi="['resource:vps:edit']">编辑</el-button>
-          <el-button link type="primary" size="small" @click="openRateLimitDialog(row)" v-hasPermi="['resource:vps:edit']">设置限速</el-button>
-          <el-button link type="primary" size="small" @click="handleCopyUrl(row)">复制链接</el-button>
-          <el-button link type="danger" size="small" icon="Delete" :loading="deletingNodeId === row.id || (batchDeleteLoading && selectedIds.includes(row.id))" @click="handleDelete(row)" v-hasPermi="['resource:vps:remove']">删除</el-button>
+          <div class="node-op-actions">
+            <el-button link type="primary" size="small" @click="handleDetail(row)">详情</el-button>
+            <el-button link type="primary" size="small" @click="handleCopyUrl(row)">复制链接</el-button>
+            <el-dropdown class="node-op-dropdown" trigger="click" @command="(cmd) => handleNodeCommand(cmd, row)" v-hasPermi="['resource:vps:edit', 'resource:vps:remove']">
+              <el-button link type="primary" size="small" icon="DArrowRight">更多</el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="edit" icon="Edit" v-hasPermi="['resource:vps:edit']">编辑</el-dropdown-item>
+                  <el-dropdown-item command="rateLimit" icon="Timer" v-hasPermi="['resource:vps:edit']">设置限速</el-dropdown-item>
+                  <el-dropdown-item command="delete" icon="Delete" divided v-hasPermi="['resource:vps:remove']">删除</el-dropdown-item>
+                  <el-dropdown-item command="forceDelete" icon="DeleteFilled" v-hasPermi="['resource:vps:remove']">强制删除</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+          </div>
         </template>
       </el-table-column>
     </el-table>
@@ -197,7 +212,17 @@
       </div>
 
       <template #footer>
-        <el-button link type="danger" @click="handleDelete(detailData); detailVisible = false" v-hasPermi="['resource:vps:remove']">删除</el-button>
+        <el-dropdown trigger="click" @command="(cmd) => handleDetailNodeCommand(cmd)" v-hasPermi="['resource:vps:edit', 'resource:vps:remove']">
+          <el-button>更多</el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="edit" icon="Edit" v-hasPermi="['resource:vps:edit']">编辑</el-dropdown-item>
+              <el-dropdown-item command="rateLimit" icon="Timer" v-hasPermi="['resource:vps:edit']">设置限速</el-dropdown-item>
+              <el-dropdown-item command="delete" icon="Delete" divided v-hasPermi="['resource:vps:remove']">删除</el-dropdown-item>
+              <el-dropdown-item command="forceDelete" icon="DeleteFilled" v-hasPermi="['resource:vps:remove']">强制删除</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
         <el-button @click="detailVisible = false">关 闭</el-button>
       </template>
     </el-dialog>
@@ -288,6 +313,7 @@ import {
   listProxyNode,
   updateProxyNode,
   delProxyNode,
+  forceDelProxyNode,
   getProxyNodeTraffic,
   getRecommendPort,
   getInstanceSpeed,
@@ -351,13 +377,18 @@ const queryParams = reactive({
   pageNum: 1,
   pageSize: 10,
   instanceId: props.instanceId,
-  nodeType: undefined
+  nodeType: undefined,
+  expireStatus: 'unexpired'
 })
 
 function getList() {
   loading.value = true
   queryParams.instanceId = props.instanceId
-  listProxyNode(queryParams).then(res => {
+  const params = {
+    ...queryParams,
+    expireStatus: queryParams.expireStatus === 'all' ? undefined : queryParams.expireStatus
+  }
+  listProxyNode(params).then(res => {
     nodeList.value = res.rows
     total.value = res.total
     loading.value = false
@@ -367,6 +398,11 @@ function getList() {
     refreshInstanceSpeed()
     restartSpeedPolling()
   }).catch(() => { loading.value = false })
+}
+
+function handleFilterChange() {
+  queryParams.pageNum = 1
+  getList()
 }
 
 function syncRateLimitsFromRows(rows) {
@@ -757,6 +793,21 @@ function handleBatchDelete() {
   })
 }
 
+function handleNodeCommand(command, row) {
+  if (command === 'edit') openNodeEdit(row)
+  else if (command === 'rateLimit') openRateLimitDialog(row)
+  else if (command === 'delete') handleDelete(row)
+  else if (command === 'forceDelete') handleForceDelete(row)
+}
+
+function handleDetailNodeCommand(command) {
+  if (!detailData.value) return
+  if (command === 'delete' || command === 'forceDelete') {
+    detailVisible.value = false
+  }
+  handleNodeCommand(command, detailData.value)
+}
+
 function handleDelete(row) {
   proxy.$modal.confirm(`确认要删除节点"${row.nodeName}"吗？删除将在服务器上执行后再移除数据库记录。`).then(() => {
     if (!props.wsConnected) {
@@ -793,6 +844,15 @@ function handleDelete(row) {
         proxy.$modal.msgWarning('执行超时，请查看日志')
       }
     }, EXEC_TIMEOUT_MS)
+  }).catch(() => {})
+}
+
+function handleForceDelete(row) {
+  proxy.$modal.confirm(`确认要强制删除节点"${row.nodeName}"吗？此操作只删除本地节点和流量记录，不连接服务器，也不会清理服务器上的残留配置。`).then(() => {
+    return forceDelProxyNode(row.id)
+  }).then(() => {
+    proxy.$modal.msgSuccess('强制删除成功')
+    getList()
   }).catch(() => {})
 }
 
@@ -1036,6 +1096,22 @@ watch(() => props.instanceId, () => {
 .status-loading {
   font-size: 14px;
   margin-right: 2px;
+}
+.node-op-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  line-height: 1;
+  white-space: nowrap;
+}
+.node-op-actions :deep(.el-button) {
+  margin-left: 0;
+  vertical-align: middle;
+}
+.node-op-dropdown {
+  display: inline-flex;
+  align-items: center;
 }
 .text-placeholder {
   color: var(--el-text-color-placeholder);

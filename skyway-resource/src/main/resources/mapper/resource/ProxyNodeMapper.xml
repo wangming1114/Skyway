@@ -37,6 +37,8 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             <if test="nodeType != null and nodeType != ''"> and node_type = #{nodeType} </if>
             <if test="status != null and status != ''"> and status = #{status} </if>
             <if test="nodeName != null and nodeName != ''"> and node_name like concat('%', #{nodeName}, '%') </if>
+            <if test="expireStatus == 'unexpired'"> and (expire_time is null or expire_time &gt;= sysdate()) </if>
+            <if test="expireStatus == 'expired'"> and expire_time is not null and expire_time &lt; sysdate() </if>
         </where>
         order by create_time desc
     </select>
@@ -49,6 +51,8 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             <if test="nodeType != null and nodeType != ''"> and node_type = #{nodeType} </if>
             <if test="status != null and status != ''"> and status = #{status} </if>
             <if test="nodeName != null and nodeName != ''"> and node_name like concat('%', #{nodeName}, '%') </if>
+            <if test="expireStatus == 'unexpired'"> and (expire_time is null or expire_time &gt;= sysdate()) </if>
+            <if test="expireStatus == 'expired'"> and expire_time is not null and expire_time &lt; sysdate() </if>
         </where>
     </select>
 

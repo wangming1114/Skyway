@@ -110,6 +110,13 @@ export function delInstance(id) {
   })
 }
 
+export function forceDelInstance(id) {
+  return request({
+    url: '/resource/vps/instance/' + id + '/force',
+    method: 'delete'
+  })
+}
+
 // ========== 仪表盘 ==========
 export function getDashboardSummary() {
   return request({
@@ -195,6 +202,13 @@ export function updateProxyNode(data) {
 export function delProxyNode(ids) {
   return request({
     url: '/resource/vps/proxyNode/' + ids,
+    method: 'delete'
+  })
+}
+
+export function forceDelProxyNode(ids) {
+  return request({
+    url: '/resource/vps/proxyNode/' + ids + '/force',
     method: 'delete'
   })
 }

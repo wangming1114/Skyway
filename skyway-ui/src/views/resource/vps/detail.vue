@@ -5,7 +5,16 @@
         <span>VPS 详情</span>
         <span style="float: right">
           <el-button type="primary" link icon="Connection" @click="openConnect" v-hasPermi="['resource:vps:list']">连接服务器</el-button>
-          <el-button type="primary" link icon="Back" @click="goBack">返回</el-button>
+          <el-dropdown trigger="click" @command="handleDetailCommand">
+            <el-button type="primary" link icon="DArrowRight">更多</el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="back" icon="Back">返回</el-dropdown-item>
+                <el-dropdown-item command="delete" icon="Delete" divided v-hasPermi="['resource:vps:remove']">删除</el-dropdown-item>
+                <el-dropdown-item command="forceDelete" icon="DeleteFilled" v-hasPermi="['resource:vps:remove']">强制删除</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
         </span>
       </template>
       <div v-if="detail" class="detail-section">
@@ -63,7 +72,7 @@
 
 <script setup name="VpsDetail">
 import { ref, watch, onBeforeUnmount } from 'vue'
-import { getInstance } from '@/api/resource/vps'
+import { delInstance, forceDelInstance, getInstance } from '@/api/resource/vps'
 import ProxyNodePanel from './components/ProxyNodePanel.vue'
 import { getToken } from '@/utils/auth'
 
@@ -137,6 +146,32 @@ function openConnect() {
       query: { name: detail.value.name || '', ip: detail.value.ip || '' }
     })
   }
+}
+
+function handleDetailCommand(command) {
+  if (command === 'back') goBack()
+  else if (command === 'delete') handleDelete()
+  else if (command === 'forceDelete') handleForceDelete()
+}
+
+function handleDelete() {
+  if (!detail.value?.id) return
+  proxy.$modal.confirm(`是否确认删除 VPS "${detail.value.name || detail.value.ip || detail.value.id}"？`).then(() => {
+    return delInstance(detail.value.id)
+  }).then(() => {
+    proxy.$modal.msgSuccess('删除成功')
+    goBack()
+  }).catch(() => {})
+}
+
+function handleForceDelete() {
+  if (!detail.value?.id) return
+  proxy.$modal.confirm(`确认要强制删除 VPS "${detail.value.name || detail.value.ip || detail.value.id}" 吗？此操作只删除本地 VPS、节点和流量记录，不连接服务器，也不会清理服务器上的残留配置。`).then(() => {
+    return forceDelInstance(detail.value.id)
+  }).then(() => {
+    proxy.$modal.msgSuccess('强制删除成功')
+    goBack()
+  }).catch(() => {})
 }
 
 function loadDetail() {

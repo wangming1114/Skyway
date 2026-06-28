@@ -165,6 +165,7 @@
                         <el-dropdown-menu>
                           <el-dropdown-item command="edit" icon="Edit" v-hasPermi="['resource:vps:edit']">编辑</el-dropdown-item>
                           <el-dropdown-item command="delete" icon="Delete" v-hasPermi="['resource:vps:remove']">删除</el-dropdown-item>
+                          <el-dropdown-item command="forceDelete" icon="DeleteFilled" divided v-hasPermi="['resource:vps:remove']">强制删除</el-dropdown-item>
                         </el-dropdown-menu>
                       </template>
                     </el-dropdown>
@@ -378,6 +379,7 @@ import {
   addInstance,
   updateInstance,
   delInstance,
+  forceDelInstance,
   testConnection
 } from '@/api/resource/vps'
 const { proxy } = getCurrentInstance()
@@ -864,6 +866,7 @@ function handleEditInstance(row) {
 function handleInstanceCommand(command, row) {
   if (command === 'edit') handleEditInstance(row)
   else if (command === 'delete') handleDeleteInstance(row)
+  else if (command === 'forceDelete') handleForceDeleteInstance(row)
 }
 
 function handleDeleteInstance(row) {
@@ -872,6 +875,15 @@ function handleDeleteInstance(row) {
   }).then(() => {
     getList()
     proxy.$modal.msgSuccess('删除成功')
+  }).catch(() => {})
+}
+
+function handleForceDeleteInstance(row) {
+  proxy.$modal.confirm(`确认要强制删除 VPS "${displayName(row)}" 吗？此操作只删除本地 VPS、节点和流量记录，不连接服务器，也不会清理服务器上的残留配置。`).then(() => {
+    return forceDelInstance(row.id)
+  }).then(() => {
+    getList()
+    proxy.$modal.msgSuccess('强制删除成功')
   }).catch(() => {})
 }
 

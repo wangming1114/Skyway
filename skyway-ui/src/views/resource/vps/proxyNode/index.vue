@@ -100,12 +100,22 @@
           <span v-else>{{ row.remark || '-' }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="260" align="center" fixed="right">
+      <el-table-column label="操作" width="210" align="center" fixed="right">
         <template #default="{ row }">
-          <el-button link type="primary" size="small" @click="handleDetail(row)">详情</el-button>
-          <el-button link type="primary" size="small" @click="openNodeEdit(row)" v-hasPermi="['resource:vps:edit']">编辑</el-button>
-          <el-button link type="primary" size="small" @click="handleCopyUrl(row)">复制链接</el-button>
-          <el-button link type="danger" size="small" icon="Delete" :loading="deleteLoadingId === row.id || (batchDeleteLoading && selectedIds.includes(row.id))" @click="handleDelete(row)" v-hasPermi="['resource:vps:remove']">删除</el-button>
+          <div class="node-op-actions">
+            <el-button link type="primary" size="small" @click="handleDetail(row)">详情</el-button>
+            <el-button link type="primary" size="small" @click="handleCopyUrl(row)">复制链接</el-button>
+            <el-dropdown class="node-op-dropdown" trigger="click" @command="(cmd) => handleNodeCommand(cmd, row)" v-hasPermi="['resource:vps:edit', 'resource:vps:remove']">
+              <el-button link type="primary" size="small" icon="DArrowRight">更多</el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="edit" icon="Edit" v-hasPermi="['resource:vps:edit']">编辑</el-dropdown-item>
+                  <el-dropdown-item command="delete" icon="Delete" divided v-hasPermi="['resource:vps:remove']">删除</el-dropdown-item>
+                  <el-dropdown-item command="forceDelete" icon="DeleteFilled" v-hasPermi="['resource:vps:remove']">强制删除</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+          </div>
         </template>
       </el-table-column>
     </el-table>
@@ -153,7 +163,16 @@
         </div>
       </div>
       <template #footer>
-        <el-button link type="danger" @click="handleDelete(detailData); detailVisible = false" v-hasPermi="['resource:vps:remove']">删除</el-button>
+        <el-dropdown trigger="click" @command="(cmd) => handleDetailNodeCommand(cmd)" v-hasPermi="['resource:vps:edit', 'resource:vps:remove']">
+          <el-button>更多</el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="edit" icon="Edit" v-hasPermi="['resource:vps:edit']">编辑</el-dropdown-item>
+              <el-dropdown-item command="delete" icon="Delete" divided v-hasPermi="['resource:vps:remove']">删除</el-dropdown-item>
+              <el-dropdown-item command="forceDelete" icon="DeleteFilled" v-hasPermi="['resource:vps:remove']">强制删除</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
         <el-button @click="detailVisible = false">关 闭</el-button>
       </template>
     </el-dialog>
@@ -195,7 +214,7 @@
 
 <script setup name="ProxyNodeList">
 import useUserStore from '@/store/modules/user'
-import { listProxyNode, updateProxyNode, delProxyNode, listInstance, getProxyNodeTraffic } from '@/api/resource/vps'
+import { listProxyNode, updateProxyNode, delProxyNode, forceDelProxyNode, listInstance, getProxyNodeTraffic } from '@/api/resource/vps'
 import { listCustomer } from '@/api/member/customer'
 import { parseTime } from '@/utils/skyway'
 import { DocumentCopy, Loading, Edit } from '@element-plus/icons-vue'
@@ -447,6 +466,20 @@ function handleBatchDelete() {
   })
 }
 
+function handleNodeCommand(command, row) {
+  if (command === 'edit') openNodeEdit(row)
+  else if (command === 'delete') handleDelete(row)
+  else if (command === 'forceDelete') handleForceDelete(row)
+}
+
+function handleDetailNodeCommand(command) {
+  if (!detailData.value) return
+  if (command === 'delete' || command === 'forceDelete') {
+    detailVisible.value = false
+  }
+  handleNodeCommand(command, detailData.value)
+}
+
 function handleDelete(row) {
   if (!row?.id) return
   proxy.$modal.confirm(`确认要删除节点"${row.nodeName}"吗？将同时在服务器上删除配置。`).then(() => {
@@ -455,6 +488,22 @@ function handleDelete(row) {
     return delProxyNode(row.id)
   }).then(() => {
     proxy.$modal.msgSuccess('删除成功')
+    detailVisible.value = false
+    getList()
+  }).catch(() => {}).finally(() => {
+    proxy.$modal.closeLoading()
+    deleteLoadingId.value = null
+  })
+}
+
+function handleForceDelete(row) {
+  if (!row?.id) return
+  proxy.$modal.confirm(`确认要强制删除节点"${row.nodeName}"吗？此操作只删除本地节点和流量记录，不连接服务器，也不会清理服务器上的残留配置。`).then(() => {
+    deleteLoadingId.value = row.id
+    proxy.$modal.loading('正在强制删除节点...')
+    return forceDelProxyNode(row.id)
+  }).then(() => {
+    proxy.$modal.msgSuccess('强制删除成功')
     detailVisible.value = false
     getList()
   }).catch(() => {}).finally(() => {
@@ -490,6 +539,22 @@ onMounted(() => {
 .share-url-box { display: flex; flex-direction: column; }
 .status-cell { display: inline-flex; align-items: center; gap: 6px; }
 .status-loading { font-size: 14px; margin-right: 2px; }
+.node-op-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  line-height: 1;
+  white-space: nowrap;
+}
+.node-op-actions :deep(.el-button) {
+  margin-left: 0;
+  vertical-align: middle;
+}
+.node-op-dropdown {
+  display: inline-flex;
+  align-items: center;
+}
 .text-placeholder { color: var(--el-text-color-placeholder); }
 .remark-cell-editable {
   cursor: pointer;

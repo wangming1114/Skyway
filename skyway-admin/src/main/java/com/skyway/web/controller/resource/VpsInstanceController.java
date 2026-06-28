@@ -1,5 +1,6 @@
 package com.skyway.web.controller.resource;
 
+import java.util.Collections;
 import java.util.List;
 import javax.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -20,8 +21,11 @@ import com.skyway.common.core.page.TableDataInfo;
 import com.skyway.common.enums.BusinessType;
 import com.skyway.common.utils.poi.ExcelUtil;
 import com.skyway.resource.domain.ProxyNode;
+import com.skyway.resource.domain.ProxyNodeRateLimit;
 import com.skyway.resource.domain.VpsInstance;
+import com.skyway.resource.service.IProxyNodeRateLimitService;
 import com.skyway.resource.service.IProxyNodeService;
+import com.skyway.resource.service.IProxyNodeTrafficService;
 import com.skyway.resource.service.IVpsInstanceService;
 import com.skyway.web.service.VpsSshCommandService;
 import org.slf4j.Logger;
@@ -49,6 +53,12 @@ public class VpsInstanceController extends BaseController {
 
     @Autowired
     private IProxyNodeService proxyNodeService;
+
+    @Autowired
+    private IProxyNodeTrafficService proxyNodeTrafficService;
+
+    @Autowired
+    private IProxyNodeRateLimitService proxyNodeRateLimitService;
 
     /**
      * 分页查询VPS实例列表
@@ -164,6 +174,35 @@ public class VpsInstanceController extends BaseController {
     @DeleteMapping("/{id}")
     public AjaxResult remove(@PathVariable Long id) {
         return toAjax(vpsInstanceService.deleteById(id));
+    }
+
+    /**
+     * 强制删除VPS实例：仅清理本地节点、流量数据和实例记录，不连接服务器。
+     */
+    @PreAuthorize("@ss.hasPermi('resource:vps:remove')")
+    @Log(title = "VPS实例强制删除", businessType = BusinessType.DELETE)
+    @DeleteMapping("/{id}/force")
+    public AjaxResult forceRemove(@PathVariable Long id) {
+        ProxyNode query = new ProxyNode();
+        query.setInstanceId(id);
+        List<ProxyNode> nodes = proxyNodeService.selectList(query);
+        for (ProxyNode node : nodes) {
+            if (node != null && node.getId() != null) {
+                markLocalRateLimitsRemoved(node.getId());
+                proxyNodeTrafficService.deleteByNodeId(node.getId());
+                proxyNodeService.deleteById(node.getId());
+            }
+        }
+        return toAjax(vpsInstanceService.deleteById(id));
+    }
+
+    private void markLocalRateLimitsRemoved(Long nodeId) {
+        List<ProxyNodeRateLimit> limits = proxyNodeRateLimitService.listActiveByNodeIds(Collections.singletonList(nodeId));
+        for (ProxyNodeRateLimit limit : limits) {
+            if (limit != null && limit.getId() != null) {
+                proxyNodeRateLimitService.markRemoved(limit.getId(), "强制删除VPS，仅清理本地记录，未连接服务器", getUsername());
+            }
+        }
     }
 
     /**

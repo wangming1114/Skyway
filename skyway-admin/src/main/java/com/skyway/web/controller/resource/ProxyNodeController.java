@@ -4,6 +4,7 @@ import java.text.SimpleDateFormat;
 import java.util.HashMap;
 import java.util.Date;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -387,5 +388,39 @@ public class ProxyNodeController extends BaseController {
             proxyNodeService.deleteById(id);
         }
         return success();
+    }
+
+    @PreAuthorize("@ss.hasPermi('resource:vps:remove')")
+    @Log(title = "代理节点强制删除", businessType = BusinessType.DELETE)
+    @DeleteMapping("/{ids}/force")
+    public AjaxResult forceRemove(@PathVariable String ids) {
+        if (StringUtils.isEmpty(ids)) {
+            return AjaxResult.error("参数错误");
+        }
+        String[] parts = ids.split(",");
+        for (String part : parts) {
+            Long id;
+            try {
+                id = Long.parseLong(part.trim());
+            } catch (NumberFormatException e) {
+                return AjaxResult.error("参数错误: 无效的 id " + part);
+            }
+            ProxyNode node = proxyNodeService.getById(id);
+            if (node != null) {
+                markLocalRateLimitsRemoved(id);
+                proxyNodeTrafficService.deleteByNodeId(id);
+                proxyNodeService.deleteById(id);
+            }
+        }
+        return success();
+    }
+
+    private void markLocalRateLimitsRemoved(Long nodeId) {
+        List<ProxyNodeRateLimit> limits = proxyNodeRateLimitService.listActiveByNodeIds(Collections.singletonList(nodeId));
+        for (ProxyNodeRateLimit limit : limits) {
+            if (limit != null && limit.getId() != null) {
+                proxyNodeRateLimitService.markRemoved(limit.getId(), "强制删除节点，仅清理本地记录，未连接服务器", getUsername());
+            }
+        }
     }
 }
