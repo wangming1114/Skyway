@@ -32,7 +32,9 @@ public interface ProxyNodeTrafficMapper {
 
     List<Map<String, Object>> selectDailyTrafficByInstance(@Param("fromTime") java.util.Date fromTime);
 
-    List<Map<String, Object>> selectCustomerTrafficRank(@Param("fromTime") java.util.Date fromTime);
+    List<Map<String, Object>> selectCustomerTrafficRank(@Param("fromTime") java.util.Date fromTime, @Param("toTime") java.util.Date toTime);
+
+    List<Map<String, Object>> selectVpsTrafficRank(@Param("fromTime") java.util.Date fromTime, @Param("toTime") java.util.Date toTime);
 
     /**
      * 按节点查近期明细（最近 N 条，用于曲线/速率）

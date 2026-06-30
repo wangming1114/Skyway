@@ -50,9 +50,14 @@ public interface IProxyNodeTrafficService {
     java.util.List<java.util.Map<String, Object>> getDailyTrafficByInstance(int days);
 
     /**
-     * 指定天数内客户流量倒序排行。
+     * 指定时间范围内客户节点流量倒序排行。
      */
-    java.util.List<java.util.Map<String, Object>> getCustomerTrafficRank(int days);
+    java.util.List<java.util.Map<String, Object>> getCustomerTrafficRank(java.util.Date fromTime, java.util.Date toTime);
+
+    /**
+     * 指定时间范围内 VPS 流量倒序排行。
+     */
+    java.util.List<java.util.Map<String, Object>> getVpsTrafficRank(java.util.Date fromTime, java.util.Date toTime);
 
     /**
      * 删除该节点所有流量数据与快照（节点删除时调用，便于同端口重新开通时从 0 开始计）

@@ -1,6 +1,9 @@
 package com.skyway.web.controller.resource;
 
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
 import java.util.Calendar;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -88,12 +91,27 @@ public class DashboardController extends BaseController {
     }
 
     /**
-     * 指定时间范围内客户流量倒序排行。
+     * 指定时间范围内 VPS 流量倒序排行。
+     */
+    @PreAuthorize("@ss.hasPermi('resource:vps:list')")
+    @GetMapping("/vpsTrafficRank")
+    public AjaxResult vpsTrafficRank(@RequestParam(defaultValue = "day") String range,
+                                     @RequestParam(required = false) String startTime,
+                                     @RequestParam(required = false) String endTime) {
+        Date[] bounds = resolveCustomerTrafficBounds(range, startTime, endTime);
+        return success(proxyNodeTrafficService.getVpsTrafficRank(bounds[0], bounds[1]));
+    }
+
+    /**
+     * 指定时间范围内客户节点流量倒序排行。
      */
     @PreAuthorize("@ss.hasPermi('resource:vps:list')")
     @GetMapping("/customerTrafficRank")
-    public AjaxResult customerTrafficRank(@RequestParam(defaultValue = "30") Integer days) {
-        return success(proxyNodeTrafficService.getCustomerTrafficRank(normalizeDays(days)));
+    public AjaxResult customerTrafficRank(@RequestParam(defaultValue = "day") String range,
+                                          @RequestParam(required = false) String startTime,
+                                          @RequestParam(required = false) String endTime) {
+        Date[] bounds = resolveCustomerTrafficBounds(range, startTime, endTime);
+        return success(proxyNodeTrafficService.getCustomerTrafficRank(bounds[0], bounds[1]));
     }
 
     private int countVpsByStatus(String status) {
@@ -127,5 +145,68 @@ public class DashboardController extends BaseController {
             return 7;
         }
         return Math.max(1, Math.min(days, 30));
+    }
+
+    private Date[] resolveCustomerTrafficBounds(String range, String startTime, String endTime) {
+        if ("custom".equalsIgnoreCase(range) && startTime != null && endTime != null) {
+            Date customStart = parseDate(startTime, true);
+            Date customEnd = parseDate(endTime, false);
+            if (customStart != null && customEnd != null) {
+                if (customEnd.before(customStart)) {
+                    return new Date[] { parseDate(endTime, true), parseDate(startTime, false) };
+                }
+                return new Date[] { customStart, customEnd };
+            }
+        }
+        return recentBounds(daysForCustomerTrafficRange(range));
+    }
+
+    private int daysForCustomerTrafficRange(String range) {
+        if (range == null || range.trim().isEmpty()) {
+            return 1;
+        }
+        if ("day".equalsIgnoreCase(range)) {
+            return 1;
+        }
+        if ("week".equalsIgnoreCase(range)) {
+            return 7;
+        }
+        if ("year".equalsIgnoreCase(range)) {
+            return 365;
+        }
+        return 30;
+    }
+
+    private Date[] recentBounds(int days) {
+        Calendar start = Calendar.getInstance();
+        start.set(Calendar.HOUR_OF_DAY, 0);
+        start.set(Calendar.MINUTE, 0);
+        start.set(Calendar.SECOND, 0);
+        start.set(Calendar.MILLISECOND, 0);
+        start.add(Calendar.DAY_OF_MONTH, -(Math.max(days, 1) - 1));
+
+        Calendar end = Calendar.getInstance();
+        end.set(Calendar.HOUR_OF_DAY, 23);
+        end.set(Calendar.MINUTE, 59);
+        end.set(Calendar.SECOND, 59);
+        end.set(Calendar.MILLISECOND, 999);
+        return new Date[] { start.getTime(), end.getTime() };
+    }
+
+    private Date parseDate(String value, boolean startOfDay) {
+        try {
+            SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd");
+            format.setLenient(false);
+            Date date = format.parse(value);
+            Calendar calendar = Calendar.getInstance();
+            calendar.setTime(date);
+            calendar.set(Calendar.HOUR_OF_DAY, startOfDay ? 0 : 23);
+            calendar.set(Calendar.MINUTE, startOfDay ? 0 : 59);
+            calendar.set(Calendar.SECOND, startOfDay ? 0 : 59);
+            calendar.set(Calendar.MILLISECOND, startOfDay ? 0 : 999);
+            return calendar.getTime();
+        } catch (ParseException ignored) {
+            return null;
+        }
     }
 }

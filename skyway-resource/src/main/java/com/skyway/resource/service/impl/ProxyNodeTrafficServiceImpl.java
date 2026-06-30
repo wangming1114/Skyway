@@ -152,8 +152,8 @@ public class ProxyNodeTrafficServiceImpl implements IProxyNodeTrafficService {
     }
 
     @Override
-    public List<Map<String, Object>> getCustomerTrafficRank(int days) {
-        List<Map<String, Object>> rows = proxyNodeTrafficMapper.selectCustomerTrafficRank(daysAgo(days));
+    public List<Map<String, Object>> getCustomerTrafficRank(Date fromTime, Date toTime) {
+        List<Map<String, Object>> rows = proxyNodeTrafficMapper.selectCustomerTrafficRank(fromTime, toTime);
         if (rows == null) {
             return java.util.Collections.emptyList();
         }
@@ -162,6 +162,27 @@ public class ProxyNodeTrafficServiceImpl implements IProxyNodeTrafficService {
             long totalTx = toLong(row.get("totalTx"), row.get("totaltx"));
             row.put("customerId", firstValue(row, "customerId", "customerid"));
             row.put("username", firstValue(row, "username", "USERNAME"));
+            row.put("nodeId", firstValue(row, "nodeId", "nodeid"));
+            row.put("nodeName", firstValue(row, "nodeName", "nodename"));
+            row.put("totalRx", totalRx);
+            row.put("totalTx", totalTx);
+            row.put("totalTraffic", totalRx + totalTx);
+        }
+        return rows;
+    }
+
+    @Override
+    public List<Map<String, Object>> getVpsTrafficRank(Date fromTime, Date toTime) {
+        List<Map<String, Object>> rows = proxyNodeTrafficMapper.selectVpsTrafficRank(fromTime, toTime);
+        if (rows == null) {
+            return java.util.Collections.emptyList();
+        }
+        for (Map<String, Object> row : rows) {
+            long totalRx = toLong(row.get("totalRx"), row.get("totalrx"));
+            long totalTx = toLong(row.get("totalTx"), row.get("totaltx"));
+            row.put("instanceId", firstValue(row, "instanceId", "instanceid"));
+            row.put("instanceName", firstValue(row, "instanceName", "instancename"));
+            row.put("instanceIp", firstValue(row, "instanceIp", "instanceip"));
             row.put("nodeCount", toLong(row.get("nodeCount"), row.get("nodecount")));
             row.put("totalRx", totalRx);
             row.put("totalTx", totalTx);

@@ -2,14 +2,18 @@ package com.skyway.web.controller.resource;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.Arrays;
+import java.util.Calendar;
 import java.util.Collections;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -83,15 +87,109 @@ public class DashboardControllerTest {
     }
 
     @Test
-    public void customerTrafficRankUsesRequestedDays() {
+    public void customerTrafficRankUsesShortcutRangeBounds() {
         Map<String, Object> row = new HashMap<>();
         row.put("customerId", 8L);
         row.put("username", "alice");
+        row.put("nodeId", 18L);
+        row.put("nodeName", "alice-node-1");
         row.put("totalTraffic", 200L);
-        when(proxyNodeTrafficService.getCustomerTrafficRank(30)).thenReturn(Collections.singletonList(row));
+        when(proxyNodeTrafficService.getCustomerTrafficRank(any(Date.class), any(Date.class))).thenReturn(Collections.singletonList(row));
 
-        AjaxResult result = controller.customerTrafficRank(30);
+        AjaxResult result = controller.customerTrafficRank("week", null, null);
 
         assertEquals(Collections.singletonList(row), result.get("data"));
+        ArgumentCaptor<Date> fromCaptor = ArgumentCaptor.forClass(Date.class);
+        ArgumentCaptor<Date> toCaptor = ArgumentCaptor.forClass(Date.class);
+        verify(proxyNodeTrafficService).getCustomerTrafficRank(fromCaptor.capture(), toCaptor.capture());
+        assertEquals(6L, (toCaptor.getValue().getTime() - fromCaptor.getValue().getTime()) / (24L * 60L * 60L * 1000L));
+    }
+
+    @Test
+    public void vpsTrafficRankUsesShortcutRangeBounds() {
+        Map<String, Object> row = new HashMap<>();
+        row.put("instanceId", 3L);
+        row.put("instanceName", "vps-3");
+        row.put("totalTraffic", 300L);
+        when(proxyNodeTrafficService.getVpsTrafficRank(any(Date.class), any(Date.class))).thenReturn(Collections.singletonList(row));
+
+        AjaxResult result = controller.vpsTrafficRank("week", null, null);
+
+        assertEquals(Collections.singletonList(row), result.get("data"));
+        ArgumentCaptor<Date> fromCaptor = ArgumentCaptor.forClass(Date.class);
+        ArgumentCaptor<Date> toCaptor = ArgumentCaptor.forClass(Date.class);
+        verify(proxyNodeTrafficService).getVpsTrafficRank(fromCaptor.capture(), toCaptor.capture());
+        assertEquals(6L, (toCaptor.getValue().getTime() - fromCaptor.getValue().getTime()) / (24L * 60L * 60L * 1000L));
+    }
+
+    @Test
+    public void vpsTrafficRankUsesCustomDateRangeBounds() {
+        when(proxyNodeTrafficService.getVpsTrafficRank(any(Date.class), any(Date.class))).thenReturn(Collections.emptyList());
+
+        controller.vpsTrafficRank("custom", "2026-06-01", "2026-06-30");
+
+        ArgumentCaptor<Date> fromCaptor = ArgumentCaptor.forClass(Date.class);
+        ArgumentCaptor<Date> toCaptor = ArgumentCaptor.forClass(Date.class);
+        verify(proxyNodeTrafficService).getVpsTrafficRank(fromCaptor.capture(), toCaptor.capture());
+        Calendar from = Calendar.getInstance();
+        from.setTime(fromCaptor.getValue());
+        Calendar to = Calendar.getInstance();
+        to.setTime(toCaptor.getValue());
+        assertEquals(0, from.get(Calendar.HOUR_OF_DAY));
+        assertEquals(23, to.get(Calendar.HOUR_OF_DAY));
+    }
+
+    @Test
+    public void customerTrafficRankDefaultsToDayRange() {
+        when(proxyNodeTrafficService.getCustomerTrafficRank(any(Date.class), any(Date.class))).thenReturn(Collections.emptyList());
+
+        controller.customerTrafficRank(null, null, null);
+
+        ArgumentCaptor<Date> fromCaptor = ArgumentCaptor.forClass(Date.class);
+        ArgumentCaptor<Date> toCaptor = ArgumentCaptor.forClass(Date.class);
+        verify(proxyNodeTrafficService).getCustomerTrafficRank(fromCaptor.capture(), toCaptor.capture());
+        assertEquals(0L, (toCaptor.getValue().getTime() - fromCaptor.getValue().getTime()) / (24L * 60L * 60L * 1000L));
+    }
+
+    @Test
+    public void customerTrafficRankUsesCustomDateRangeBounds() {
+        when(proxyNodeTrafficService.getCustomerTrafficRank(any(Date.class), any(Date.class))).thenReturn(Collections.emptyList());
+
+        controller.customerTrafficRank("custom", "2026-06-01", "2026-06-30");
+
+        ArgumentCaptor<Date> fromCaptor = ArgumentCaptor.forClass(Date.class);
+        ArgumentCaptor<Date> toCaptor = ArgumentCaptor.forClass(Date.class);
+        verify(proxyNodeTrafficService).getCustomerTrafficRank(fromCaptor.capture(), toCaptor.capture());
+        Calendar from = Calendar.getInstance();
+        from.setTime(fromCaptor.getValue());
+        Calendar to = Calendar.getInstance();
+        to.setTime(toCaptor.getValue());
+        assertEquals(0, from.get(Calendar.HOUR_OF_DAY));
+        assertEquals(0, from.get(Calendar.MINUTE));
+        assertEquals(0, from.get(Calendar.SECOND));
+        assertEquals(23, to.get(Calendar.HOUR_OF_DAY));
+        assertEquals(59, to.get(Calendar.MINUTE));
+        assertEquals(59, to.get(Calendar.SECOND));
+    }
+
+    @Test
+    public void customerTrafficRankNormalizesReversedCustomDateRange() {
+        when(proxyNodeTrafficService.getCustomerTrafficRank(any(Date.class), any(Date.class))).thenReturn(Collections.emptyList());
+
+        controller.customerTrafficRank("custom", "2026-06-30", "2026-06-01");
+
+        ArgumentCaptor<Date> fromCaptor = ArgumentCaptor.forClass(Date.class);
+        ArgumentCaptor<Date> toCaptor = ArgumentCaptor.forClass(Date.class);
+        verify(proxyNodeTrafficService).getCustomerTrafficRank(fromCaptor.capture(), toCaptor.capture());
+        Calendar from = Calendar.getInstance();
+        from.setTime(fromCaptor.getValue());
+        Calendar to = Calendar.getInstance();
+        to.setTime(toCaptor.getValue());
+        assertEquals(Calendar.JUNE, from.get(Calendar.MONTH));
+        assertEquals(1, from.get(Calendar.DAY_OF_MONTH));
+        assertEquals(0, from.get(Calendar.HOUR_OF_DAY));
+        assertEquals(Calendar.JUNE, to.get(Calendar.MONTH));
+        assertEquals(30, to.get(Calendar.DAY_OF_MONTH));
+        assertEquals(23, to.get(Calendar.HOUR_OF_DAY));
     }
 }

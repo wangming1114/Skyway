@@ -133,11 +133,19 @@ export function getDashboardVpsTrafficTrend(days) {
   })
 }
 
-export function getDashboardCustomerTrafficRank(days) {
+export function getDashboardVpsTrafficRank(params) {
+  return request({
+    url: '/resource/vps/dashboard/vpsTrafficRank',
+    method: 'get',
+    params
+  })
+}
+
+export function getDashboardCustomerTrafficRank(params) {
   return request({
     url: '/resource/vps/dashboard/customerTrafficRank',
     method: 'get',
-    params: { days }
+    params
   })
 }
 

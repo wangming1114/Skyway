@@ -101,15 +101,32 @@
     <section class="dashboard-grid dashboard-grid--rank">
       <el-card shadow="hover" class="panel-card rank-card">
         <template #header>
-          <div class="panel-header">
+          <div class="panel-header panel-header--wrap">
             <div>
               <div class="panel-title">VPS 流量排行</div>
-              <div class="panel-subtitle">按实例累计流量排序，辅助定位资源压力</div>
+              <div class="panel-subtitle">按所选时间范围排序，并展示实时上传/下载速率</div>
             </div>
-            <el-button link type="primary" @click="goTo('/resource/vps')">全部 VPS</el-button>
+            <div class="rank-filter">
+              <el-radio-group v-model="vpsRankRange" size="small" @change="handleVpsRankRangeChange">
+                <el-radio-button v-for="item in rankRangeOptions" :key="item.value" :label="item.value">{{ item.label }}</el-radio-button>
+              </el-radio-group>
+              <el-date-picker
+                v-if="vpsRankRange === 'custom'"
+                v-model="vpsRankDateRange"
+                type="daterange"
+                value-format="YYYY-MM-DD"
+                range-separator="-"
+                start-placeholder="开始日期"
+                end-placeholder="结束日期"
+                size="small"
+                class="rank-filter__date"
+                @change="loadVpsTrafficRank"
+              />
+              <el-button link type="primary" @click="goTo('/resource/vps')">全部 VPS</el-button>
+            </div>
           </div>
         </template>
-        <el-table v-loading="loading" :data="vpsRankList" size="small" stripe height="360">
+        <el-table v-loading="loading || vpsRankLoading" :data="vpsRankList" size="small" stripe height="360">
           <el-table-column label="#" width="48" align="center">
             <template #default="{ $index }">
               <span class="rank-index">{{ $index + 1 }}</span>
@@ -118,14 +135,14 @@
           <el-table-column label="VPS" min-width="150" align="left" show-overflow-tooltip>
             <template #default="{ row }">
               <div class="name-cell">
-                <el-link type="primary" :underline="false" @click="goVpsDetail(row.id)">{{ row.name || ('VPS #' + row.id) }}</el-link>
-                <small>{{ row.ip || '-' }}</small>
+                <el-link type="primary" :underline="false" @click="goVpsDetail(row.instanceId)">{{ row.instanceName || ('VPS #' + row.instanceId) }}</el-link>
+                <small>{{ row.instanceIp || '-' }}</small>
               </div>
             </template>
           </el-table-column>
           <el-table-column label="节点" prop="nodeCount" width="70" align="center" />
-          <el-table-column label="累计流量" width="130" align="right">
-            <template #default="{ row }">{{ formatTraffic(row.totalTrafficBytes) }}</template>
+          <el-table-column label="范围流量" width="130" align="right">
+            <template #default="{ row }">{{ formatTraffic(row.totalTraffic) }}</template>
           </el-table-column>
           <el-table-column label="当前速率" min-width="160" show-overflow-tooltip>
             <template #default="{ row }">{{ instanceSpeedText(row) }}</template>
@@ -140,50 +157,32 @@
 
       <el-card shadow="hover" class="panel-card rank-card">
         <template #header>
-          <div class="panel-header">
+          <div class="panel-header panel-header--wrap">
             <div>
-              <div class="panel-title">用户流量排行</div>
-              <div class="panel-subtitle">按用户名下节点累计流量排序</div>
+              <div class="panel-title">用户节点流量排行</div>
+              <div class="panel-subtitle">按用户节点维度统计，支持日、周、月、年和自定义范围</div>
             </div>
-            <el-button link type="primary" @click="goTo('/member/customer')">全部用户</el-button>
+            <div class="rank-filter">
+              <el-radio-group v-model="customerRankRange" size="small" @change="handleCustomerRankRangeChange">
+                <el-radio-button v-for="item in customerRankRangeOptions" :key="item.value" :label="item.value">{{ item.label }}</el-radio-button>
+              </el-radio-group>
+              <el-date-picker
+                v-if="customerRankRange === 'custom'"
+                v-model="customerRankDateRange"
+                type="daterange"
+                value-format="YYYY-MM-DD"
+                range-separator="-"
+                start-placeholder="开始日期"
+                end-placeholder="结束日期"
+                size="small"
+                class="rank-filter__date"
+                @change="loadCustomerTrafficRank"
+              />
+              <el-button link type="primary" @click="goTo('/member/customer')">全部用户</el-button>
+            </div>
           </div>
         </template>
-        <el-table v-loading="loading" :data="customerRankList" size="small" stripe height="360">
-          <el-table-column label="#" width="48" align="center">
-            <template #default="{ $index }">
-              <span class="rank-index">{{ $index + 1 }}</span>
-            </template>
-          </el-table-column>
-          <el-table-column label="用户" min-width="140" align="left" show-overflow-tooltip>
-            <template #default="{ row }">
-              <div class="name-cell">
-                <el-link type="primary" :underline="false" @click="goCustomerDetail(row.id)">{{ row.username || ('用户 #' + row.id) }}</el-link>
-                <small>{{ row.status === '1' ? '已停用' : '正常' }}</small>
-              </div>
-            </template>
-          </el-table-column>
-          <el-table-column label="节点" prop="nodeCount" width="70" align="center" />
-          <el-table-column label="累计流量" width="130" align="right">
-            <template #default="{ row }">{{ formatTraffic(row.totalTraffic) }}</template>
-          </el-table-column>
-          <el-table-column label="到期节点" prop="expiringCount" width="90" align="center" />
-          <el-table-column label="限速节点" prop="limitedCount" width="90" align="center" />
-        </el-table>
-      </el-card>
-    </section>
-
-    <section class="dashboard-grid dashboard-grid--detail">
-      <el-card shadow="hover" class="panel-card">
-        <template #header>
-          <div class="panel-header">
-            <div>
-              <div class="panel-title">近 30 天客户流量排行</div>
-              <div class="panel-subtitle">按客户名下节点流量倒序展示</div>
-            </div>
-            <el-button link type="primary" @click="goTo('/member/customer')">全部用户</el-button>
-          </div>
-        </template>
-        <el-table v-loading="loading" :data="monthlyCustomerRankList" size="small" stripe height="300">
+        <el-table v-loading="loading || customerRankLoading" :data="customerNodeRankList" size="small" stripe height="360">
           <el-table-column label="#" width="48" align="center">
             <template #default="{ $index }">
               <span class="rank-index">{{ $index + 1 }}</span>
@@ -193,22 +192,32 @@
             <template #default="{ row }">
               <div class="name-cell">
                 <el-link type="primary" :underline="false" @click="goCustomerDetail(row.customerId)">{{ row.username || ('用户 #' + row.customerId) }}</el-link>
-                <small>{{ row.nodeCount || 0 }} 个节点</small>
+                <small>ID: {{ row.customerId || '-' }}</small>
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="下载" width="120" align="right">
+          <el-table-column label="节点" min-width="150" align="left" show-overflow-tooltip>
+            <template #default="{ row }">
+              <div class="name-cell">
+                <span>{{ row.nodeName || ('节点 #' + row.nodeId) }}</span>
+                <small>ID: {{ row.nodeId || '-' }}</small>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column label="下载" width="110" align="right">
             <template #default="{ row }">{{ formatTraffic(row.totalRx) }}</template>
           </el-table-column>
-          <el-table-column label="上传" width="120" align="right">
+          <el-table-column label="上传" width="110" align="right">
             <template #default="{ row }">{{ formatTraffic(row.totalTx) }}</template>
           </el-table-column>
-          <el-table-column label="合计" width="130" align="right">
-            <template #default="{ row }"><strong>{{ formatTraffic(row.totalTraffic) }}</strong></template>
+          <el-table-column label="合计" width="120" align="right">
+            <template #default="{ row }">{{ formatTraffic(row.totalTraffic) }}</template>
           </el-table-column>
         </el-table>
       </el-card>
+    </section>
 
+    <section class="dashboard-grid dashboard-grid--detail">
       <el-card shadow="hover" class="panel-card detail-card">
         <template #header>
           <div class="panel-header">
@@ -253,6 +262,7 @@ import * as echarts from 'echarts'
 import {
   getDashboardCustomerTrafficRank,
   getDashboardSummary,
+  getDashboardVpsTrafficRank,
   getDashboardVpsTrafficTrend,
   getInstanceSpeedSnapshot,
   getProxyNodeTraffic,
@@ -288,7 +298,10 @@ const nodeTrafficMap = ref({})
 const speedMap = ref({})
 const trafficTrend = ref([])
 const vpsTrafficRows = ref([])
-const monthlyCustomerRankList = ref([])
+const vpsRankRows = ref([])
+const vpsRankLoading = ref(false)
+const customerNodeRankList = ref([])
+const customerRankLoading = ref(false)
 const trafficPeriodRows = ref({})
 const trafficRange = ref(7)
 const trafficRangeOptions = [
@@ -297,6 +310,18 @@ const trafficRangeOptions = [
   { label: '15天', value: 15 },
   { label: '月', value: 30 }
 ]
+const rankRangeOptions = [
+  { label: '日', value: 'day' },
+  { label: '周', value: 'week' },
+  { label: '月', value: 'month' },
+  { label: '年', value: 'year' },
+  { label: '自定义', value: 'custom' }
+]
+const vpsRankRange = ref('day')
+const vpsRankDateRange = ref([])
+const customerRankRange = ref('day')
+const customerRankDateRange = ref([])
+const customerRankRangeOptions = rankRangeOptions
 
 const trafficTrendRef = ref(null)
 let trafficTrendChart = null
@@ -369,25 +394,8 @@ const periodSummaryCards = computed(() => trafficRangeOptions.map(option => buil
 const currentPeriodSummary = computed(() => buildPeriodSummary(trafficRange.value, trafficRangeLabel.value))
 
 const vpsRankList = computed(() => {
-  return [...instances.value]
-    .sort((a, b) => Number(b.totalTrafficBytes || 0) - Number(a.totalTrafficBytes || 0))
-    .slice(0, 10)
-})
-
-const customerRankList = computed(() => {
-  const customerMap = new Map(customers.value.map(row => [row.id, { ...row, nodeCount: 0, totalTraffic: 0, expiringCount: 0, limitedCount: 0 }]))
-  nodes.value.forEach(node => {
-    if (node.customerId == null) return
-    const row = customerMap.get(node.customerId) || { id: node.customerId, username: '用户 #' + node.customerId, nodeCount: 0, totalTraffic: 0, expiringCount: 0, limitedCount: 0 }
-    row.nodeCount += 1
-    row.totalTraffic += nodeTrafficTotal(node.id)
-    if (isExpiringWithin(node.expireTime, 30)) row.expiringCount += 1
-    if (node.rateLimit) row.limitedCount += 1
-    customerMap.set(node.customerId, row)
-  })
-  return [...customerMap.values()]
-    .filter(row => row.nodeCount > 0 || row.totalTraffic > 0)
-    .sort((a, b) => Number(b.totalTraffic || 0) - Number(a.totalTraffic || 0))
+  return vpsRankRows.value
+    .map(row => ({ ...row, status: instanceStatus(row.instanceId) }))
     .slice(0, 10)
 })
 
@@ -408,22 +416,22 @@ const expiringNodeList = computed(() => {
 async function loadDashboard() {
   loading.value = true
   try {
-    const [summaryRes, instanceRes, nodeRes, customerRes, speedRes, customerRankRes] = await Promise.all([
+    const [summaryRes, instanceRes, nodeRes, customerRes, speedRes] = await Promise.all([
       getDashboardSummary().catch(() => ({ data: {} })),
       listInstance({ pageNum: 1, pageSize: 100 }).catch(() => ({ rows: [] })),
       listProxyNode({ pageNum: 1, pageSize: 200 }).catch(() => ({ rows: [] })),
       listCustomer({ pageNum: 1, pageSize: 200 }).catch(() => ({ rows: [] })),
-      getInstanceSpeedSnapshot().catch(() => ({ data: {} })),
-      getDashboardCustomerTrafficRank(30).catch(() => ({ data: [] }))
+      getInstanceSpeedSnapshot().catch(() => ({ data: {} }))
     ])
     Object.assign(summary.value, summaryRes.data || {})
     instances.value = instanceRes.rows || []
     nodes.value = nodeRes.rows || []
     customers.value = customerRes.rows || []
     speedMap.value = buildSpeedMap(instances.value, speedRes.data || {})
-    monthlyCustomerRankList.value = customerRankRes.data || []
     await loadNodeTraffic()
     await loadTrafficPeriodSummary()
+    await loadVpsTrafficRank()
+    await loadCustomerTrafficRank()
     setVpsTrafficRowsForRange()
     await nextTick()
     renderCharts()
@@ -464,6 +472,63 @@ async function handleTrafficRangeChange() {
 async function setTrafficRange(days) {
   trafficRange.value = days
   await handleTrafficRangeChange()
+}
+
+async function handleVpsRankRangeChange() {
+  if (vpsRankRange.value !== 'custom') {
+    vpsRankDateRange.value = []
+    await loadVpsTrafficRank()
+  }
+}
+
+async function loadVpsTrafficRank() {
+  const params = buildRankParams(vpsRankRange.value, vpsRankDateRange.value)
+  if (!params) {
+    vpsRankRows.value = []
+    return
+  }
+  vpsRankLoading.value = true
+  try {
+    const res = await getDashboardVpsTrafficRank(params).catch(() => ({ data: [] }))
+    vpsRankRows.value = res.data || []
+  } finally {
+    vpsRankLoading.value = false
+  }
+}
+
+async function handleCustomerRankRangeChange() {
+  if (customerRankRange.value !== 'custom') {
+    customerRankDateRange.value = []
+    await loadCustomerTrafficRank()
+  }
+}
+
+async function loadCustomerTrafficRank() {
+  const params = buildRankParams(customerRankRange.value, customerRankDateRange.value)
+  if (!params) {
+    customerNodeRankList.value = []
+    return
+  }
+  customerRankLoading.value = true
+  try {
+    const res = await getDashboardCustomerTrafficRank(params).catch(() => ({ data: [] }))
+    customerNodeRankList.value = res.data || []
+  } finally {
+    customerRankLoading.value = false
+  }
+}
+
+function buildRankParams(range, dateRange) {
+  const params = { range }
+  if (range !== 'custom') {
+    return params
+  }
+  if (!dateRange || dateRange.length !== 2) {
+    return null
+  }
+  params.startTime = dateRange[0]
+  params.endTime = dateRange[1]
+  return params
 }
 
 async function loadTrafficPeriodSummary() {
@@ -610,9 +675,16 @@ function instanceName(instanceId) {
   return instance?.name || ('VPS #' + instanceId)
 }
 
+function instanceStatus(instanceId) {
+  const instance = instances.value.find(row => row.id === instanceId)
+  return instance?.status || ''
+}
+
 function instanceSpeedText(row) {
-  const speed = speedMap.value[row.id]
-  if (row.status !== 'running' || speed?.skipped) return '未监控'
+  const instanceId = row.id ?? row.instanceId
+  const status = row.status || instanceStatus(instanceId)
+  const speed = speedMap.value[instanceId]
+  if (status !== 'running' || speed?.skipped) return '未监控'
   if (!speed || speed.error) return '-'
   return `↑ ${formatSpeedFromMb(speed.totalUpMbps)} / ↓ ${formatSpeedFromMb(speed.totalDownMbps)}`
 }
@@ -653,14 +725,6 @@ function expireText(expireTime) {
 
 function isExpired(expireTime) {
   return !!expireTime && new Date(expireTime) < new Date()
-}
-
-function isExpiringWithin(expireTime, days) {
-  if (!expireTime) return false
-  const now = new Date()
-  const end = new Date(now.getTime() + days * 24 * 60 * 60 * 1000)
-  const target = new Date(expireTime)
-  return target >= now && target <= end
 }
 
 function goTo(path) {
@@ -765,9 +829,12 @@ onUnmounted(() => {
   grid-template-columns: minmax(0, 2fr) minmax(360px, 1fr);
 }
 
-.dashboard-grid--rank,
-.dashboard-grid--detail {
+.dashboard-grid--rank {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.dashboard-grid--detail {
+  grid-template-columns: 1fr;
 }
 
 .panel-card {
@@ -783,6 +850,10 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+.panel-header--wrap {
+  flex-wrap: wrap;
 }
 
 .panel-title {
@@ -1002,6 +1073,18 @@ onUnmounted(() => {
   color: var(--el-text-color-secondary);
 }
 
+.rank-filter {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.rank-filter__date {
+  width: 230px;
+}
+
 .rank-index {
   display: inline-flex;
   align-items: center;
@@ -1026,6 +1109,14 @@ onUnmounted(() => {
     text-overflow: ellipsis;
     white-space: nowrap;
     color: var(--el-text-color-secondary);
+  }
+
+  span {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--el-text-color-primary);
   }
 }
 
@@ -1090,6 +1181,14 @@ onUnmounted(() => {
   .period-grid,
   .period-detail__list {
     grid-template-columns: 1fr;
+  }
+
+  .rank-filter {
+    justify-content: flex-start;
+  }
+
+  .rank-filter__date {
+    width: 100%;
   }
 }
 </style>
