@@ -145,7 +145,7 @@
             <template #default="{ row }">{{ formatTraffic(row.totalTraffic) }}</template>
           </el-table-column>
           <el-table-column label="当前速率" min-width="160" show-overflow-tooltip>
-            <template #default="{ row }">{{ instanceSpeedText(row) }}</template>
+            <template #default="{ row }">{{ row.realtimeSpeedText }}</template>
           </el-table-column>
           <el-table-column label="状态" width="80" align="center">
             <template #default="{ row }">
@@ -402,7 +402,15 @@ const currentPeriodSummary = computed(() => buildPeriodSummary(trafficRange.valu
 
 const vpsRankList = computed(() => {
   return vpsRankRows.value
-    .map(row => ({ ...row, status: instanceStatus(row.instanceId) }))
+    .map(row => {
+      const instanceId = row.id ?? row.instanceId
+      const status = row.status || instanceStatus(instanceId)
+      return {
+        ...row,
+        status,
+        realtimeSpeedText: instanceSpeedText(instanceId, status)
+      }
+    })
     .slice(0, 10)
 })
 
@@ -692,10 +700,8 @@ function instanceStatus(instanceId) {
   return instance?.status || ''
 }
 
-function instanceSpeedText(row) {
-  const instanceId = row.id ?? row.instanceId
-  const status = row.status || instanceStatus(instanceId)
-  const speed = speedMap.value[instanceId]
+function instanceSpeedText(instanceId, status) {
+  const speed = speedMap.value[String(instanceId)] || speedMap.value[instanceId]
   if (status !== 'running' || speed?.skipped) return '未监控'
   if (!speed || speed.error) return '-'
   return `↑ ${formatSpeedFromMb(speed.totalUpMbps)} / ↓ ${formatSpeedFromMb(speed.totalDownMbps)}`
