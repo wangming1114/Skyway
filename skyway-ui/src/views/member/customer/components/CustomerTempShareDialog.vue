@@ -1,14 +1,16 @@
 <template>
-  <el-dialog title="临时访问" v-model="visible" width="760px" append-to-body destroy-on-close @open="loadList">
+  <el-dialog title="订阅信息访问" v-model="visible" width="760px" append-to-body destroy-on-close @open="loadList">
     <el-form ref="formRef" :model="form" :rules="rules" label-width="92px" class="temp-share-form">
       <el-form-item label="有效期" prop="expireTime">
         <el-date-picker
           v-model="form.expireTime"
+          :disabled="form.permanent"
           type="datetime"
           placeholder="选择过期时间"
           value-format="YYYY-MM-DD HH:mm:ss"
           style="width: 100%"
         />
+        <el-checkbox v-model="form.permanent" class="permanent-check" @change="handlePermanentChange">永久有效</el-checkbox>
       </el-form-item>
       <el-form-item label="访问密码" prop="accessPassword">
         <el-input v-model="form.accessPassword" type="password" maxlength="32" show-password placeholder="请输入访问密码">
@@ -30,7 +32,8 @@
       </el-table-column>
       <el-table-column label="有效期" width="170" align="center">
         <template #default="{ row }">
-          <span :class="{ 'is-expired': isExpired(row.expireTime) }">{{ row.expireTime || '-' }}</span>
+          <span v-if="!row.expireTime">永久</span>
+          <span v-else :class="{ 'is-expired': isExpired(row.expireTime) }">{{ row.expireTime }}</span>
         </template>
       </el-table-column>
       <el-table-column label="状态" width="90" align="center">
@@ -80,10 +83,22 @@ const shareList = ref([])
 const sharePasswordMap = ref(loadSharePasswordMap())
 const form = reactive({
   expireTime: '',
-  accessPassword: ''
+  accessPassword: '',
+  permanent: false
 })
 const rules = {
-  expireTime: [{ required: true, message: '请选择有效期', trigger: 'change' }],
+  expireTime: [
+    {
+      validator: (rule, value, callback) => {
+        if (!form.permanent && !value) {
+          callback(new Error('请选择有效期或勾选永久有效'))
+          return
+        }
+        callback()
+      },
+      trigger: 'change'
+    }
+  ],
   accessPassword: [
     { required: true, message: '请输入访问密码', trigger: 'blur' },
     { min: 4, max: 32, message: '访问密码长度为 4-32 个字符', trigger: 'blur' }
@@ -116,13 +131,14 @@ function submitCreate() {
     const accessPassword = form.accessPassword
     creating.value = true
     addCustomerTempShare(props.customerId, {
-      expireTime: form.expireTime,
+      expireTime: form.permanent ? null : form.expireTime,
       accessPassword
     }).then(res => {
       form.expireTime = ''
       form.accessPassword = ''
+      form.permanent = false
       formRef.value?.clearValidate()
-      proxy.$modal.msgSuccess('临时访问链接已生成')
+      proxy.$modal.msgSuccess('订阅信息访问链接已生成')
       loadList()
       if (res.data?.token) {
         rememberSharePassword(res.data.token, accessPassword)
@@ -132,6 +148,13 @@ function submitCreate() {
       creating.value = false
     })
   })
+}
+
+function handlePermanentChange(value) {
+  if (value) {
+    form.expireTime = ''
+  }
+  formRef.value?.validateField('expireTime')
 }
 
 function generatePassword() {
@@ -159,7 +182,7 @@ function shuffleChars(chars) {
 }
 
 function handleRevoke(row) {
-  proxy.$modal.confirm('确认作废该临时访问链接吗？').then(() => {
+  proxy.$modal.confirm('确认作废该订阅信息访问链接吗？').then(() => {
     return revokeCustomerTempShare(row.id)
   }).then(() => {
     proxy.$modal.msgSuccess('已作废')
@@ -227,6 +250,9 @@ function isExpired(expireTime) {
 <style scoped>
 .temp-share-form {
   margin-bottom: 12px;
+}
+.permanent-check {
+  margin-top: 6px;
 }
 .is-expired {
   color: var(--el-color-danger);

@@ -4,7 +4,7 @@
       <template #header>
         <span>客户详情</span>
         <span style="float: right">
-          <el-button v-if="customer.id" type="primary" link icon="Link" @click="tempShareVisible = true">临时访问</el-button>
+          <el-button v-if="customer.id" type="primary" link icon="Link" @click="tempShareVisible = true">订阅信息访问</el-button>
           <el-button type="primary" link icon="Back" @click="goBack">返回</el-button>
         </span>
       </template>

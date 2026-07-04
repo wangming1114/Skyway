@@ -4,7 +4,7 @@ import java.util.Date;
 import com.fasterxml.jackson.annotation.JsonFormat;
 
 /**
- * 创建客户订阅临时访问请求
+ * 创建客户订阅信息访问请求
  */
 public class CustomerTempShareCreateBody {
 

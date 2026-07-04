@@ -6,7 +6,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.skyway.common.core.domain.BaseEntity;
 
 /**
- * 客户订阅临时访问链接 mb_customer_temp_share
+ * 客户订阅信息访问链接 mb_customer_temp_share
  */
 public class MbCustomerTempShare extends BaseEntity {
 

@@ -1,7 +1,7 @@
 package com.skyway.web.domain.member;
 
 /**
- * 解锁客户订阅临时访问请求
+ * 解锁客户订阅信息访问请求
  */
 public class CustomerTempShareUnlockBody {
 

@@ -62,6 +62,20 @@ public class MbCustomerTempShareServiceImplTest {
     }
 
     @Test
+    public void createAllowsPermanentExpireTime() {
+        MbCustomer customer = new MbCustomer();
+        customer.setId(8L);
+        when(customerMapper.selectById(8L)).thenReturn(customer);
+        when(tempShareMapper.insert(any(MbCustomerTempShare.class))).thenReturn(1);
+
+        MbCustomerTempShare created = service.create(8L, "plain-pass", null, "admin");
+
+        assertEquals(null, created.getExpireTime());
+        assertEquals("0", created.getStatus());
+        verify(tempShareMapper).insert(any(MbCustomerTempShare.class));
+    }
+
+    @Test
     public void createRejectsMissingCustomer() {
         when(customerMapper.selectById(404L)).thenReturn(null);
 
@@ -92,7 +106,7 @@ public class MbCustomerTempShareServiceImplTest {
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> service.unlock("token-1", "right-pass"));
 
-        assertEquals("临时访问已过期", ex.getMessage());
+        assertEquals("订阅信息访问已过期", ex.getMessage());
     }
 
     @Test
@@ -120,6 +134,19 @@ public class MbCustomerTempShareServiceImplTest {
         assertEquals(8L, queryCaptor.getValue().getCustomerId());
         assertEquals("unexpired", queryCaptor.getValue().getExpireStatus());
         assertEquals("0", queryCaptor.getValue().getStatus());
+    }
+
+    @Test
+    public void unlockAllowsPermanentShare() {
+        MbCustomerTempShare share = activeShare();
+        share.setExpireTime(null);
+        share.setAccessPassword(new BCryptPasswordEncoder().encode("right-pass"));
+        when(tempShareMapper.selectByToken("token-1")).thenReturn(share);
+        when(proxyNodeService.selectList(any(ProxyNode.class))).thenReturn(Arrays.asList(new ProxyNode()));
+
+        List<ProxyNode> nodes = service.unlock("token-1", "right-pass");
+
+        assertEquals(1, nodes.size());
     }
 
     private MbCustomerTempShare activeShare() {

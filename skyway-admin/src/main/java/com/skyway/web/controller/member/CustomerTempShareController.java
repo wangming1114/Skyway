@@ -19,7 +19,7 @@ import com.skyway.web.domain.member.CustomerTempShareCreateBody;
 import com.skyway.web.domain.member.CustomerTempShareUnlockBody;
 
 /**
- * 客户订阅临时访问
+ * 客户订阅信息访问
  */
 @RestController
 public class CustomerTempShareController extends BaseController {
@@ -34,7 +34,7 @@ public class CustomerTempShareController extends BaseController {
     }
 
     @PreAuthorize("@ss.hasPermi('member:customer:query')")
-    @Log(title = "客户临时访问", businessType = BusinessType.INSERT)
+    @Log(title = "客户订阅信息访问", businessType = BusinessType.INSERT)
     @PostMapping("/member/customer/{customerId}/temp-shares")
     public AjaxResult create(@PathVariable Long customerId, @RequestBody CustomerTempShareCreateBody body) {
         try {
@@ -45,7 +45,7 @@ public class CustomerTempShareController extends BaseController {
     }
 
     @PreAuthorize("@ss.hasPermi('member:customer:query')")
-    @Log(title = "客户临时访问", businessType = BusinessType.UPDATE)
+    @Log(title = "客户订阅信息访问", businessType = BusinessType.UPDATE)
     @DeleteMapping("/member/customer/temp-shares/{id}")
     public AjaxResult revoke(@PathVariable Long id) {
         try {

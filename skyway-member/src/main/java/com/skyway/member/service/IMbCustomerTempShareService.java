@@ -6,7 +6,7 @@ import com.skyway.member.domain.MbCustomerTempShare;
 import com.skyway.resource.domain.ProxyNode;
 
 /**
- * 客户订阅临时访问链接服务
+ * 客户订阅信息访问链接服务
  */
 public interface IMbCustomerTempShareService {
 

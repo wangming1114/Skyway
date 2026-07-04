@@ -51,7 +51,7 @@ export const constantRoutes = [
     path: '/share/customer/:token',
     component: () => import('@/views/share/customer/index'),
     hidden: true,
-    meta: { title: '订阅临时访问' }
+    meta: { title: '订阅信息' }
   },
   {
     path: "/:pathMatch(.*)*",

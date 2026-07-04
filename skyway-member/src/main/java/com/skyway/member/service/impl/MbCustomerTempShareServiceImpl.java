@@ -17,7 +17,7 @@ import com.skyway.resource.domain.ProxyNode;
 import com.skyway.resource.service.IProxyNodeService;
 
 /**
- * 客户订阅临时访问链接服务实现
+ * 客户订阅信息访问链接服务实现
  */
 @Service
 public class MbCustomerTempShareServiceImpl implements IMbCustomerTempShareService {
@@ -38,7 +38,7 @@ public class MbCustomerTempShareServiceImpl implements IMbCustomerTempShareServi
 
     @Override
     public MbCustomerTempShare create(Long customerId, String accessPassword, Date expireTime, String createBy) {
-        if (customerId == null || StringUtils.isBlank(accessPassword) || expireTime == null) {
+        if (customerId == null || StringUtils.isBlank(accessPassword)) {
             throw new IllegalArgumentException("参数错误");
         }
         MbCustomer customer = customerMapper.selectById(customerId);
@@ -97,13 +97,13 @@ public class MbCustomerTempShareServiceImpl implements IMbCustomerTempShareServi
 
     private void validateShare(MbCustomerTempShare share, String accessPassword) {
         if (share == null) {
-            throw new IllegalArgumentException("临时访问不存在");
+            throw new IllegalArgumentException("订阅信息访问不存在");
         }
         if (!"0".equals(share.getStatus())) {
-            throw new IllegalArgumentException("临时访问已作废");
+            throw new IllegalArgumentException("订阅信息访问已作废");
         }
-        if (share.getExpireTime() == null || share.getExpireTime().before(new Date())) {
-            throw new IllegalArgumentException("临时访问已过期");
+        if (share.getExpireTime() != null && share.getExpireTime().before(new Date())) {
+            throw new IllegalArgumentException("订阅信息访问已过期");
         }
         if (!SecurityUtils.matchesPassword(accessPassword, share.getAccessPassword())) {
             throw new IllegalArgumentException("访问密码错误");
