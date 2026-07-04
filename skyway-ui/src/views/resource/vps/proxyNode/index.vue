@@ -40,14 +40,19 @@
 
     <el-table ref="tableRef" v-loading="loading" :data="nodeList" border size="small" @selection-change="handleSelectionChange">
       <el-table-column type="selection" width="50" align="center" />
-      <el-table-column label="节点名称" prop="nodeName" min-width="120" show-overflow-tooltip />
-      <el-table-column label="节点类型" prop="nodeType" width="140">
+      <el-table-column label="节点信息" min-width="220" show-overflow-tooltip>
         <template #default="{ row }">
-          <el-tag size="small" :type="getNodeTypeTagColor(row.nodeType)">{{ row.nodeType }}</el-tag>
+          <div class="node-info-cell">
+            <span class="node-info-name">{{ row.nodeName || '-' }}</span>
+            <el-tag size="small" :type="getNodeTypeTagColor(row.nodeType)">{{ row.nodeType }}</el-tag>
+          </div>
         </template>
       </el-table-column>
-      <el-table-column label="地址" prop="address" min-width="100" show-overflow-tooltip />
-      <el-table-column label="端口" prop="port" width="72" align="center" />
+      <el-table-column label="地址端口" min-width="220" show-overflow-tooltip>
+        <template #default="{ row }">
+          <span class="address-port-cell">{{ row.address || '-' }}<span v-if="row.port">:{{ row.port }}</span></span>
+        </template>
+      </el-table-column>
       <el-table-column label="所属实例" min-width="140" align="center" show-overflow-tooltip>
         <template #default="{ row }">
           <el-link v-if="row.instanceId" type="primary" @click="goVpsDetail(row.instanceId)" :underline="false">
@@ -70,16 +75,22 @@
           <span v-else :class="{ 'expire-expired': isExpired(row.expireTime) }">{{ parseTime(row.expireTime, '{y}-{m}-{d}') }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="流量" min-width="260" align="center">
+      <el-table-column label="流量" min-width="220" align="left" header-align="left">
         <template #default="{ row }">
           <div v-if="trafficMap[row.id]" class="traffic-cell">
-            <div class="traffic-cell-total">{{ nodeTrafficTotalText(row) }}</div>
-            <div class="traffic-cell-speed">{{ nodeRealtimeSpeedText(row) }}</div>
+            <div class="traffic-cell-line">
+              <span class="traffic-cell-label">累计</span>
+              <span>{{ nodeTrafficSummaryText(row) }}</span>
+            </div>
+            <div class="traffic-cell-line">
+              <span class="traffic-cell-label">实时</span>
+              <span>{{ nodeRealtimeSummaryText(row) }}</span>
+            </div>
           </div>
           <span v-else class="text-placeholder">-</span>
         </template>
       </el-table-column>
-      <el-table-column label="限速" min-width="210" align="center">
+      <el-table-column label="限速" min-width="170" align="center">
         <template #default="{ row }">
           <div class="rate-limit-cell">
             <div>{{ rateLimitLogicText(row) }}</div>
@@ -112,10 +123,11 @@
           <span v-else>{{ row.remark || '-' }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="210" align="center" fixed="right">
+      <el-table-column label="操作" width="270" align="center" fixed="right">
         <template #default="{ row }">
           <div class="node-op-actions">
             <el-button link type="primary" size="small" @click="handleDetail(row)">详情</el-button>
+            <el-button link type="primary" size="small" @click="handleShare(row)">订阅信息</el-button>
             <el-button link type="primary" size="small" @click="handleCopyUrl(row)">复制链接</el-button>
             <el-dropdown class="node-op-dropdown" trigger="click" @command="(cmd) => handleNodeCommand(cmd, row)" v-hasPermi="['resource:vps:edit', 'resource:vps:remove']">
               <el-button link type="primary" size="small" icon="DArrowRight">更多</el-button>
@@ -196,7 +208,67 @@
             </el-dropdown-menu>
           </template>
         </el-dropdown>
+        <el-button v-if="detailData?.url" type="primary" plain @click="handleShare(detailData)">订阅信息</el-button>
         <el-button @click="detailVisible = false">关 闭</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog title="订阅信息" v-model="shareVisible" width="760px" append-to-body destroy-on-close>
+      <div v-if="shareData" class="proxy-share-page">
+        <div class="proxy-share-header">
+          <div>
+            <div class="proxy-share-title">{{ shareData.nodeName || shareParsed?.name || '代理节点' }}</div>
+            <div class="proxy-share-subtitle">{{ shareParsed ? `${shareParsed.host}:${shareParsed.port}` : 'VLESS 订阅信息' }}</div>
+          </div>
+          <el-tag v-if="shareData.nodeType" size="small" :type="getNodeTypeTagColor(shareData.nodeType)">{{ shareData.nodeType }}</el-tag>
+        </div>
+
+        <section class="proxy-share-section">
+          <div class="proxy-share-section-head">
+            <div>
+              <div class="proxy-share-section-title">VLESS 原始链接</div>
+              <div class="proxy-share-section-desc">适用于 v2rayN、v2rayNG 等支持 VLESS-REALITY 的客户端。</div>
+            </div>
+            <el-button type="primary" size="small" @click="copyToClipboard(shareVlessUrl)">
+              <el-icon><DocumentCopy /></el-icon> 复制 VLESS
+            </el-button>
+          </div>
+          <el-input :model-value="shareVlessUrl" readonly type="textarea" :rows="3" />
+        </section>
+
+        <section class="proxy-share-section proxy-share-grid">
+          <div>
+            <div class="proxy-share-section-title">小火箭二维码</div>
+            <div class="proxy-share-section-desc">二维码内容为原始 VLESS 链接，小火箭可直接扫码导入。</div>
+            <div class="proxy-share-actions">
+              <el-button size="small" @click="copyToClipboard(shareVlessUrl)">复制链接</el-button>
+              <el-button size="small" @click="downloadQrCode">下载二维码</el-button>
+            </div>
+          </div>
+          <div class="proxy-share-qr">
+            <img v-if="shareQrDataUrl" :src="shareQrDataUrl" alt="小火箭导入二维码" />
+            <span v-else class="proxy-share-qr-loading">生成中...</span>
+          </div>
+        </section>
+
+        <section class="proxy-share-section">
+          <div class="proxy-share-section-head">
+            <div>
+              <div class="proxy-share-section-title">Clash Verge 订阅</div>
+              <div class="proxy-share-section-desc">使用 ACL4SSR 基础配置，通过 api.wcc.best 转换为 Clash 订阅。</div>
+            </div>
+            <div class="proxy-share-actions">
+              <el-button type="primary" size="small" @click="copyToClipboard(shareClashUrl)">
+                <el-icon><DocumentCopy /></el-icon> 复制 Clash 订阅
+              </el-button>
+              <el-button size="small" @click="openClashSubscribe">打开订阅</el-button>
+            </div>
+          </div>
+          <el-input :model-value="shareClashUrl" readonly type="textarea" :rows="4" />
+        </section>
+      </div>
+      <template #footer>
+        <el-button @click="shareVisible = false">关 闭</el-button>
       </template>
     </el-dialog>
 
@@ -307,6 +379,7 @@
 </template>
 
 <script setup name="ProxyNodeList">
+import QRCode from 'qrcode'
 import useUserStore from '@/store/modules/user'
 import {
   listProxyNode,
@@ -322,6 +395,7 @@ import {
 } from '@/api/resource/vps'
 import { listCustomer } from '@/api/member/customer'
 import { parseTime } from '@/utils/skyway'
+import { buildClashSubscribeUrl, parseVlessUrl, safeProxyShareFilename } from '@/utils/proxyShare'
 import { DocumentCopy, Loading, Edit } from '@element-plus/icons-vue'
 
 const { proxy } = getCurrentInstance()
@@ -369,6 +443,16 @@ const detailConfig = computed(() => {
   if (!detailData.value?.configJson) return null
   try { return JSON.parse(detailData.value.configJson) } catch { return null }
 })
+const shareVisible = ref(false)
+const shareData = ref(null)
+const shareVlessUrl = computed(() => (shareData.value?.url || '').trim())
+const shareParsed = computed(() => {
+  if (!shareVlessUrl.value) return null
+  try { return parseVlessUrl(shareVlessUrl.value) } catch { return null }
+})
+const shareClashUrl = computed(() => shareVlessUrl.value ? buildClashSubscribeUrl(shareVlessUrl.value) : '')
+const shareQrDataUrl = ref('')
+const shareBaseName = computed(() => shareData.value?.nodeName || shareParsed.value?.name || 'proxy-share')
 
 const remarkEditVisible = ref(false)
 const remarkEditRow = ref(null)
@@ -604,9 +688,26 @@ function nodeRealtimeSpeedText(row) {
   return '实时：↑ ' + formatSpeedFromMb(speed.upMbps) + ' / ↓ ' + formatSpeedFromMb(speed.downMbps)
 }
 
+function getNodeRealtimeSpeed(row) {
+  if (!row || speedSnapshot.value?.error) return null
+  const port = row.port != null ? String(row.port) : ''
+  const snapshot = resolveSpeedSnapshot(row)
+  return port && snapshot?.ports ? snapshot.ports[port] : null
+}
+
 function nodeTrafficTotalText(row, traffic) {
   const stat = traffic || trafficMap.value[row.id]
   return '累计：' + (stat ? '↑ ' + formatTraffic(stat.totalTx) + ' / ↓ ' + formatTraffic(stat.totalRx) : '-')
+}
+
+function nodeTrafficSummaryText(row) {
+  const stat = row ? trafficMap.value[row.id] : null
+  return stat ? '↑ ' + formatTraffic(stat.totalTx) + ' / ↓ ' + formatTraffic(stat.totalRx) : '-'
+}
+
+function nodeRealtimeSummaryText(row) {
+  const speed = getNodeRealtimeSpeed(row)
+  return speed ? '↑ ' + formatSpeedFromMb(speed.upMbps) + ' / ↓ ' + formatSpeedFromMb(speed.downMbps) : '-'
 }
 
 function loadOptions() {
@@ -639,6 +740,51 @@ function handleDetail(row) {
   getProxyNodeTraffic(row.id).then(r => {
     detailTraffic.value = r.data
   }).catch(() => {})
+}
+
+function handleShare(row) {
+  if (!row?.url) {
+    proxy.$modal.msgWarning('该节点暂无分享链接')
+    return
+  }
+  try {
+    parseVlessUrl(row.url)
+  } catch (e) {
+    proxy.$modal.msgWarning(e.message || '仅支持 VLESS 分享链接')
+    return
+  }
+  shareData.value = { ...row }
+  shareVisible.value = true
+  refreshShareQrCode()
+}
+
+function refreshShareQrCode() {
+  shareQrDataUrl.value = ''
+  if (!shareVlessUrl.value) return
+  QRCode.toDataURL(shareVlessUrl.value, {
+    width: 220,
+    margin: 1,
+    errorCorrectionLevel: 'M'
+  }).then(url => {
+    if (shareVlessUrl.value) shareQrDataUrl.value = url
+  }).catch(() => {
+    proxy.$modal.msgWarning('二维码生成失败，请直接复制 VLESS 链接')
+  })
+}
+
+function downloadQrCode() {
+  if (!shareQrDataUrl.value) return
+  const a = document.createElement('a')
+  a.href = shareQrDataUrl.value
+  a.download = safeProxyShareFilename(shareBaseName.value + '-qrcode', 'png')
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+}
+
+function openClashSubscribe() {
+  if (!shareClashUrl.value) return
+  window.open(shareClashUrl.value, '_blank', 'noopener,noreferrer')
 }
 
 function handleCopyUrl(row) {
@@ -1039,6 +1185,107 @@ onBeforeUnmount(() => {
 .share-url-section { margin-top: 16px; padding: 12px; background: var(--el-fill-color-light); border-radius: 6px; }
 .share-url-label { font-size: 13px; font-weight: 500; margin-bottom: 8px; }
 .share-url-box { display: flex; flex-direction: column; }
+.node-info-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.node-info-name {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.address-port-cell {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 12px;
+  color: var(--el-text-color-primary);
+  word-break: break-all;
+}
+.proxy-share-page {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.proxy-share-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+.proxy-share-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+  line-height: 24px;
+  word-break: break-all;
+}
+.proxy-share-subtitle {
+  margin-top: 2px;
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+}
+.proxy-share-section {
+  padding: 12px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+  background: var(--el-fill-color-blank);
+}
+.proxy-share-section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.proxy-share-section-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+  line-height: 22px;
+}
+.proxy-share-section-desc {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  line-height: 18px;
+}
+.proxy-share-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 244px;
+  align-items: center;
+  gap: 18px;
+}
+.proxy-share-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.proxy-share-actions :deep(.el-button) {
+  margin-left: 0;
+}
+.proxy-share-qr {
+  width: 244px;
+  min-height: 244px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+  background: #fff;
+}
+.proxy-share-qr img {
+  width: 220px;
+  height: 220px;
+  display: block;
+}
 .status-cell { display: inline-flex; align-items: center; gap: 6px; }
 .status-loading { font-size: 14px; margin-right: 2px; }
 .node-op-actions {
@@ -1061,20 +1308,30 @@ onBeforeUnmount(() => {
 .traffic-cell {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  line-height: 1.25;
+  align-items: flex-start;
+  gap: 2px;
+  line-height: 1.35;
   white-space: nowrap;
 }
 .traffic-cell--detail {
   align-items: flex-start;
+}
+.traffic-cell-line {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 4px;
+  width: 100%;
+  font-size: 12px;
+  color: var(--el-text-color-primary);
+}
+.traffic-cell-label {
+  color: var(--el-text-color-secondary);
 }
 .traffic-cell-total {
   color: var(--el-text-color-primary);
 }
 .traffic-cell-speed {
   color: var(--el-text-color-secondary);
-  font-size: 12px;
 }
 .rate-limit-cell {
   font-size: 12px;

@@ -16,22 +16,21 @@
 
     <el-table v-loading="loading" :data="nodeList" border size="small" style="margin-top: 10px" @selection-change="handleSelectionChange">
       <el-table-column type="selection" width="50" align="center" />
-      <el-table-column label="节点名称" prop="nodeName" min-width="120" show-overflow-tooltip>
+      <el-table-column label="节点信息" min-width="220" show-overflow-tooltip>
         <template #default="{ row }">
-          <el-link
-            v-if="linkNodeNameToInstance && row.instanceId"
-            type="primary"
-            :underline="false"
-            @click.stop="goVpsDetail(row.instanceId)"
-          >
-            {{ row.nodeName || '-' }}
-          </el-link>
-          <span v-else>{{ row.nodeName || '-' }}</span>
-        </template>
-      </el-table-column>
-      <el-table-column label="节点类型" prop="nodeType" width="160">
-        <template #default="{ row }">
-          <el-tag size="small" :type="getNodeTypeTagColor(row.nodeType)">{{ row.nodeType }}</el-tag>
+          <div class="node-info-cell">
+            <el-link
+              v-if="linkNodeNameToInstance && row.instanceId"
+              type="primary"
+              :underline="false"
+              class="node-info-name"
+              @click.stop="goVpsDetail(row.instanceId)"
+            >
+              {{ row.nodeName || '-' }}
+            </el-link>
+            <span v-else class="node-info-name">{{ row.nodeName || '-' }}</span>
+            <el-tag size="small" :type="getNodeTypeTagColor(row.nodeType)">{{ row.nodeType }}</el-tag>
+          </div>
         </template>
       </el-table-column>
       <el-table-column v-if="!hideCustomerColumn" label="归属客户" width="120" align="center" show-overflow-tooltip>
@@ -44,24 +43,33 @@
           {{ instanceOptions.find(i => i.id === row.instanceId)?.name ?? row.instanceId ?? '-' }}
         </template>
       </el-table-column>
-      <el-table-column label="地址" prop="address" min-width="100" show-overflow-tooltip />
-      <el-table-column label="端口" prop="port" width="80" align="center" />
-      <el-table-column label="有效期" width="160" align="center">
+      <el-table-column label="地址端口" min-width="220" show-overflow-tooltip>
+        <template #default="{ row }">
+          <span class="address-port-cell">{{ row.address || '-' }}<span v-if="row.port">:{{ row.port }}</span></span>
+        </template>
+      </el-table-column>
+      <el-table-column label="有效期" width="120" align="center">
         <template #default="{ row }">
           <span v-if="!row.expireTime" class="expire-forever">永久</span>
           <span v-else :class="{ 'expire-expired': isExpired(row.expireTime) }">{{ parseTime(row.expireTime, '{y}-{m}-{d}') }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="流量" min-width="260" align="center">
+      <el-table-column label="流量" min-width="220" align="left" header-align="left">
         <template #default="{ row }">
           <div v-if="trafficMap[row.id]" class="traffic-cell">
-            <div class="traffic-cell-total">{{ nodeTrafficTotalText(row) }}</div>
-            <div class="traffic-cell-speed">{{ nodeRealtimeSpeedText(row) }}</div>
+            <div class="traffic-cell-line">
+              <span class="traffic-cell-label">累计</span>
+              <span>{{ nodeTrafficSummaryText(row) }}</span>
+            </div>
+            <div class="traffic-cell-line">
+              <span class="traffic-cell-label">实时</span>
+              <span>{{ nodeRealtimeSummaryText(row) }}</span>
+            </div>
           </div>
           <span v-else class="text-placeholder">-</span>
         </template>
       </el-table-column>
-      <el-table-column label="限速" min-width="210" align="center">
+      <el-table-column label="限速" min-width="170" align="center">
         <template #default="{ row }">
           <div class="rate-limit-cell">
             <div>{{ rateLimitLogicText(row) }}</div>
@@ -1394,6 +1402,12 @@ function nodeRealtimeSpeedText(row) {
   if (!speed) return '实时：-'
   return '实时：↑ ' + formatSpeedFromMb(speed.upMbps) + ' / ↓ ' + formatSpeedFromMb(speed.downMbps)
 }
+function getNodeRealtimeSpeed(row) {
+  if (!row || speedSnapshot.value?.error) return null
+  const port = row.port != null ? String(row.port) : ''
+  const snapshot = resolveSpeedSnapshot(row)
+  return port && snapshot?.ports ? snapshot.ports[port] : null
+}
 function resolveSpeedSnapshot(row) {
   if (!speedSnapshot.value) return null
   if (props.instanceId) return speedSnapshot.value
@@ -1404,6 +1418,14 @@ function resolveSpeedSnapshot(row) {
 function nodeTrafficTotalText(row, traffic) {
   const stat = traffic || trafficMap.value[row.id]
   return '累计：' + (stat ? '↑ ' + formatTraffic(stat.totalTx) + ' / ↓ ' + formatTraffic(stat.totalRx) : '-')
+}
+function nodeTrafficSummaryText(row) {
+  const stat = row ? trafficMap.value[row.id] : null
+  return stat ? '↑ ' + formatTraffic(stat.totalTx) + ' / ↓ ' + formatTraffic(stat.totalRx) : '-'
+}
+function nodeRealtimeSummaryText(row) {
+  const speed = getNodeRealtimeSpeed(row)
+  return speed ? '↑ ' + formatSpeedFromMb(speed.upMbps) + ' / ↓ ' + formatSpeedFromMb(speed.downMbps) : '-'
 }
 function getRateLimit(row) {
   if (!row || row.id == null) return null
@@ -1592,6 +1614,25 @@ watch(() => props.customerId, () => {
   display: flex;
   flex-direction: column;
 }
+.node-info-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.node-info-name {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.address-port-cell {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 12px;
+  color: var(--el-text-color-primary);
+  word-break: break-all;
+}
 .proxy-share-page {
   display: flex;
   flex-direction: column;
@@ -1705,20 +1746,30 @@ watch(() => props.customerId, () => {
 .traffic-cell {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  line-height: 1.25;
+  align-items: flex-start;
+  gap: 2px;
+  line-height: 1.35;
   white-space: nowrap;
 }
 .traffic-cell--detail {
   align-items: flex-start;
+}
+.traffic-cell-line {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 4px;
+  width: 100%;
+  font-size: 12px;
+  color: var(--el-text-color-primary);
+}
+.traffic-cell-label {
+  color: var(--el-text-color-secondary);
 }
 .traffic-cell-total {
   color: var(--el-text-color-primary);
 }
 .traffic-cell-speed {
   color: var(--el-text-color-secondary);
-  font-size: 12px;
 }
 .rate-limit-cell {
   font-size: 12px;
