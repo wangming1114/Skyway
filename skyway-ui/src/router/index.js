@@ -48,6 +48,12 @@ export const constantRoutes = [
     hidden: true
   },
   {
+    path: '/share/customer/:token',
+    component: () => import('@/views/share/customer/index'),
+    hidden: true,
+    meta: { title: '订阅临时访问' }
+  },
+  {
     path: "/:pathMatch(.*)*",
     component: () => import('@/views/error/404'),
     hidden: true

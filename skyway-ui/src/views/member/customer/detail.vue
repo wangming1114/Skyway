@@ -4,6 +4,7 @@
       <template #header>
         <span>客户详情</span>
         <span style="float: right">
+          <el-button v-if="customer.id" type="primary" link icon="Link" @click="tempShareVisible = true">临时访问</el-button>
           <el-button type="primary" link icon="Back" @click="goBack">返回</el-button>
         </span>
       </template>
@@ -43,6 +44,12 @@
         </el-tab-pane>
       </el-tabs>
     </el-card>
+
+    <CustomerTempShareDialog
+      v-if="customer.id"
+      v-model="tempShareVisible"
+      :customer-id="customer.id"
+    />
   </div>
 </template>
 
@@ -50,6 +57,7 @@
 import { getCustomer } from '@/api/member/customer'
 import { parseTime } from '@/utils/skyway'
 import ProxyNodePanel from '@/views/resource/vps/components/ProxyNodePanel.vue'
+import CustomerTempShareDialog from './components/CustomerTempShareDialog.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -59,6 +67,7 @@ const customer = ref({})
 const infoLoading = ref(true)
 const activeTab = ref('bindings')
 const listQuery = ref({})
+const tempShareVisible = ref(false)
 
 function goBack() {
   router.push({ path: '/member/customer', query: listQuery.value })
