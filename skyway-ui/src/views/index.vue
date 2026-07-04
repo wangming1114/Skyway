@@ -196,22 +196,28 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="节点" min-width="150" align="left" show-overflow-tooltip>
+          <el-table-column label="节点" min-width="190" align="left" show-overflow-tooltip>
             <template #default="{ row }">
               <div class="name-cell">
-                <span>{{ row.nodeName || ('节点 #' + row.nodeId) }}</span>
-                <small>ID: {{ row.nodeId || '-' }}</small>
+                <el-link v-if="row.instanceId" type="primary" :underline="false" @click="goVpsDetail(row.instanceId)">
+                  {{ row.instanceName || ('VPS #' + row.instanceId) }}
+                </el-link>
+                <span v-else>{{ row.instanceName || '-' }}</span>
+                <span>{{ row.nodeName || '-' }}</span>
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="下载" width="110" align="right">
-            <template #default="{ row }">{{ formatTraffic(row.totalRx) }}</template>
+          <el-table-column label="实时速率" min-width="160" align="left" show-overflow-tooltip>
+            <template #default="{ row }">{{ nodeRealtimeSpeedText(row) }}</template>
           </el-table-column>
-          <el-table-column label="上传" width="110" align="right">
-            <template #default="{ row }">{{ formatTraffic(row.totalTx) }}</template>
-          </el-table-column>
-          <el-table-column label="合计" width="120" align="right">
-            <template #default="{ row }">{{ formatTraffic(row.totalTraffic) }}</template>
+          <el-table-column label="流量" min-width="150" align="right" show-overflow-tooltip>
+            <template #default="{ row }">
+              <div class="traffic-stack">
+                <span><b>下载</b>{{ formatTraffic(row.totalRx) }}</span>
+                <span><b>上传</b>{{ formatTraffic(row.totalTx) }}</span>
+                <strong><b>合计</b>{{ formatTraffic(row.totalTraffic) }}</strong>
+              </div>
+            </template>
           </el-table-column>
         </el-table>
       </el-card>
@@ -325,6 +331,7 @@ const customerRankRangeOptions = rankRangeOptions
 
 const trafficTrendRef = ref(null)
 let trafficTrendChart = null
+let speedSnapshotTimer = null
 
 const todayTrafficTotal = computed(() => trafficTrend.value.length ? trafficTrend.value[trafficTrend.value.length - 1].total : 0)
 const trafficTrendEmpty = computed(() => !trafficTrend.value.some(item => item.total > 0))
@@ -440,8 +447,13 @@ async function loadDashboard() {
   }
 }
 
+async function loadSpeedSnapshot() {
+  const res = await getInstanceSpeedSnapshot().catch(() => ({ data: {} }))
+  speedMap.value = buildSpeedMap(instances.value, res.data || {})
+}
+
 function buildSpeedMap(rows, snapshot) {
-  const next = {}
+  const next = { ...(snapshot || {}) }
   rows.forEach(row => {
     if (row.id == null) return
     if (row.status !== 'running') {
@@ -689,6 +701,18 @@ function instanceSpeedText(row) {
   return `↑ ${formatSpeedFromMb(speed.totalUpMbps)} / ↓ ${formatSpeedFromMb(speed.totalDownMbps)}`
 }
 
+function nodeRealtimeSpeedText(row) {
+  if (!row) return '-'
+  const instanceId = row.instanceId ?? row.instanceid
+  const port = row.port != null ? String(row.port) : ''
+  const snapshot = speedMap.value[String(instanceId)] || speedMap.value[instanceId]
+  if (snapshot?.skipped) return '未监控'
+  if (!port || !snapshot || snapshot.error) return '-'
+  const speed = snapshot.ports ? snapshot.ports[port] : null
+  if (!speed) return '-'
+  return `↑ ${formatSpeedFromMb(speed.upMbps)} / ↓ ${formatSpeedFromMb(speed.downMbps)}`
+}
+
 function vpsStatusText(status) {
   if (status === 'running') return '运行'
   if (status === 'abnormal') return '异常'
@@ -744,10 +768,15 @@ function goCustomerDetail(id) {
 
 onMounted(() => {
   loadDashboard()
+  speedSnapshotTimer = window.setInterval(loadSpeedSnapshot, 5000)
   window.addEventListener('resize', handleResize)
 })
 
 onUnmounted(() => {
+  if (speedSnapshotTimer) {
+    window.clearInterval(speedSnapshotTimer)
+    speedSnapshotTimer = null
+  }
   window.removeEventListener('resize', handleResize)
   trafficTrendChart?.dispose()
 })
@@ -1111,12 +1140,50 @@ onUnmounted(() => {
     color: var(--el-text-color-secondary);
   }
 
+  .el-link {
+    max-width: 100%;
+  }
+
   span {
     max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     color: var(--el-text-color-primary);
+  }
+}
+
+.traffic-stack {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 118px;
+  max-width: 100%;
+  text-align: right;
+
+  span,
+  strong {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    white-space: nowrap;
+  }
+
+  span {
+    color: var(--el-text-color-secondary);
+    font-size: 12px;
+  }
+
+  strong {
+    color: var(--el-text-color-primary);
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  b {
+    flex: 0 0 auto;
+    color: var(--el-text-color-placeholder);
+    font-weight: 500;
   }
 }
 

@@ -164,6 +164,10 @@ public class ProxyNodeTrafficServiceImpl implements IProxyNodeTrafficService {
             row.put("username", firstValue(row, "username", "USERNAME"));
             row.put("nodeId", firstValue(row, "nodeId", "nodeid"));
             row.put("nodeName", firstValue(row, "nodeName", "nodename"));
+            row.put("port", toLong(row.get("port"), row.get("PORT")));
+            row.put("instanceId", firstValue(row, "instanceId", "instanceid"));
+            row.put("instanceName", firstValue(row, "instanceName", "instancename"));
+            row.put("instanceIp", firstValue(row, "instanceIp", "instanceip"));
             row.put("totalRx", totalRx);
             row.put("totalTx", totalTx);
             row.put("totalTraffic", totalRx + totalTx);

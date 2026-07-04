@@ -88,15 +88,20 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             c.username as username,
             p.id as nodeId,
             p.node_name as nodeName,
+            p.port as port,
+            p.instance_id as instanceId,
+            i.name as instanceName,
+            i.ip as instanceIp,
             ifnull(sum(t.rx_delta), 0) as totalRx,
             ifnull(sum(t.tx_delta), 0) as totalTx
         from res_proxy_node_traffic t
         inner join res_proxy_node p on t.node_id = p.id
         left join mb_customer c on p.customer_id = c.id
+        left join res_instance i on p.instance_id = i.id
         where p.customer_id is not null
           and t.stat_time &gt;= #{fromTime}
           and t.stat_time &lt;= #{toTime}
-        group by p.customer_id, c.username, p.id, p.node_name
+        group by p.customer_id, c.username, p.id, p.node_name, p.port, p.instance_id, i.name, i.ip
         order by (ifnull(sum(t.rx_delta), 0) + ifnull(sum(t.tx_delta), 0)) desc
     </select>
 

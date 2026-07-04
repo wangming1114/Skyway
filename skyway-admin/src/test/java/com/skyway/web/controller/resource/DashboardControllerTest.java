@@ -106,6 +106,26 @@ public class DashboardControllerTest {
     }
 
     @Test
+    public void customerTrafficRankReturnsVpsDisplayFields() {
+        Map<String, Object> row = new HashMap<>();
+        row.put("customerId", 8L);
+        row.put("username", "alice");
+        row.put("nodeId", 18L);
+        row.put("nodeName", "alice-node-1");
+        row.put("instanceId", 3L);
+        row.put("instanceName", "tokyo-vps");
+        row.put("instanceIp", "203.0.113.8");
+        when(proxyNodeTrafficService.getCustomerTrafficRank(any(Date.class), any(Date.class))).thenReturn(Collections.singletonList(row));
+
+        AjaxResult result = controller.customerTrafficRank("day", null, null);
+        Map<?, ?> data = (Map<?, ?>) ((java.util.List<?>) result.get("data")).get(0);
+
+        assertEquals(3L, data.get("instanceId"));
+        assertEquals("tokyo-vps", data.get("instanceName"));
+        assertEquals("203.0.113.8", data.get("instanceIp"));
+    }
+
+    @Test
     public void vpsTrafficRankUsesShortcutRangeBounds() {
         Map<String, Object> row = new HashMap<>();
         row.put("instanceId", 3L);
