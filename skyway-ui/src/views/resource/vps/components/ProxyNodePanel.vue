@@ -94,10 +94,11 @@
           <span v-else>{{ row.remark || '-' }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="210" align="center">
+      <el-table-column label="操作" width="270" align="center">
         <template #default="{ row }">
           <div class="node-op-actions">
             <el-button link type="primary" size="small" @click="handleDetail(row)">详情</el-button>
+            <el-button link type="primary" size="small" @click="handleShare(row)">订阅信息</el-button>
             <el-button link type="primary" size="small" @click="handleCopyUrl(row)">复制链接</el-button>
             <el-dropdown class="node-op-dropdown" trigger="click" @command="(cmd) => handleNodeCommand(cmd, row)" v-hasPermi="['resource:vps:edit', 'resource:vps:remove']">
               <el-button link type="primary" size="small" icon="DArrowRight">更多</el-button>
@@ -278,7 +279,67 @@
             </el-dropdown-menu>
           </template>
         </el-dropdown>
+        <el-button v-if="detailData?.url" type="primary" plain @click="handleShare(detailData)">订阅信息</el-button>
         <el-button @click="detailVisible = false">关 闭</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog title="订阅信息" v-model="shareVisible" width="760px" append-to-body destroy-on-close>
+      <div v-if="shareData" class="proxy-share-page">
+        <div class="proxy-share-header">
+          <div>
+            <div class="proxy-share-title">{{ shareData.nodeName || shareParsed?.name || '代理节点' }}</div>
+            <div class="proxy-share-subtitle">{{ shareParsed ? `${shareParsed.host}:${shareParsed.port}` : 'VLESS 订阅信息' }}</div>
+          </div>
+          <el-tag v-if="shareData.nodeType" size="small" :type="getNodeTypeTagColor(shareData.nodeType)">{{ shareData.nodeType }}</el-tag>
+        </div>
+
+        <section class="proxy-share-section">
+          <div class="proxy-share-section-head">
+            <div>
+              <div class="proxy-share-section-title">VLESS 原始链接</div>
+              <div class="proxy-share-section-desc">适用于 v2rayN、v2rayNG 等支持 VLESS-REALITY 的客户端。</div>
+            </div>
+            <el-button type="primary" size="small" @click="copyToClipboard(shareVlessUrl)">
+              <el-icon><DocumentCopy /></el-icon> 复制 VLESS
+            </el-button>
+          </div>
+          <el-input :model-value="shareVlessUrl" readonly type="textarea" :rows="3" />
+        </section>
+
+        <section class="proxy-share-section proxy-share-grid">
+          <div>
+            <div class="proxy-share-section-title">小火箭二维码</div>
+            <div class="proxy-share-section-desc">二维码内容为原始 VLESS 链接，小火箭可直接扫码导入。</div>
+            <div class="proxy-share-actions">
+              <el-button size="small" @click="copyToClipboard(shareVlessUrl)">复制链接</el-button>
+              <el-button size="small" @click="downloadQrCode">下载二维码</el-button>
+            </div>
+          </div>
+          <div class="proxy-share-qr">
+            <img v-if="shareQrDataUrl" :src="shareQrDataUrl" alt="小火箭导入二维码" />
+            <span v-else class="proxy-share-qr-loading">生成中...</span>
+          </div>
+        </section>
+
+        <section class="proxy-share-section">
+          <div class="proxy-share-section-head">
+            <div>
+              <div class="proxy-share-section-title">Clash Verge 订阅</div>
+              <div class="proxy-share-section-desc">使用 ACL4SSR 基础配置，通过 api.wcc.best 转换为 Clash 订阅。</div>
+            </div>
+            <div class="proxy-share-actions">
+              <el-button type="primary" size="small" @click="copyToClipboard(shareClashUrl)">
+                <el-icon><DocumentCopy /></el-icon> 复制 Clash 订阅
+              </el-button>
+              <el-button size="small" @click="openClashSubscribe">打开订阅</el-button>
+            </div>
+          </div>
+          <el-input :model-value="shareClashUrl" readonly type="textarea" :rows="4" />
+        </section>
+      </div>
+      <template #footer>
+        <el-button @click="shareVisible = false">关 闭</el-button>
       </template>
     </el-dialog>
 
@@ -390,6 +451,7 @@
 
 <script setup>
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import QRCode from 'qrcode'
 import useUserStore from '@/store/modules/user'
 import {
   listProxyNode,
@@ -409,6 +471,7 @@ import {
 } from '@/api/resource/vps'
 import { listCustomer } from '@/api/member/customer'
 import { parseTime } from '@/utils/skyway'
+import { buildClashSubscribeUrl, parseVlessUrl, safeProxyShareFilename } from '@/utils/proxyShare'
 import { DocumentCopy, Loading, Edit, Delete } from '@element-plus/icons-vue'
 
 const { proxy } = getCurrentInstance()
@@ -1238,12 +1301,67 @@ const detailConfig = computed(() => {
   if (!detailData.value?.configJson) return null
   try { return JSON.parse(detailData.value.configJson) } catch { return null }
 })
+const shareVisible = ref(false)
+const shareData = ref(null)
+const shareVlessUrl = computed(() => (shareData.value?.url || '').trim())
+const shareParsed = computed(() => {
+  if (!shareVlessUrl.value) return null
+  try { return parseVlessUrl(shareVlessUrl.value) } catch { return null }
+})
+const shareClashUrl = computed(() => shareVlessUrl.value ? buildClashSubscribeUrl(shareVlessUrl.value) : '')
+const shareQrDataUrl = ref('')
+const shareBaseName = computed(() => shareData.value?.nodeName || shareParsed.value?.name || 'proxy-share')
 
 function handleDetail(row) {
   detailData.value = { ...row }
   detailTraffic.value = null
   detailVisible.value = true
   getProxyNodeTraffic(row.id).then(r => { detailTraffic.value = r.data }).catch(() => {})
+}
+
+function handleShare(row) {
+  if (!row?.url) {
+    proxy.$modal.msgWarning('该节点暂无分享链接')
+    return
+  }
+  try {
+    parseVlessUrl(row.url)
+  } catch (e) {
+    proxy.$modal.msgWarning(e.message || '仅支持 VLESS 分享链接')
+    return
+  }
+  shareData.value = { ...row }
+  shareVisible.value = true
+  refreshShareQrCode()
+}
+
+function downloadQrCode() {
+  if (!shareQrDataUrl.value) return
+  const a = document.createElement('a')
+  a.href = shareQrDataUrl.value
+  a.download = safeProxyShareFilename(shareBaseName.value + '-qrcode', 'png')
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+}
+
+function refreshShareQrCode() {
+  shareQrDataUrl.value = ''
+  if (!shareVlessUrl.value) return
+  QRCode.toDataURL(shareVlessUrl.value, {
+    width: 220,
+    margin: 1,
+    errorCorrectionLevel: 'M'
+  }).then(url => {
+    if (shareVlessUrl.value) shareQrDataUrl.value = url
+  }).catch(() => {
+    proxy.$modal.msgWarning('二维码生成失败，请直接复制 VLESS 链接')
+  })
+}
+
+function openClashSubscribe() {
+  if (!shareClashUrl.value) return
+  window.open(shareClashUrl.value, '_blank', 'noopener,noreferrer')
 }
 
 function goVpsDetail(instanceId) {
@@ -1473,6 +1591,88 @@ watch(() => props.customerId, () => {
 .share-url-box {
   display: flex;
   flex-direction: column;
+}
+.proxy-share-page {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.proxy-share-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+.proxy-share-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+  line-height: 24px;
+  word-break: break-all;
+}
+.proxy-share-subtitle {
+  margin-top: 2px;
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+}
+.proxy-share-section {
+  padding: 12px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+  background: var(--el-fill-color-blank);
+}
+.proxy-share-section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.proxy-share-section-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+  line-height: 22px;
+}
+.proxy-share-section-desc {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  line-height: 18px;
+}
+.proxy-share-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 244px;
+  align-items: center;
+  gap: 18px;
+}
+.proxy-share-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.proxy-share-actions :deep(.el-button) {
+  margin-left: 0;
+}
+.proxy-share-qr {
+  width: 244px;
+  min-height: 244px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+  background: #fff;
+}
+.proxy-share-qr img {
+  width: 220px;
+  height: 220px;
+  display: block;
 }
 .status-cell {
   display: inline-flex;
