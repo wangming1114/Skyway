@@ -446,7 +446,134 @@ public class VpsSshCommandService {
         socksOutbound.put("version", "5");
         socksOutbound.put("username", relay.getUsername());
         socksOutbound.put("password", relay.getPassword());
+        alignSocksRelayRouteInbound(root, existingSocksTag, socksOutbound.getString("tag"));
         return JSON.toJSONString(root, JSONWriter.Feature.PrettyFormat);
+    }
+
+    private static void alignSocksRelayRouteInbound(JSONObject root, String... socksTags) {
+        JSONArray inbounds = root != null ? root.getJSONArray("inbounds") : null;
+        if (inbounds == null || inbounds.isEmpty()) {
+            return;
+        }
+        JSONObject firstInbound = inbounds.getJSONObject(0);
+        String inboundTag = firstInbound != null ? firstInbound.getString("tag") : null;
+        if (StringUtils.isEmpty(inboundTag)) {
+            return;
+        }
+
+        List<String> outboundTags = new ArrayList<>();
+        if (socksTags != null) {
+            for (String socksTag : socksTags) {
+                addIfNotEmpty(outboundTags, socksTag);
+            }
+        }
+        if (outboundTags.isEmpty()) {
+            return;
+        }
+
+        JSONObject route = root.getJSONObject("route");
+        JSONArray rules = route != null ? route.getJSONArray("rules") : null;
+        if (rules == null) {
+            return;
+        }
+        for (int i = 0; i < rules.size(); i++) {
+            JSONObject rule = rules.getJSONObject(i);
+            if (rule == null) {
+                continue;
+            }
+            Object outboundValue = rule.get("outbound");
+            if (containsString(outboundTags, outboundValue)) {
+                rule.put("inbound", inboundTag);
+            }
+        }
+    }
+
+    public static String updateSingBoxListenPortAndInboundName(String configJson, String oldInboundTag, String newInboundTag, Integer newPort) {
+        if (StringUtils.isEmpty(configJson)) {
+            throw new IllegalArgumentException("sing-box 配置不能为空");
+        }
+        if (newPort == null || newPort < 1 || newPort > 65535) {
+            throw new IllegalArgumentException("端口范围为 1-65535");
+        }
+        JSONObject root = JSON.parseObject(configJson);
+        JSONArray inbounds = root.getJSONArray("inbounds");
+        if (inbounds == null || inbounds.isEmpty()) {
+            throw new IllegalArgumentException("sing-box 配置缺少 inbounds");
+        }
+
+        String effectiveOldTag = oldInboundTag;
+        String effectiveNewTag = StringUtils.isNotEmpty(newInboundTag) ? newInboundTag : oldInboundTag;
+        String matchedOldTag = null;
+        Integer matchedOldPort = null;
+        boolean matched = false;
+        for (int i = 0; i < inbounds.size(); i++) {
+            JSONObject inbound = inbounds.getJSONObject(i);
+            if (inbound == null) {
+                continue;
+            }
+            String tag = inbound.getString("tag");
+            boolean shouldPatch = StringUtils.isEmpty(oldInboundTag) || oldInboundTag.equals(tag);
+            if (!matched && !shouldPatch && i == 0) {
+                shouldPatch = true;
+            }
+            if (shouldPatch) {
+                if (StringUtils.isEmpty(effectiveOldTag)) {
+                    effectiveOldTag = tag;
+                }
+                matchedOldTag = tag;
+                matchedOldPort = inbound.getInteger("listen_port");
+                inbound.put("listen_port", newPort);
+                if (StringUtils.isNotEmpty(effectiveNewTag)) {
+                    inbound.put("tag", effectiveNewTag);
+                }
+                matched = true;
+            }
+        }
+        if (!matched) {
+            throw new IllegalArgumentException("sing-box 配置未找到可更新的 inbound");
+        }
+
+        if (StringUtils.isNotEmpty(effectiveOldTag) && StringUtils.isNotEmpty(effectiveNewTag) && !effectiveOldTag.equals(effectiveNewTag)) {
+            List<String> oldRouteInboundTags = new ArrayList<>();
+            addIfNotEmpty(oldRouteInboundTags, effectiveOldTag);
+            addIfNotEmpty(oldRouteInboundTags, matchedOldTag);
+            if (matchedOldPort != null) {
+                addIfNotEmpty(oldRouteInboundTags, "VLESS-REALITY-" + matchedOldPort + ".json");
+            }
+            JSONObject route = root.getJSONObject("route");
+            JSONArray rules = route != null ? route.getJSONArray("rules") : null;
+            if (rules != null) {
+                for (int i = 0; i < rules.size(); i++) {
+                    JSONObject rule = rules.getJSONObject(i);
+                    if (rule == null || !rule.containsKey("inbound")) {
+                        continue;
+                    }
+                    Object inboundValue = rule.get("inbound");
+                    if (inboundValue instanceof String && containsString(oldRouteInboundTags, inboundValue)) {
+                        rule.put("inbound", effectiveNewTag);
+                    } else if (inboundValue instanceof JSONArray) {
+                        JSONArray inboundArray = (JSONArray) inboundValue;
+                        for (int j = 0; j < inboundArray.size(); j++) {
+                            Object item = inboundArray.get(j);
+                            if (containsString(oldRouteInboundTags, item)) {
+                                inboundArray.set(j, effectiveNewTag);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return JSON.toJSONString(root, JSONWriter.Feature.PrettyFormat);
+    }
+
+    private static void addIfNotEmpty(List<String> values, String value) {
+        if (StringUtils.isNotEmpty(value) && !values.contains(value)) {
+            values.add(value);
+        }
+    }
+
+    private static boolean containsString(List<String> values, Object value) {
+        return value instanceof String && values.contains(value);
     }
 
     public static String removeSocks5RelayFromSingBoxConfig(String configJson) {
@@ -574,6 +701,67 @@ public class VpsSshCommandService {
                     throw new IOException("rename config file failed: " + fromPath + " -> " + toPath);
                 }
             }
+        } finally {
+            if (ssh != null) {
+                try {
+                    ssh.close();
+                } catch (IOException e) {
+                    log.debug("SSH close: {}", e.getMessage());
+                }
+            }
+        }
+    }
+
+    public void updateProxyNodeConfigPortAndName(Long instanceId, String oldNodeName, String newNodeName, boolean disabled, Integer oldPort, Integer newPort) throws IOException {
+        if (instanceId == null || StringUtils.isEmpty(oldNodeName) || StringUtils.isEmpty(newNodeName)) {
+            throw new IllegalArgumentException("instanceId, oldNodeName and newNodeName cannot be empty");
+        }
+        if (newPort == null || newPort < 1 || newPort > 65535) {
+            throw new IllegalArgumentException("端口范围为 1-65535");
+        }
+        String oldBaseName = normalizeNodeBaseName(oldNodeName);
+        String newBaseName = normalizeNodeBaseName(newNodeName);
+        String suffix = disabled ? ".json" + DISABLED_SUFFIX : ".json";
+        String fromPath = CONF_DIR + "/" + oldBaseName + suffix;
+        String toPath = CONF_DIR + "/" + newBaseName + suffix;
+        String oldInboundTag = oldBaseName + ".json";
+        String newInboundTag = newBaseName + ".json";
+
+        SSHClient ssh = null;
+        try {
+            ssh = createSshClient(instanceId);
+            String original;
+            try (Session readSession = ssh.startSession()) {
+                original = execAndRead(readSession, "cat " + shellQuote(fromPath));
+            }
+            if (StringUtils.isEmpty(original)) {
+                throw new IOException("读取 sing-box 配置失败: " + fromPath);
+            }
+            String patched = updateSingBoxListenPortAndInboundName(original, oldInboundTag, newInboundTag, newPort);
+            try (Session writeSession = ssh.startSession()) {
+                writeRemoteTextFile(writeSession, fromPath, patched);
+            }
+            if (!oldBaseName.equals(newBaseName)) {
+                try (Session mvSession = ssh.startSession()) {
+                    String fromQuoted = shellQuote(fromPath);
+                    String toQuoted = shellQuote(toPath);
+                    String cmd = "sh -c \"if [ ! -f " + fromQuoted + " ]; then echo __SRC_MISSING__; " +
+                            "elif [ -f " + toQuoted + " ]; then echo __DST_EXISTS__; " +
+                            "elif mv " + fromQuoted + " " + toQuoted + "; then echo __OK__; else echo __MV_FAIL__; fi\"";
+                    String out = execAndRead(mvSession, cmd);
+                    String marker = out != null ? out : "";
+                    if (marker.contains("__SRC_MISSING__")) {
+                        throw new IOException("source config file not found: " + fromPath);
+                    }
+                    if (marker.contains("__DST_EXISTS__")) {
+                        throw new IOException("target config file already exists: " + toPath);
+                    }
+                    if (!marker.contains("__OK__")) {
+                        throw new IOException("rename config file failed: " + fromPath + " -> " + toPath);
+                    }
+                }
+            }
+            restartSingBox(ssh);
         } finally {
             if (ssh != null) {
                 try {

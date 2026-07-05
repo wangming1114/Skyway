@@ -295,6 +295,9 @@
             <el-checkbox v-model="editNodePermanent" @change="v => v && (editNodeForm.expireTime = null)">永久有效</el-checkbox>
           </div>
         </el-form-item>
+        <el-form-item label="端口">
+          <el-input-number v-model="editNodeForm.port" :min="1" :max="65535" controls-position="right" style="width: 100%" />
+        </el-form-item>
         <el-form-item label="订阅链接">
           <el-input v-model="editNodeForm.url" type="textarea" :rows="4" maxlength="2000" show-word-limit placeholder="支持手动编辑" />
         </el-form-item>
@@ -464,6 +467,7 @@ const editNodeRow = ref(null)
 const editNodePermanent = ref(false)
 const editNodeForm = reactive({
   expireTime: null,
+  port: undefined,
   url: '',
   originalRelay: false,
   enableRelay: false,
@@ -890,6 +894,7 @@ function removeRelayFromConfigJson(configJson) {
 function openNodeEdit(row) {
   editNodeRow.value = row
   editNodeForm.expireTime = row.expireTime || null
+  editNodeForm.port = row.port
   editNodeForm.url = row.url || ''
   editNodePermanent.value = !row.expireTime
   resetEditRelayForm()
@@ -1012,6 +1017,7 @@ function submitNodeEdit() {
   const payload = {
     id: editNodeRow.value.id,
     expireTime: editNodePermanent.value ? null : editNodeForm.expireTime,
+    port: editNodeForm.port,
     url: (editNodeForm.url || '').trim()
   }
   if (editNodeForm.enableRelay && canEditRelay.value) {
@@ -1029,6 +1035,7 @@ function submitNodeEdit() {
   updateProxyNode(payload).then(() => {
     const row = editNodeRow.value
     row.expireTime = payload.expireTime
+    row.port = payload.port
     row.url = payload.url
     row.nodeName = buildNodeNameByExpire(row, payload.expireTime)
     if (payload.relayText) {
@@ -1040,6 +1047,7 @@ function submitNodeEdit() {
     }
     if (detailData.value?.id === row.id) {
       detailData.value.expireTime = row.expireTime
+      detailData.value.port = row.port
       detailData.value.url = row.url
       detailData.value.nodeName = row.nodeName
       detailData.value.remark = row.remark

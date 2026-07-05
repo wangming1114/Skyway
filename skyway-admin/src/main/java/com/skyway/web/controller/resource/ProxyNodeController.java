@@ -231,9 +231,26 @@ public class ProxyNodeController extends BaseController {
         boolean hasRemark = body != null && body.containsKey("remark");
         boolean hasRelayText = body != null && body.containsKey("relayText");
         boolean hasRelayEnabled = body != null && body.containsKey("relayEnabled");
+        boolean hasPort = body != null && body.containsKey("port");
 
         Date newExpireTime = hasExpireTime ? parseExpireTime(body.get("expireTime")) : existing.getExpireTime();
         row.setExpireTime(newExpireTime);
+
+        Integer newPort = existing.getPort();
+        if (hasPort) {
+            newPort = parseInteger(body.get("port"));
+            if (newPort == null || newPort < 1 || newPort > 65535) {
+                return AjaxResult.error("端口范围为 1-65535");
+            }
+        }
+        boolean portChanged = hasPort && !newPort.equals(existing.getPort());
+        if (portChanged) {
+            ProxyNode portOwner = proxyNodeService.getByInstanceIdAndPort(existing.getInstanceId(), newPort);
+            if (portOwner != null && portOwner.getId() != null && !portOwner.getId().equals(existing.getId())) {
+                return AjaxResult.error("端口 " + newPort + " 已被当前 VPS 的其他节点使用");
+            }
+        }
+        row.setPort(newPort);
 
         if (hasUrl) {
             Object urlObj = body.get("url");
@@ -300,23 +317,37 @@ public class ProxyNodeController extends BaseController {
         }
 
         String effectiveNodeName = existing.getNodeName();
-        boolean expireChanged = hasExpireTime && !isSameTime(existing.getExpireTime(), newExpireTime);
-        if (expireChanged) {
-            String oldBaseName = normalizeNodeBaseName(existing.getNodeName());
-            String newBaseName = buildNodeBaseName(existing.getNodeType(), existing.getAddress(), existing.getPort(), row.getCustomerId(), newExpireTime);
-            if (!oldBaseName.equals(newBaseName)) {
-                try {
-                    boolean currentlyDisabled = "1".equals(existing.getStatus());
+        String oldBaseName = normalizeNodeBaseName(existing.getNodeName());
+        String newBaseName = buildNodeBaseName(existing.getNodeType(), existing.getAddress(), newPort, row.getCustomerId(), newExpireTime);
+        boolean nameChanged = !oldBaseName.equals(newBaseName);
+        if (nameChanged) {
+            try {
+                boolean currentlyDisabled = "1".equals(existing.getStatus());
+                if (portChanged) {
+                    vpsSshCommandService.updateProxyNodeConfigPortAndName(
+                            existing.getInstanceId(), oldBaseName, newBaseName, currentlyDisabled, existing.getPort(), newPort);
+                } else {
                     vpsSshCommandService.renameProxyNodeConfig(existing.getInstanceId(), oldBaseName, newBaseName, currentlyDisabled);
-                } catch (Exception e) {
-                    log.warn("rename proxy config failed: instanceId={}, oldNodeName={}, newNodeName={}",
-                            existing.getInstanceId(), oldBaseName, newBaseName, e);
-                    return AjaxResult.error("服务器配置重命名失败: " + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
                 }
-                effectiveNodeName = newBaseName;
+            } catch (Exception e) {
+                log.warn("update proxy config failed: instanceId={}, oldNodeName={}, newNodeName={}",
+                        existing.getInstanceId(), oldBaseName, newBaseName, e);
+                return AjaxResult.error("服务器配置更新失败: " + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
+            }
+            effectiveNodeName = newBaseName;
+            if (portChanged) {
+                row.setUrl(null);
             }
         }
         row.setNodeName(effectiveNodeName);
+
+        String username = getUsername();
+        if (portChanged) {
+            AjaxResult migrateResult = migratePortRules(existing, newPort, username);
+            if (!migrateResult.isSuccess()) {
+                return migrateResult;
+            }
+        }
 
         if (StringUtils.isNotEmpty(row.getStatus()) && !row.getStatus().equals(existing.getStatus())) {
             try {
@@ -327,8 +358,39 @@ public class ProxyNodeController extends BaseController {
             }
         }
 
-        row.setUpdateBy(getUsername());
+        row.setUpdateBy(username);
         return toAjax(proxyNodeService.update(row));
+    }
+
+    private AjaxResult migratePortRules(ProxyNode existing, Integer newPort, String username) {
+        if (existing == null || existing.getInstanceId() == null || existing.getPort() == null || newPort == null) {
+            return AjaxResult.error("节点实例或端口信息不完整");
+        }
+        Long instanceId = existing.getInstanceId();
+        Integer oldPort = existing.getPort();
+        ProxyNodeRateLimit activeLimit = proxyNodeRateLimitService.getActiveByNodeId(existing.getId());
+        try {
+            if (activeLimit != null) {
+                vpsSshCommandService.removePortRateLimit(instanceId, oldPort);
+            }
+            vpsSshCommandService.removeTrafficRulesForPort(instanceId, oldPort);
+            if (activeLimit != null) {
+                PortRateLimitRemoteResult remoteResult = vpsSshCommandService.setPortRateLimit(
+                        instanceId, newPort, activeLimit.getDownloadMbps(), activeLimit.getUploadMbps());
+                activeLimit.setInstanceId(instanceId);
+                activeLimit.setProxyNodeId(existing.getId());
+                activeLimit.setPort(newPort);
+                activeLimit.setLastApplyResult(remoteResult.getOutput());
+                activeLimit.setUpdateBy(username);
+                proxyNodeRateLimitService.saveActive(activeLimit);
+            }
+            vpsSshCommandService.ensureTrafficRulesForPort(instanceId, newPort);
+            return success();
+        } catch (Exception e) {
+            log.warn("migrate proxy node port rules failed: nodeId={}, instanceId={}, oldPort={}, newPort={}",
+                    existing.getId(), instanceId, oldPort, newPort, e);
+            return AjaxResult.error("端口规则迁移失败: " + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
+        }
     }
 
     private void fillRequiredFromExisting(ProxyNode row, ProxyNode existing) {
