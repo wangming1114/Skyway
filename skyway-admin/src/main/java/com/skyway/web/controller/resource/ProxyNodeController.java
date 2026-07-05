@@ -510,6 +510,10 @@ public class ProxyNodeController extends BaseController {
             }
             ProxyNode node = proxyNodeService.getById(id);
             if (node != null) {
+                AjaxResult rateLimitResult = removeActiveRateLimitBeforeDelete(node, getUsername());
+                if (!rateLimitResult.isSuccess()) {
+                    return rateLimitResult;
+                }
                 try {
                     vpsSshCommandService.removeProxyNodeFromServer(node);
                 } catch (Exception e) {
@@ -521,6 +525,30 @@ public class ProxyNodeController extends BaseController {
             proxyNodeService.deleteById(id);
         }
         return success();
+    }
+
+    private AjaxResult removeActiveRateLimitBeforeDelete(ProxyNode node, String username) {
+        if (node == null || node.getId() == null) {
+            return success();
+        }
+        ProxyNodeRateLimit existing = proxyNodeRateLimitService.getActiveByNodeId(node.getId());
+        if (existing == null) {
+            return success();
+        }
+        Long instanceId = existing.getInstanceId() != null ? existing.getInstanceId() : node.getInstanceId();
+        Integer port = existing.getPort() != null ? existing.getPort() : node.getPort();
+        if (instanceId == null || port == null) {
+            return AjaxResult.error("删除失败: 限速记录缺少实例或端口信息");
+        }
+        try {
+            PortRateLimitRemoteResult remoteResult = vpsSshCommandService.removePortRateLimit(instanceId, port);
+            proxyNodeRateLimitService.markRemoved(existing.getId(), remoteResult.getOutput(), username);
+            return success();
+        } catch (Exception e) {
+            log.warn("remove active rate limit before deleting node failed: nodeId={}, instanceId={}, port={}",
+                    node.getId(), instanceId, port, e);
+            return AjaxResult.error("删除失败: 限速移除失败: " + (e.getMessage() != null ? e.getMessage() : "服务器操作异常"));
+        }
     }
 
     @PreAuthorize("@ss.hasPermi('resource:vps:remove')")

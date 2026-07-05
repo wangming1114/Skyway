@@ -2,6 +2,7 @@ package com.skyway.web.controller.resource;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -191,6 +192,45 @@ public class ProxyNodeControllerEditPortTest {
         assertEquals("tester", savedLimit.getUpdateBy());
     }
 
+    @Test
+    public void removeNodeRemovesActiveRateLimitBeforeDeletingNode() throws Exception {
+        ProxyNode existing = existingNode();
+        ProxyNodeRateLimit activeLimit = activeLimit();
+        when(proxyNodeService.getById(10L)).thenReturn(existing);
+        when(proxyNodeRateLimitService.getActiveByNodeId(10L)).thenReturn(activeLimit);
+        when(vpsSshCommandService.removePortRateLimit(20L, 10001))
+                .thenReturn(new PortRateLimitRemoteResult(10001, "rate removed"));
+
+        AjaxResult result = controller.remove("10");
+
+        assertEquals(HttpStatus.SUCCESS, result.get(AjaxResult.CODE_TAG));
+        InOrder inOrder = inOrder(vpsSshCommandService, proxyNodeRateLimitService, proxyNodeTrafficService, proxyNodeService);
+        inOrder.verify(vpsSshCommandService).removePortRateLimit(20L, 10001);
+        inOrder.verify(proxyNodeRateLimitService).markRemoved(30L, "rate removed", "tester");
+        inOrder.verify(vpsSshCommandService).removeProxyNodeFromServer(existing);
+        inOrder.verify(proxyNodeTrafficService).deleteByNodeId(10L);
+        inOrder.verify(proxyNodeService).deleteById(10L);
+    }
+
+    @Test
+    public void removeNodeStopsWhenActiveRateLimitRemovalFails() throws Exception {
+        ProxyNode existing = existingNode();
+        ProxyNodeRateLimit activeLimit = activeLimit();
+        when(proxyNodeService.getById(10L)).thenReturn(existing);
+        when(proxyNodeRateLimitService.getActiveByNodeId(10L)).thenReturn(activeLimit);
+        doThrow(new RuntimeException("tc remove failed"))
+                .when(vpsSshCommandService).removePortRateLimit(20L, 10001);
+
+        AjaxResult result = controller.remove("10");
+
+        assertEquals(HttpStatus.ERROR, result.get(AjaxResult.CODE_TAG));
+        assertEquals("删除失败: 限速移除失败: tc remove failed", result.get(AjaxResult.MSG_TAG));
+        verify(vpsSshCommandService, never()).removeProxyNodeFromServer(any(ProxyNode.class));
+        verify(proxyNodeTrafficService, never()).deleteByNodeId(any());
+        verify(proxyNodeService, never()).deleteById(any());
+        verify(proxyNodeRateLimitService, never()).markRemoved(any(), any(), any());
+    }
+
     private ProxyNode existingNode() {
         ProxyNode node = new ProxyNode();
         node.setId(10L);
@@ -205,5 +245,16 @@ public class ProxyNodeControllerEditPortTest {
         node.setStatus("0");
         node.setCustomId("5");
         return node;
+    }
+
+    private ProxyNodeRateLimit activeLimit() {
+        ProxyNodeRateLimit activeLimit = new ProxyNodeRateLimit();
+        activeLimit.setId(30L);
+        activeLimit.setInstanceId(20L);
+        activeLimit.setProxyNodeId(10L);
+        activeLimit.setPort(10001);
+        activeLimit.setDownloadMbps(50);
+        activeLimit.setUploadMbps(20);
+        return activeLimit;
     }
 }

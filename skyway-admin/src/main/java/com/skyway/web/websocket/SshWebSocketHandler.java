@@ -24,7 +24,9 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import com.skyway.common.utils.StringUtils;
 import com.skyway.resource.domain.ProxyNode;
+import com.skyway.resource.domain.ProxyNodeRateLimit;
 import com.skyway.resource.domain.VpsInstance;
+import com.skyway.resource.service.IProxyNodeRateLimitService;
 import com.skyway.resource.service.IProxyNodeService;
 import com.skyway.resource.service.IProxyNodeTrafficService;
 import com.skyway.resource.service.IVpsInstanceService;
@@ -88,6 +90,9 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
 
     @Autowired
     private IProxyNodeTrafficService proxyNodeTrafficService;
+
+    @Autowired
+    private IProxyNodeRateLimitService proxyNodeRateLimitService;
 
     private final ExecutorService executor = Executors.newCachedThreadPool(r -> {
         Thread t = new Thread(r, "ssh-ws-bridge-" + r.hashCode());
@@ -808,6 +813,10 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                     return;
                 }
 
+                if (!removeActiveRateLimitBeforeDelete(wsSession, reqId, nodeIdFinal)) {
+                    return;
+                }
+
                 if (hasDisabled) {
                     // 已停用：配置文件为 .json.disabled，sb 菜单 4 不包含该文件，直接 rm 后删库
                     sendExecOutput(wsSession, reqId, "正在删除已停用配置: " + targetFileDisabled + "\n", false);
@@ -917,6 +926,31 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                 if (ssh != null) try { ssh.close(); } catch (IOException ignored) {}
             }
         });
+    }
+
+    private boolean removeActiveRateLimitBeforeDelete(WebSocketSession wsSession, Object reqId, Long nodeId) {
+        ProxyNodeRateLimit activeLimit = proxyNodeRateLimitService.getActiveByNodeId(nodeId);
+        if (activeLimit == null) {
+            return true;
+        }
+        if (activeLimit.getInstanceId() == null || activeLimit.getPort() == null) {
+            sendExecError(wsSession, reqId, "限速记录缺少实例或端口信息");
+            sendExecEnd(wsSession, reqId, -1);
+            return false;
+        }
+        try {
+            sendExecOutput(wsSession, reqId, "正在解除端口限速: " + activeLimit.getPort() + "\n", false);
+            VpsSshCommandService.PortRateLimitRemoteResult remoteResult =
+                    vpsSshCommandService.removePortRateLimit(activeLimit.getInstanceId(), activeLimit.getPort());
+            proxyNodeRateLimitService.markRemoved(activeLimit.getId(), remoteResult.getOutput(), "system");
+            return true;
+        } catch (Exception e) {
+            log.warn("remove active rate limit before websocket deleting node failed: nodeId={}, instanceId={}, port={}",
+                    nodeId, activeLimit.getInstanceId(), activeLimit.getPort(), e);
+            sendExecError(wsSession, reqId, "限速移除失败: " + (e.getMessage() != null ? e.getMessage() : "服务器操作异常"));
+            sendExecEnd(wsSession, reqId, -1);
+            return false;
+        }
     }
 
     /** 为 add/remove 节点等操作创建独立的 SSH 连接，用毕由调用方关闭，不依赖 session 长连接 */

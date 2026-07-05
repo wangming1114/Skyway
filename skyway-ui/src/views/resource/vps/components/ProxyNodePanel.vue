@@ -102,7 +102,7 @@
           <span v-else>{{ row.remark || '-' }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="270" align="center">
+      <el-table-column label="操作" width="270" align="center" fixed="right">
         <template #default="{ row }">
           <div class="node-op-actions">
             <el-button link type="primary" size="small" @click="handleDetail(row)">详情</el-button>
