@@ -32,10 +32,12 @@
         :nodes="filteredNodes"
         :summary="summary"
         :loading="loading"
+        :show-detail-guide="showDetailGuide"
         @refresh="refreshNodes"
         @navigate="showView"
         @detail="openNodeDetail"
         @copy-subscription="copyNodeClash"
+        @close-detail-guide="closeDetailGuide"
       />
       <DesktopGuideScreen
         v-else-if="activeView === 'desktop'"
@@ -101,6 +103,8 @@ const statusFilter = ref('all')
 const nodeList = ref([])
 const selectedNode = ref(null)
 const detailQrUrl = ref('')
+const showDetailGuide = ref(false)
+const detailGuideStorageKey = 'skyway.customerShare.detailGuideSeen'
 
 const unlockFormRef = ref(null)
 const unlockForm = reactive({ accessPassword: '' })
@@ -149,10 +153,13 @@ function loadNodes({ nextView }) {
   loading.value = true
   unlockCustomerTempShare(token.value, unlockForm.accessPassword)
     .then(res => {
-      nodeList.value = res.data || []
+      const nodes = res.data || []
+      const targetView = nextView || 'overview'
+      nodeList.value = nodes
       selectedNode.value = null
       unlocked.value = true
-      activeView.value = nextView || 'overview'
+      activeView.value = targetView
+      showDetailGuide.value = targetView === 'overview' && shouldShowDetailGuide(nodes)
     })
     .catch(() => {})
     .finally(() => {
@@ -162,18 +169,39 @@ function loadNodes({ nextView }) {
 
 function showView(view) {
   activeView.value = view
+  showDetailGuide.value = view === 'overview' && shouldShowDetailGuide(normalizedNodes.value)
   nextTick(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' })
   })
 }
 
 function openNodeDetail(node) {
+  closeDetailGuide()
   selectedNode.value = node
   activeView.value = 'nodeDetail'
   nextTick(() => {
     refreshDetailQrCode()
     window.scrollTo({ top: 0, behavior: 'smooth' })
   })
+}
+
+function shouldShowDetailGuide(nodes) {
+  return Array.isArray(nodes) && nodes.length > 0 && !hasSeenDetailGuide()
+}
+
+function hasSeenDetailGuide() {
+  try {
+    return localStorage.getItem(detailGuideStorageKey) === '1'
+  } catch (e) {
+    return false
+  }
+}
+
+function closeDetailGuide() {
+  showDetailGuide.value = false
+  try {
+    localStorage.setItem(detailGuideStorageKey, '1')
+  } catch (e) {}
 }
 
 function copyPrimaryVless() {

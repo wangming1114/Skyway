@@ -113,15 +113,62 @@ test('overview operation column puts copy subscription before detail', () => {
   assert.match(source, /defineEmits\(\[[^\]]*'copy-subscription'/s)
   assert.match(overviewBinding, /@copy-subscription="copyNodeClash"/)
   assert.doesNotMatch(overviewBinding, /@copy-vless="copyNodeVless"/)
+  assert.match(source, /点击「订阅详情」查看节点链接、二维码与导入教程/)
   assert.match(
     source,
-    /class="table-actions"[\s\S]*aria-label="复制订阅"[\s\S]*\$emit\('copy-subscription', node\)[\s\S]*aria-label="查看详情"[\s\S]*\$emit\('detail', node\)/
+    /class="table-actions"[\s\S]*aria-label="复制订阅"[\s\S]*\$emit\('copy-subscription', node\)[\s\S]*aria-label="订阅详情"[\s\S]*\$emit\('detail', node\)[\s\S]*订阅详情/
   )
   assert.doesNotMatch(source, /aria-label="复制 VLESS"/)
   assert.doesNotMatch(copyButton, /<img/)
   assert.doesNotMatch(detailButton, /<img/)
   assert.match(cssBlock(style, '.table-actions .asset-action'), /width:\s*70px/)
   assert.match(cssBlock(style, '.table-actions .asset-action'), /height:\s*31px/)
+})
+
+test('overview shows a dismissible guided popover pointing to subscription details', () => {
+  const source = readScreen('OverviewScreen.vue')
+  const index = readShareIndex()
+  const style = readStyle()
+  const overviewBinding = index.match(/<OverviewScreen[\s\S]*?\/>/)?.[0] || ''
+
+  assert.match(overviewBinding, /:show-detail-guide="showDetailGuide"/)
+  assert.match(overviewBinding, /@close-detail-guide="closeDetailGuide"/)
+  assert.match(index, /const detailGuideStorageKey = 'skyway\.customerShare\.detailGuideSeen'/)
+  assert.match(index, /localStorage\.setItem\(detailGuideStorageKey,\s*'1'\)/)
+  assert.match(source, /showDetailGuide: \{ type: Boolean, default: false \}/)
+  assert.match(source, /class="detail-guide-layer"[\s\S]*v-if="showDetailGuide && nodes\.length"/)
+  assert.doesNotMatch(source, /detail-guide-backdrop/)
+  assert.match(source, /role="note" aria-label="订阅详情入口提示"/)
+  assert.match(source, /class="detail-guide-close"[\s\S]*aria-label="关闭订阅详情导览"/)
+  assert.match(source, /订阅详情入口/)
+  assert.match(source, /点这里查看链接、二维码和教程/)
+  assert.match(source, /知道了/)
+  assert.doesNotMatch(source, /结束导览|这里可以查看订阅详情|进入节点详情页/)
+  assert.match(source, /defineEmits\(\[[^\]]*'close-detail-guide'/s)
+  assert.match(source, /:class="\{ 'is-guide-target': showDetailGuide && index === 0 \}"/)
+  assert.match(cssBlock(style, '.subscription-list-panel'), /position:\s*relative/)
+  assert.match(cssBlock(style, '.detail-guide-layer'), /position:\s*absolute/)
+  assert.match(cssBlock(style, '.detail-guide-popover'), /position:\s*absolute/)
+  assert.doesNotMatch(style, /\.detail-guide-backdrop/)
+  assert.doesNotMatch(style, /rgba\(6,\s*26,\s*72,\s*0\.2\)/)
+  assert.match(cssBlock(style, '.detail-guide-popover'), /width:\s*280px/)
+  assert.match(style, /\.detail-guide-popover::before\s*\{[\s\S]*border-left:\s*10px solid #fff/)
+})
+
+test('node detail shows first-use onboarding for what the detail page is for', () => {
+  const detail = readScreen('NodeDetailScreen.vue')
+  const style = readStyle()
+
+  assert.match(detail, /class="share-panel node-onboarding-panel"/)
+  assert.match(detail, /新手使用引导/)
+  assert.match(detail, /这个页面用于复制当前节点链接、扫码导入手机端，并按设备打开对应教程。/)
+  assert.match(detail, /class="onboarding-steps"/)
+  assert.match(detail, /<strong>先选导入方式<\/strong>[\s\S]*电脑优先使用 Clash 订阅或 VLESS 链接/)
+  assert.match(detail, /<strong>复制链接或扫码<\/strong>[\s\S]*桌面端点击复制，手机端使用下方二维码/)
+  assert.match(detail, /<strong>打开客户端完成导入<\/strong>[\s\S]*导入后先测试延迟，再启用系统代理/)
+  assert.match(cssBlock(style, '.node-onboarding-panel'), /margin:\s*0 0 14px/)
+  assert.match(cssBlock(style, '.onboarding-steps'), /grid-template-columns:\s*repeat\(3,\s*1fr\)/)
+  assert.match(cssBlock(style, '.onboarding-step'), /grid-template-columns:\s*36px minmax\(0,\s*1fr\)/)
 })
 
 test('overview subscription list supports customer status filtering and keyword search together', () => {
@@ -266,7 +313,7 @@ test('overview subscription list shows all rows without pagination and scrolls i
 
   assert.doesNotMatch(source, /class="table-footer"/)
   assert.doesNotMatch(source, /上一页|下一页|条\/页/)
-  assert.match(source, /<div v-for="node in nodes"/)
+  assert.match(source, /<div v-for="\(?node(?:,\s*index)?\)? in nodes"/)
   assert.match(panelBlock, /display:\s*flex/)
   assert.match(panelBlock, /flex-direction:\s*column/)
   assert.match(tableBlock, /flex:\s*1 1 auto/)

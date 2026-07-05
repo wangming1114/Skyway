@@ -37,7 +37,7 @@
         <div class="panel-head">
           <div>
             <h2><span class="section-list-icon"></span>订阅列表</h2>
-            <p>管理您的订阅节点，查看有效期、状态与导入入口</p>
+            <p>点击「订阅详情」查看节点链接、二维码与导入教程</p>
           </div>
           <div class="table-tools">
             <label class="status-filter">
@@ -60,7 +60,7 @@
           <div class="share-tr share-th">
             <span>节点名称</span><span>地址端口</span><span>有效期</span><span>状态</span><span>操作</span>
           </div>
-          <div v-for="node in nodes" :key="node.id" class="share-tr">
+          <div v-for="(node, index) in nodes" :key="node.id" class="share-tr">
             <div class="node-title-cell">
               <button type="button" class="star-btn" aria-label="收藏节点"><img :src="tagStar" alt="" /></button>
               <div>
@@ -77,12 +77,20 @@
               <button type="button" class="asset-action copy-subscription" aria-label="复制订阅" @click="$emit('copy-subscription', node)">
                 复制订阅
               </button>
-              <button type="button" class="asset-action detail" aria-label="查看详情" @click="$emit('detail', node)">
-                查看详情
+              <button type="button" class="asset-action detail" :class="{ 'is-guide-target': showDetailGuide && index === 0 }" aria-label="订阅详情" @click="$emit('detail', node)">
+                订阅详情
               </button>
             </span>
           </div>
           <div v-if="!nodes.length" class="empty-row">暂无可用节点</div>
+        </div>
+        <div class="detail-guide-layer" v-if="showDetailGuide && nodes.length">
+          <div class="detail-guide-popover" role="note" aria-label="订阅详情入口提示">
+            <button type="button" class="detail-guide-close" aria-label="关闭订阅详情导览" @click="$emit('close-detail-guide')">x</button>
+            <strong>订阅详情入口</strong>
+            <span>点这里查看链接、二维码和教程</span>
+            <button type="button" class="detail-guide-done" @click="$emit('close-detail-guide')">知道了</button>
+          </div>
         </div>
       </section>
 
@@ -166,10 +174,11 @@ defineProps({
   summary: { type: Object, required: true },
   keyword: { type: String, default: '' },
   statusFilter: { type: String, default: 'all' },
+  showDetailGuide: { type: Boolean, default: false },
   loading: { type: Boolean, default: false }
 })
 
-defineEmits(['update:keyword', 'update:statusFilter', 'refresh', 'navigate', 'detail', 'copy-subscription'])
+defineEmits(['update:keyword', 'update:statusFilter', 'refresh', 'navigate', 'detail', 'copy-subscription', 'close-detail-guide'])
 
 function formatDate(value) {
   return value ? parseTime(value, '{y}-{m}-{d}') : '永久'

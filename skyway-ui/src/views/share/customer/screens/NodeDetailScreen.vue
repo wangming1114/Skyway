@@ -36,6 +36,30 @@
       </article>
     </div>
 
+    <section class="share-panel node-onboarding-panel">
+      <div class="node-card-head">
+        <span class="section-lightning-icon"></span>
+        <div>
+          <h2>新手使用引导</h2>
+          <p>这个页面用于复制当前节点链接、扫码导入手机端，并按设备打开对应教程。</p>
+        </div>
+      </div>
+      <div class="onboarding-steps">
+        <article class="onboarding-step">
+          <i>1</i>
+          <div><strong>先选导入方式</strong><small>电脑优先使用 Clash 订阅或 VLESS 链接，手机优先扫码。</small></div>
+        </article>
+        <article class="onboarding-step">
+          <i>2</i>
+          <div><strong>复制链接或扫码</strong><small>桌面端点击复制，手机端使用下方二维码导入当前节点。</small></div>
+        </article>
+        <article class="onboarding-step">
+          <i>3</i>
+          <div><strong>打开客户端完成导入</strong><small>导入后先测试延迟，再启用系统代理。</small></div>
+        </article>
+      </div>
+    </section>
+
     <div class="node-detail-layout">
       <section class="share-panel method-card node-method-card">
         <h2><ClientIcon type="v2ray" size="lg" />方式一：使用 VLESS 原始链接</h2>

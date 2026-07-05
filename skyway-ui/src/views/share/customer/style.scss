@@ -1200,6 +1200,7 @@
 .subscription-list-panel {
   height: 376px;
   min-height: 0;
+  position: relative;
   align-self: start;
   display: flex;
   flex-direction: column;
@@ -1439,6 +1440,93 @@
 
 .table-actions .asset-action.copy-subscription {
   color: #0f63ea;
+}
+
+.table-actions .asset-action.detail.is-guide-target {
+  position: relative;
+  z-index: 7;
+  border-color: #1b6fff;
+  color: #fff;
+  background: linear-gradient(180deg, #2b77ff, #075ee8);
+  box-shadow: 0 0 0 3px rgba(27, 111, 255, 0.18), 0 8px 18px rgba(15, 99, 236, 0.2);
+}
+
+.detail-guide-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+}
+
+.detail-guide-popover {
+  width: 280px;
+  position: absolute;
+  top: 88px;
+  right: 104px;
+  padding: 12px 40px 12px 14px;
+  border: 1px solid #dce8fb;
+  border-radius: 8px;
+  color: #102a56;
+  background: #fff;
+  box-shadow: 0 14px 32px rgba(18, 50, 104, 0.16);
+  pointer-events: auto;
+}
+
+.detail-guide-popover::before {
+  content: "";
+  position: absolute;
+  top: 27px;
+  right: -10px;
+  border-top: 10px solid transparent;
+  border-bottom: 10px solid transparent;
+  border-left: 10px solid #fff;
+}
+
+.detail-guide-close {
+  width: 24px;
+  height: 24px;
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: #7b879d;
+  background: transparent;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.detail-guide-popover strong {
+  display: block;
+  color: #061a48;
+  font-size: 15px;
+  line-height: 1.3;
+}
+
+.detail-guide-popover span {
+  display: block;
+  margin-top: 5px;
+  color: #53668d;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.detail-guide-done {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  margin-top: 10px;
+  padding: 0 12px;
+  border: 1px solid #cfe1ff;
+  border-radius: 6px;
+  color: #1267ee;
+  background: #f4f8ff;
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .empty-row {
@@ -2069,6 +2157,64 @@
   margin-top: 6px;
   color: #6a7999;
   line-height: 1.3;
+}
+
+.node-onboarding-panel {
+  margin: 0 0 14px;
+  padding: 16px 18px;
+}
+
+.node-onboarding-panel .node-card-head {
+  align-items: center;
+}
+
+.onboarding-steps {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.onboarding-step {
+  min-height: 96px;
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  padding: 14px;
+  border: 1px solid #dbe7fb;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #fbfdff, #f5f9ff);
+}
+
+.onboarding-step i {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  color: #fff;
+  background: linear-gradient(180deg, #2b77ff, #075ee8);
+  font-size: 14px;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.onboarding-step strong,
+.onboarding-step small {
+  display: block;
+}
+
+.onboarding-step strong {
+  color: #102a56;
+  font-size: 15px;
+  line-height: 1.3;
+}
+
+.onboarding-step small {
+  margin-top: 6px;
+  color: #657494;
+  line-height: 1.5;
 }
 
 .node-detail-layout {
@@ -2952,6 +3098,7 @@
   .round-step-grid,
   .node-detail-summary,
   .node-qr-layout,
+  .onboarding-steps,
   .download-tabs,
   .method-body,
   .download-actions,
@@ -2991,5 +3138,16 @@
 
   .guide-big-card img {
     width: 100%;
+  }
+
+  .detail-guide-popover {
+    width: auto;
+    top: 148px;
+    right: 12px;
+    left: 12px;
+  }
+
+  .detail-guide-popover::before {
+    right: 34px;
   }
 }
