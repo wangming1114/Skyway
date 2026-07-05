@@ -73,8 +73,6 @@ public class MbCustomerTempShareServiceImpl implements IMbCustomerTempShareServi
         validateShare(share, accessPassword);
         ProxyNode query = new ProxyNode();
         query.setCustomerId(share.getCustomerId());
-        query.setStatus("0");
-        query.setExpireStatus("unexpired");
         return proxyNodeService.selectList(query).stream()
                 .map(this::toPublicNode)
                 .collect(Collectors.toList());

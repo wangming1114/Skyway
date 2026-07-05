@@ -124,6 +124,25 @@ test('overview operation column puts copy subscription before detail', () => {
   assert.match(cssBlock(style, '.table-actions .asset-action'), /height:\s*31px/)
 })
 
+test('overview subscription list supports customer status filtering and keyword search together', () => {
+  const source = readScreen('OverviewScreen.vue')
+  const index = readShareIndex()
+  const style = readStyle()
+  const overviewBinding = index.match(/<OverviewScreen[\s\S]*?\/>/)?.[0] || ''
+
+  assert.match(overviewBinding, /v-model:status-filter="statusFilter"/)
+  assert.match(index, /const statusFilter = ref\('all'\)/)
+  assert.match(index, /filterShareNodes\(normalizedNodes\.value,\s*\{[\s\S]*keyword:\s*keyword\.value,[\s\S]*status:\s*statusFilter\.value/)
+  assert.match(source, /<select :value="statusFilter" @change="\$emit\('update:statusFilter', \$event\.target\.value\)">/)
+  assert.match(source, /<option value="all">全部状态<\/option>/)
+  assert.match(source, /<option value="active">正常<\/option>/)
+  assert.match(source, /<option value="expired">已过期<\/option>/)
+  assert.match(source, /<option value="disabled">停用<\/option>/)
+  assert.match(source, /defineEmits\(\[[^\]]*'update:statusFilter'/s)
+  assert.match(cssBlock(style, '.table-tools .status-filter'), /width:\s*128px/)
+  assert.match(cssBlock(style, '.status-chip.danger'), /#d93025/)
+})
+
 test('overview quick guide group headings are text-only', () => {
   const source = readScreen('OverviewScreen.vue')
 
@@ -279,13 +298,20 @@ test('overview quick guide tutorial buttons center their labels', () => {
 
 test('hero artwork is treated as ambient decoration without hard rectangles', () => {
   const style = readStyle()
+  const overview = readScreen('OverviewScreen.vue')
   assert.doesNotMatch(cssBlock(style, '.customer-share-root'), /66\.2%/)
   assert.doesNotMatch(cssBlock(style, '.customer-share-root'), /linear-gradient\(112deg/)
   assert.match(cssBlock(style, '.share-hero-art'), /mix-blend-mode:\s*multiply/)
   assert.match(cssBlock(style, '.share-hero-art'), /mask-image:\s*radial-gradient/)
   assert.match(cssBlock(style, '.unlock-art'), /mask-image:\s*radial-gradient/)
   assert.match(cssBlock(style, '.unlock-art'), /opacity:\s*0\.[23]/)
-  assert.match(cssBlock(style, '.overview-hero .share-hero-art'), /opacity:\s*0\.[34]/)
+  assert.match(overview, /hero-desktop\.png/)
+  assert.match(cssBlock(style, '.overview-hero'), /min-height:\s*132px/)
+  const overviewHeroArt = cssBlock(style, '.overview-hero .share-hero-art')
+  assert.match(overviewHeroArt, /height:\s*132px/)
+  assert.match(overviewHeroArt, /object-fit:\s*contain/)
+  assert.match(overviewHeroArt, /object-position:\s*center/)
+  assert.match(overviewHeroArt, /opacity:\s*0\.[34]/)
   const heroArt = cssBlock(style, '.tutorial-hero .share-hero-art')
   assert.match(heroArt, /width:\s*(6[4-9]\d|[7-9]\d\d)px/)
   assert.match(heroArt, /opacity:\s*0\.[34]/)

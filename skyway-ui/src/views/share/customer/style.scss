@@ -538,7 +538,7 @@
 }
 
 .overview-hero {
-  min-height: 84px;
+  min-height: 132px;
 }
 
 .share-hero-copy {
@@ -615,13 +615,14 @@
 }
 
 .overview-hero .share-hero-art {
-  top: -82px;
-  right: 118px;
-  width: 760px;
-  height: auto;
+  top: 0;
+  right: 245px;
+  width: 520px;
+  height: 132px;
   object-fit: contain;
   object-position: center;
-  opacity: 0.3;
+  opacity: 0.36;
+  filter: saturate(1.08) contrast(1.02) brightness(1.04);
 }
 
 .tutorial-hero .share-hero-art {
@@ -1249,6 +1250,32 @@
   display: inline-flex;
 }
 
+.table-tools .status-filter {
+  width: 128px;
+  position: relative;
+  display: flex;
+  padding: 0 34px 0 12px;
+}
+
+.table-tools .status-filter select {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  appearance: none;
+  color: #183362;
+  background: transparent;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.table-tools .status-filter .ui-icon {
+  position: absolute;
+  right: 12px;
+  pointer-events: none;
+}
+
 .table-tools label {
   width: 250px;
   display: flex;
@@ -1367,6 +1394,12 @@
   color: #f06a00;
   border: 1px solid #ffd4a4;
   background: #fff3e8;
+}
+
+.status-chip.danger {
+  color: #d93025;
+  border: 1px solid #f4b8b2;
+  background: #fff0ef;
 }
 
 .status-chip.muted {

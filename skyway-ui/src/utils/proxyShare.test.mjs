@@ -3,6 +3,7 @@ import {
   buildClashSubscribeUrl,
   buildQrImageUrl,
   buildShareNodeSummary,
+  filterShareNodes,
   normalizeShareNode,
   parseVlessUrl,
   safeProxyShareFilename
@@ -48,10 +49,22 @@ assert.equal(normalized.statusText, '正常')
 assert.equal(normalized.remainingDays, 5)
 assert.equal(normalized.isExpiringSoon, true)
 
+const expiredNode = normalizeShareNode({
+  nodeName: 'Expired Tokyo',
+  address: '10.0.0.1',
+  port: 10001,
+  expireTime: '2026-06-01',
+  status: '0'
+}, new Date('2026-06-30T00:00:00Z'))
+assert.equal(expiredNode.statusText, '已过期')
+assert.equal(expiredNode.isActive, false)
+assert.equal(expiredNode.isExpired, true)
+
 const summary = buildShareNodeSummary([
   normalized,
   normalizeShareNode({ status: '1', expireTime: '2026-07-20' }, new Date('2026-06-30T00:00:00Z')),
-  normalizeShareNode({ status: '0', expireTime: '2026-08-01' }, new Date('2026-06-30T00:00:00Z'))
+  normalizeShareNode({ status: '0', expireTime: '2026-08-01' }, new Date('2026-06-30T00:00:00Z')),
+  expiredNode
 ])
 assert.equal(summary.activeCount, 2)
 assert.equal(summary.expiringSoonCount, 1)
@@ -67,3 +80,35 @@ assert.equal(clashNode.vlessUrl, '')
 assert.equal(clashNode.clashUrl, 'https://api.example.com/sub/001')
 assert.equal(clashNode.endpoint, 'api.example.com')
 assert.equal(clashNode.isExpiringSoon, true)
+
+const disabledNode = normalizeShareNode({
+  nodeName: 'Disabled Singapore',
+  address: '10.0.0.2',
+  port: 10002,
+  expireTime: '2026-08-01',
+  status: '1'
+}, new Date('2026-06-30T00:00:00Z'))
+const activeNode = normalizeShareNode({
+  nodeName: 'Active US',
+  address: '10.0.0.3',
+  port: 10003,
+  expireTime: '2026-08-01',
+  status: '0'
+}, new Date('2026-06-30T00:00:00Z'))
+
+assert.deepEqual(
+  filterShareNodes([activeNode, disabledNode, expiredNode], { status: 'all', keyword: '' }).map(node => node.name),
+  ['Active US', 'Disabled Singapore', 'Expired Tokyo']
+)
+assert.deepEqual(
+  filterShareNodes([activeNode, disabledNode, expiredNode], { status: 'disabled', keyword: '' }).map(node => node.name),
+  ['Disabled Singapore']
+)
+assert.deepEqual(
+  filterShareNodes([activeNode, disabledNode, expiredNode], { status: 'expired', keyword: '' }).map(node => node.name),
+  ['Expired Tokyo']
+)
+assert.deepEqual(
+  filterShareNodes([activeNode, disabledNode, expiredNode], { status: 'active', keyword: '10.0.0.3' }).map(node => node.name),
+  ['Active US']
+)

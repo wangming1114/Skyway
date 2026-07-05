@@ -28,6 +28,7 @@
       <OverviewScreen
         v-if="activeView === 'overview'"
         v-model:keyword="keyword"
+        v-model:status-filter="statusFilter"
         :nodes="filteredNodes"
         :summary="summary"
         :loading="loading"
@@ -77,7 +78,7 @@ import { computed, getCurrentInstance, nextTick, reactive, ref, watch } from 'vu
 import { useRoute } from 'vue-router'
 import QRCode from 'qrcode'
 import { unlockCustomerTempShare } from '@/api/member/customerTempShare'
-import { buildShareNodeSummary, normalizeShareNode, safeProxyShareFilename } from '@/utils/proxyShare'
+import { buildShareNodeSummary, filterShareNodes, normalizeShareNode, safeProxyShareFilename } from '@/utils/proxyShare'
 import heroOverview from '@/assets/share/customer/hero-overview.png'
 import OverviewScreen from './screens/OverviewScreen.vue'
 import DesktopGuideScreen from './screens/DesktopGuideScreen.vue'
@@ -96,6 +97,7 @@ const unlocked = ref(false)
 const loading = ref(false)
 const activeView = ref('overview')
 const keyword = ref('')
+const statusFilter = ref('all')
 const nodeList = ref([])
 const selectedNode = ref(null)
 const detailQrUrl = ref('')
@@ -118,9 +120,10 @@ const normalizedNodes = computed(() => {
 })
 
 const filteredNodes = computed(() => {
-  const text = keyword.value.trim().toLowerCase()
-  if (!text) return normalizedNodes.value
-  return normalizedNodes.value.filter(node => `${node.name} ${node.endpoint} ${node.protocol}`.toLowerCase().includes(text))
+  return filterShareNodes(normalizedNodes.value, {
+    keyword: keyword.value,
+    status: statusFilter.value
+  })
 })
 
 const summary = computed(() => buildShareNodeSummary(normalizedNodes.value))

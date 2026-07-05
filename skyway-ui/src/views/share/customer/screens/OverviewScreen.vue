@@ -40,7 +40,16 @@
             <p>管理您的订阅节点，查看有效期、状态与导入入口</p>
           </div>
           <div class="table-tools">
-            <button type="button">全部状态<span class="ui-icon caret-down"></span></button>
+            <label class="status-filter">
+              <select :value="statusFilter" @change="$emit('update:statusFilter', $event.target.value)">
+                <option value="all">全部状态</option>
+                <option value="active">正常</option>
+                <option value="expiring">即将到期</option>
+                <option value="expired">已过期</option>
+                <option value="disabled">停用</option>
+              </select>
+              <span class="ui-icon caret-down"></span>
+            </label>
             <label>
               <input :value="keyword" placeholder="搜索节点名称或地址" @input="$emit('update:keyword', $event.target.value)" />
               <span class="ui-icon search"></span>
@@ -62,7 +71,7 @@
             <span class="date-cell">{{ formatDate(node.expireTime) }}<small :class="{ warn: node.isExpiringSoon }">{{ node.remainingLabel }}</small></span>
             <span>
               <img v-if="!node.isExpiringSoon && node.isActive" class="status-img" :src="statusNormal" :alt="node.statusText" />
-              <i v-else :class="['status-chip', node.isExpiringSoon ? 'warning' : 'muted']">{{ node.isExpiringSoon ? '即将到期' : node.statusText }}</i>
+              <i v-else :class="['status-chip', node.isExpiringSoon ? 'warning' : node.isExpired ? 'danger' : 'muted']">{{ node.isExpiringSoon ? '即将到期' : node.statusText }}</i>
             </span>
             <span class="table-actions">
               <button type="button" class="asset-action copy-subscription" aria-label="复制订阅" @click="$emit('copy-subscription', node)">
@@ -144,7 +153,7 @@
 <script setup>
 import HeroHeader from '../components/HeroHeader.vue'
 import ClientIcon from '../components/ClientIcon.vue'
-import heroOverview from '@/assets/share/customer/hero-overview.png'
+import heroOverview from '@/assets/share/customer/hero-desktop.png'
 import iconDownload from '@/assets/share/customer/icon-download.png'
 import statusNormal from '@/assets/share/customer/status-normal.png'
 import buttonDownloadNow from '@/assets/share/customer/button-download-now.png'
@@ -156,10 +165,11 @@ defineProps({
   nodes: { type: Array, default: () => [] },
   summary: { type: Object, required: true },
   keyword: { type: String, default: '' },
+  statusFilter: { type: String, default: 'all' },
   loading: { type: Boolean, default: false }
 })
 
-defineEmits(['update:keyword', 'refresh', 'navigate', 'detail', 'copy-subscription'])
+defineEmits(['update:keyword', 'update:statusFilter', 'refresh', 'navigate', 'detail', 'copy-subscription'])
 
 function formatDate(value) {
   return value ? parseTime(value, '{y}-{m}-{d}') : '永久'

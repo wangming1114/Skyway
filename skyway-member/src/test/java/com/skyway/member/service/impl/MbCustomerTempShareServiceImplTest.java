@@ -110,7 +110,7 @@ public class MbCustomerTempShareServiceImplTest {
     }
 
     @Test
-    public void unlockReturnsReadonlyCustomerNodes() {
+    public void unlockReturnsReadonlyCustomerNodesWithoutStatusOrExpireFiltering() {
         MbCustomerTempShare share = activeShare();
         share.setAccessPassword(new BCryptPasswordEncoder().encode("right-pass"));
         ProxyNode queryResult = new ProxyNode();
@@ -132,8 +132,8 @@ public class MbCustomerTempShareServiceImplTest {
         ArgumentCaptor<ProxyNode> queryCaptor = ArgumentCaptor.forClass(ProxyNode.class);
         verify(proxyNodeService).selectList(queryCaptor.capture());
         assertEquals(8L, queryCaptor.getValue().getCustomerId());
-        assertEquals("unexpired", queryCaptor.getValue().getExpireStatus());
-        assertEquals("0", queryCaptor.getValue().getStatus());
+        assertEquals(null, queryCaptor.getValue().getExpireStatus());
+        assertEquals(null, queryCaptor.getValue().getStatus());
     }
 
     @Test

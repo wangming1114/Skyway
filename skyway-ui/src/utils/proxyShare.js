@@ -52,6 +52,8 @@ export function normalizeShareNode(node = {}, now = new Date()) {
     ? Math.ceil((expireDate.getTime() - now.getTime()) / 86400000)
     : null
   const status = String(node.status ?? '0')
+  const isExpired = remainingDays !== null && remainingDays < 0
+  const isDisabled = status !== '0'
   const address = node.address || parsedUrl?.host || genericUrl?.host || ''
   const port = node.port || parsedUrl?.port || genericUrl?.port || ''
   const protocol = node.nodeType || inferProtocol(node, parsedUrl)
@@ -67,13 +69,38 @@ export function normalizeShareNode(node = {}, now = new Date()) {
     endpoint: address && port ? `${address}:${port}` : (address || '-'),
     expireDate,
     remainingDays,
-    statusText: status === '0' ? '正常' : '停用',
-    isActive: status === '0',
-    isExpired: remainingDays !== null && remainingDays < 0,
+    statusText: isExpired ? '已过期' : (isDisabled ? '停用' : '正常'),
+    isActive: !isDisabled && !isExpired,
+    isDisabled,
+    isExpired,
     isExpiringSoon: remainingDays !== null && remainingDays >= 0 && remainingDays <= 7,
     vlessUrl: isVless ? rawUrl : '',
     clashUrl: isVless ? buildClashSubscribeUrl(rawUrl) : (isClash ? rawUrl : '')
   }
+}
+
+export function filterShareNodes(nodes = [], options = {}) {
+  const status = options.status || 'all'
+  const keyword = String(options.keyword || '').trim().toLowerCase()
+
+  return nodes.filter(node => {
+    const statusMatched = status === 'all'
+      || (status === 'active' && node.isActive)
+      || (status === 'expiring' && node.isExpiringSoon)
+      || (status === 'expired' && node.isExpired)
+      || (status === 'disabled' && node.isDisabled)
+
+    if (!statusMatched) return false
+    if (!keyword) return true
+
+    return [
+      node.name,
+      node.endpoint,
+      node.protocol,
+      node.statusText,
+      node.remainingLabel
+    ].filter(Boolean).join(' ').toLowerCase().includes(keyword)
+  })
 }
 
 export function buildShareNodeSummary(nodes = []) {
