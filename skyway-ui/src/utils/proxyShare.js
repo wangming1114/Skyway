@@ -43,3 +43,72 @@ export function safeProxyShareFilename(name, ext) {
     .replace(/^-|-$/g, '')
   return `${safeName || 'proxy-share'}.${normalizedExt}`
 }
+
+export function normalizeShareNode(node = {}, now = new Date()) {
+  const parsedUrl = tryParseShareUrl(node.url)
+  const genericUrl = tryParseGenericUrl(node.url)
+  const expireDate = node.expireTime ? new Date(node.expireTime) : null
+  const remainingDays = expireDate && !Number.isNaN(expireDate.getTime())
+    ? Math.ceil((expireDate.getTime() - now.getTime()) / 86400000)
+    : null
+  const status = String(node.status ?? '0')
+  const address = node.address || parsedUrl?.host || genericUrl?.host || ''
+  const port = node.port || parsedUrl?.port || genericUrl?.port || ''
+  const protocol = node.nodeType || inferProtocol(node, parsedUrl)
+  const rawUrl = String(node.url || '').trim()
+  const isVless = rawUrl.toLowerCase().startsWith('vless://')
+  const isClash = /clash/i.test(protocol) || /^https?:\/\//i.test(rawUrl)
+
+  return {
+    ...node,
+    id: node.id ?? `${address}:${port}:${node.nodeName || parsedUrl?.name || ''}`,
+    name: node.nodeName || parsedUrl?.name || '代理节点',
+    protocol,
+    endpoint: address && port ? `${address}:${port}` : (address || '-'),
+    expireDate,
+    remainingDays,
+    statusText: status === '0' ? '正常' : '停用',
+    isActive: status === '0',
+    isExpired: remainingDays !== null && remainingDays < 0,
+    isExpiringSoon: remainingDays !== null && remainingDays >= 0 && remainingDays <= 7,
+    vlessUrl: isVless ? rawUrl : '',
+    clashUrl: isVless ? buildClashSubscribeUrl(rawUrl) : (isClash ? rawUrl : '')
+  }
+}
+
+export function buildShareNodeSummary(nodes = []) {
+  return nodes.reduce((summary, node) => {
+    if (node.isActive) summary.activeCount += 1
+    if (node.isExpiringSoon) summary.expiringSoonCount += 1
+    return summary
+  }, { activeCount: 0, expiringSoonCount: 0 })
+}
+
+function tryParseShareUrl(url) {
+  if (!url) return null
+  try {
+    return parseVlessUrl(url)
+  } catch {
+    return null
+  }
+}
+
+function tryParseGenericUrl(url) {
+  if (!url) return null
+  try {
+    return new URL(String(url).trim())
+  } catch {
+    return null
+  }
+}
+
+function inferProtocol(node, parsedUrl) {
+  if (parsedUrl) {
+    const security = parsedUrl.params?.security
+    const network = parsedUrl.params?.type
+    if (security === 'reality') return 'VLESS-REALITY'
+    if (network === 'grpc') return 'VLESS-GRPC'
+    return 'VLESS'
+  }
+  return node.url ? '订阅' : '-'
+}

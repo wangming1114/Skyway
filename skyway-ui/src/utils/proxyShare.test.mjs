@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import {
   buildClashSubscribeUrl,
   buildQrImageUrl,
+  buildShareNodeSummary,
+  normalizeShareNode,
   parseVlessUrl,
   safeProxyShareFilename
 } from './proxyShare.js'
@@ -29,3 +31,39 @@ assert.ok(qrUrl.includes(encodeURIComponent(vlessUrl)))
 
 assert.equal(safeProxyShareFilename('VLESS/REALITY:23.144.68.66?10008', 'png'), 'VLESS-REALITY-23.144.68.66-10008.png')
 assert.equal(safeProxyShareFilename('', 'yaml'), 'proxy-share.yaml')
+
+const normalized = normalizeShareNode({
+  nodeName: 'VLESS-REALITY-64.83.19.211-10011-82-20260705',
+  nodeType: 'VLESS-REALITY',
+  address: '64.83.19.211',
+  port: 10011,
+  expireTime: '2026-07-05 00:00:00',
+  status: '0',
+  url: vlessUrl
+}, new Date('2026-06-30T00:00:00Z'))
+assert.equal(normalized.name, 'VLESS-REALITY-64.83.19.211-10011-82-20260705')
+assert.equal(normalized.protocol, 'VLESS-REALITY')
+assert.equal(normalized.endpoint, '64.83.19.211:10011')
+assert.equal(normalized.statusText, '正常')
+assert.equal(normalized.remainingDays, 5)
+assert.equal(normalized.isExpiringSoon, true)
+
+const summary = buildShareNodeSummary([
+  normalized,
+  normalizeShareNode({ status: '1', expireTime: '2026-07-20' }, new Date('2026-06-30T00:00:00Z')),
+  normalizeShareNode({ status: '0', expireTime: '2026-08-01' }, new Date('2026-06-30T00:00:00Z'))
+])
+assert.equal(summary.activeCount, 2)
+assert.equal(summary.expiringSoonCount, 1)
+
+const clashNode = normalizeShareNode({
+  nodeName: 'CLASH-SUB-23.91.12.20-443-20260618',
+  nodeType: 'Clash 订阅',
+  url: 'https://api.example.com/sub/001',
+  expireTime: '2026-06-18',
+  status: '0'
+}, new Date('2026-06-11T00:00:00Z'))
+assert.equal(clashNode.vlessUrl, '')
+assert.equal(clashNode.clashUrl, 'https://api.example.com/sub/001')
+assert.equal(clashNode.endpoint, 'api.example.com')
+assert.equal(clashNode.isExpiringSoon, true)
