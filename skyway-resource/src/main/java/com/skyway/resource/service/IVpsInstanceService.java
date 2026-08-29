@@ -11,6 +11,12 @@ import com.skyway.resource.domain.VpsInstance;
 public interface IVpsInstanceService {
 
     /**
+     * 展开分类筛选条件。分页查询必须在 startPage() 前调用，
+     * 避免分类查询消耗 PageHelper 的分页上下文。
+     */
+    void prepareListFilter(VpsInstance instance);
+
+    /**
      * 分页查询列表（由 Controller 调用 startPage 后执行，返回当前页列表）
      *
      * @param instance 查询条件（含 keyword、categoryId、nodeId、status）

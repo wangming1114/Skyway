@@ -76,6 +76,8 @@ public class VpsInstanceController extends BaseController {
     @PreAuthorize("@ss.hasPermi('resource:vps:list')")
     @GetMapping("/list")
     public TableDataInfo list(VpsInstance instance) {
+        // 分类展开会访问数据库，必须先于 startPage，确保分页应用到 VPS 主查询。
+        vpsInstanceService.prepareListFilter(instance);
         startPage();
         List<VpsInstance> list = vpsInstanceService.selectList(instance);
         return getDataTable(list);

@@ -39,12 +39,17 @@ public class VpsInstanceServiceImpl implements IVpsInstanceService {
     private ProxyNodeTrafficMapper proxyNodeTrafficMapper;
 
     @Override
-    public List<VpsInstance> selectList(VpsInstance instance) {
-        if (instance.getCategoryId() != null) {
+    public void prepareListFilter(VpsInstance instance) {
+        if (instance != null && instance.getCategoryId() != null) {
             List<Long> categoryIds = collectDescendantIds(instance.getCategoryId());
             instance.setCategoryIds(categoryIds);
             instance.setCategoryId(null);
         }
+    }
+
+    @Override
+    public List<VpsInstance> selectList(VpsInstance instance) {
+        prepareListFilter(instance);
         List<VpsInstance> list = vpsInstanceMapper.selectList(instance);
         if (list != null && !list.isEmpty()) {
             List<Long> instanceIds = list.stream()
@@ -76,11 +81,7 @@ public class VpsInstanceServiceImpl implements IVpsInstanceService {
 
     @Override
     public int count(VpsInstance instance) {
-        if (instance.getCategoryId() != null) {
-            List<Long> categoryIds = collectDescendantIds(instance.getCategoryId());
-            instance.setCategoryIds(categoryIds);
-            instance.setCategoryId(null);
-        }
+        prepareListFilter(instance);
         return vpsInstanceMapper.count(instance);
     }
 
