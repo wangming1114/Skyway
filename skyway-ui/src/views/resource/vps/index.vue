@@ -1125,31 +1125,36 @@ onBeforeUnmount(() => {
   color: var(--el-text-color-secondary);
   margin-top: 5px;
 }
-:deep(.vps-instance-dialog) {
+:global(.vps-instance-dialog) {
   width: min(760px, calc(100vw - 32px)) !important;
+  padding: 0;
+  overflow: hidden;
   border-radius: 10px;
+  background: var(--el-bg-color-overlay);
 }
-:deep(.vps-instance-dialog .el-dialog__header) {
+:global(.vps-instance-dialog .el-dialog__header) {
   margin-right: 0;
-  padding: 22px 24px 16px;
+  padding: 14px 20px 12px;
   border-bottom: 1px solid var(--el-border-color-lighter);
 }
-:deep(.vps-instance-dialog .el-dialog__title) {
-  font-size: 20px;
+:global(.vps-instance-dialog .el-dialog__title) {
+  font-size: 18px;
   font-weight: 600;
   color: var(--el-text-color-primary);
 }
-:deep(.vps-instance-dialog .el-dialog__headerbtn) {
-  top: 10px;
-  right: 12px;
+:global(.vps-instance-dialog .el-dialog__headerbtn) {
+  top: 3px;
+  right: 4px;
+  width: 46px;
+  height: 46px;
 }
-:deep(.vps-instance-dialog .el-dialog__body) {
-  max-height: calc(100vh - 190px);
+:global(.vps-instance-dialog .el-dialog__body) {
+  max-height: calc(100vh - 180px);
   overflow-y: auto;
-  padding: 20px 24px 4px;
+  padding: 16px 20px 2px;
 }
-:deep(.vps-instance-dialog .el-dialog__footer) {
-  padding: 16px 24px 20px;
+:global(.vps-instance-dialog .el-dialog__footer) {
+  padding: 12px 20px 14px;
   border-top: 1px solid var(--el-border-color-lighter);
 }
 .vps-instance-form {
@@ -1202,9 +1207,9 @@ onBeforeUnmount(() => {
   gap: 16px;
   margin: 0 0 18px;
   padding: 13px 15px;
-  border: 1px solid var(--el-color-primary-light-7);
+  border: 1px solid rgba(64, 158, 255, 0.24);
   border-radius: 8px;
-  background: var(--el-color-primary-light-9);
+  background: rgba(64, 158, 255, 0.08);
 }
 .vps-connection-test__text {
   display: flex;
@@ -1231,7 +1236,7 @@ onBeforeUnmount(() => {
   gap: 8px;
 }
 @media (max-width: 640px) {
-  :deep(.vps-instance-dialog .el-dialog__body) {
+  :global(.vps-instance-dialog .el-dialog__body) {
     padding-right: 16px;
     padding-left: 16px;
   }
