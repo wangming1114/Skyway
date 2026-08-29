@@ -1,9 +1,21 @@
 <template>
   <div class="app-container">
+    <div v-if="isMobile" class="mobile-resource-tools">
+      <el-button plain icon="Filter" @click="filterOpen = true">筛选</el-button>
+      <el-button type="danger" plain icon="Delete" :disabled="selectedIds.length === 0" @click="handleBatchDelete" v-hasPermi="['resource:vps:remove']">批量删除（{{ selectedIds.length }}）</el-button>
+    </div>
+    <el-drawer v-if="isMobile" v-model="filterOpen" title="筛选节点" direction="btt" size="auto">
+      <el-form :model="queryParams" label-width="72px">
+        <el-form-item label="关键字"><el-input v-model="queryParams.nodeName" placeholder="节点名称" clearable /></el-form-item>
+        <el-form-item label="实例"><el-select v-model="queryParams.instanceId" clearable filterable style="width: 100%"><el-option v-for="i in instanceOptions" :key="i.id" :label="i.name" :value="i.id" /></el-select></el-form-item>
+        <el-form-item label="客户"><el-select v-model="queryParams.customerId" clearable filterable style="width: 100%"><el-option v-for="c in customerOptions" :key="c.id" :label="c.username" :value="c.id" /></el-select></el-form-item>
+        <div class="mobile-drawer-actions"><el-button type="primary" @click="handleQuery(); filterOpen = false">搜索</el-button><el-button @click="resetQuery(); filterOpen = false">重置</el-button></div>
+      </el-form>
+    </el-drawer>
     <el-alert type="info" :closable="false" show-icon class="mb8" style="margin-bottom: 12px">
       也可在「会员管理 → 客户详情」中为指定客户新增或管理关联节点。
     </el-alert>
-    <el-form :model="queryParams" ref="queryRef" :inline="true" v-show="showSearch" label-width="80px">
+    <el-form v-if="!isMobile" :model="queryParams" ref="queryRef" :inline="true" v-show="showSearch" label-width="80px">
       <el-form-item label="关键字" prop="nodeName">
         <el-input v-model="queryParams.nodeName" placeholder="节点名称" clearable style="width: 160px" @keyup.enter="handleQuery" />
       </el-form-item>
@@ -33,12 +45,12 @@
       </el-form-item>
     </el-form>
 
-    <el-row :gutter="10" class="mb8">
+    <el-row v-if="!isMobile" :gutter="10" class="mb8">
       <el-button type="danger" plain icon="Delete" :disabled="selectedIds.length === 0" @click="handleBatchDelete" v-hasPermi="['resource:vps:remove']">批量删除</el-button>
       <right-toolbar v-model:showSearch="showSearch" @queryTable="getList" />
     </el-row>
 
-    <el-table ref="tableRef" v-loading="loading" :data="nodeList" border size="small" :default-sort="{ prop: 'totalTrafficBytes', order: 'descending' }" @selection-change="handleSelectionChange" @sort-change="handleSortChange">
+    <el-table v-if="!isMobile" ref="tableRef" v-loading="loading" :data="nodeList" border size="small" :default-sort="{ prop: 'totalTrafficBytes', order: 'descending' }" @selection-change="handleSelectionChange" @sort-change="handleSortChange">
       <el-table-column type="selection" width="50" align="center" />
       <el-table-column label="节点信息" prop="nodeName" min-width="220" show-overflow-tooltip sortable="custom" :sort-orders="['descending', 'ascending']">
         <template #default="{ row }">
@@ -145,10 +157,18 @@
         </template>
       </el-table-column>
     </el-table>
+    <div v-else v-loading="loading" class="mobile-card-list proxy-node-mobile-list">
+      <article v-for="row in nodeList" :key="row.id" class="mobile-card proxy-node-card">
+        <div class="mobile-card__head"><el-checkbox :model-value="isNodeSelected(row.id)" :aria-label="`选择节点 ${row.nodeName || row.id}`" @change="checked => toggleNodeSelection(row.id, checked)" /><span class="mobile-card__title">{{ row.nodeName || '-' }}</span><el-tag size="small" :type="getNodeTypeTagColor(row.nodeType)">{{ row.nodeType || '-' }}</el-tag><el-switch v-model="row.status" active-value="0" inactive-value="1" :disabled="statusLoadingId === row.id" @change="handleStatusChange(row)" v-hasPermi="['resource:vps:edit']" /></div>
+        <div class="mobile-card__meta"><span class="mobile-card__wide">地址：{{ row.address || '-' }}<template v-if="row.port">:{{ row.port }}</template></span><span>VPS：<el-link v-if="row.instanceId" type="primary" :underline="false" @click="goVpsDetail(row.instanceId)">{{ instanceName(row.instanceId) }}</el-link><i v-else>-</i></span><span>客户：<el-link v-if="row.customerId" type="primary" :underline="false" @click="goCustomerDetail(row.customerId)">{{ customerName(row.customerId) }}</el-link><i v-else>-</i></span><span>有效期：{{ row.expireTime ? parseTime(row.expireTime, '{y}-{m}-{d}') : '永久' }}</span><span>累计流量：{{ trafficMap[row.id] ? nodeTrafficSummaryText(row) : '-' }}</span><span>实时速率：{{ trafficMap[row.id] ? nodeRealtimeSummaryText(row) : '-' }}</span><span>限速：{{ rateLimitLogicText(row) }}</span><span>限速周期：{{ rateLimitDurationText(row) }}</span><span class="mobile-card__wide">备注：{{ row.remark || '-' }}</span></div>
+        <div class="mobile-card__actions"><el-button link type="primary" @click="handleDetail(row)" v-hasPermi="['resource:vps:list', 'resource:vps:query']">详情</el-button><el-button link type="primary" @click="handleShare(row)" v-hasPermi="['resource:vps:list', 'resource:vps:query']">订阅信息</el-button><el-button link type="primary" @click="handleCopyUrl(row)" v-hasPermi="['resource:vps:list', 'resource:vps:query']">复制链接</el-button><el-dropdown trigger="click" @command="(cmd) => handleNodeCommand(cmd, row)" v-hasPermi="['resource:vps:list', 'resource:vps:query', 'resource:vps:edit', 'resource:vps:remove']"><el-button link type="primary" icon="More">更多</el-button><template #dropdown><el-dropdown-menu><el-dropdown-item command="accessLog" v-hasPermi="['resource:vps:list', 'resource:vps:query']">访问日志</el-dropdown-item><el-dropdown-item command="edit" v-hasPermi="['resource:vps:edit']">编辑</el-dropdown-item><el-dropdown-item command="rateLimit" v-hasPermi="['resource:vps:edit']">设置限速</el-dropdown-item><el-dropdown-item command="delete" v-hasPermi="['resource:vps:remove']">删除</el-dropdown-item><el-dropdown-item command="forceDelete" divided v-hasPermi="['resource:vps:remove']">强制删除</el-dropdown-item></el-dropdown-menu></template></el-dropdown></div>
+      </article>
+      <el-empty v-if="!loading && !nodeList.length" description="暂无节点" />
+    </div>
     <pagination v-show="total > 0" :total="total" v-model:page="queryParams.pageNum" v-model:limit="queryParams.pageSize" @pagination="getList" />
 
-    <el-dialog title="节点详情" v-model="detailVisible" width="620px" append-to-body destroy-on-close>
-      <el-descriptions v-if="detailData" :column="2" border size="small">
+    <el-dialog title="节点详情" v-model="detailVisible" :width="isMobile ? 'calc(100vw - 20px)' : '620px'" class="proxy-node-dialog" append-to-body destroy-on-close>
+      <el-descriptions v-if="detailData" :column="isMobile ? 1 : 2" border size="small">
         <el-descriptions-item label="节点名称">{{ detailData.nodeName || '-' }}</el-descriptions-item>
         <el-descriptions-item label="节点类型">
           <el-tag size="small" :type="getNodeTypeTagColor(detailData.nodeType)">{{ detailData.nodeType }}</el-tag>
@@ -215,7 +235,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog title="订阅信息" v-model="shareVisible" width="760px" append-to-body destroy-on-close>
+    <el-dialog title="订阅信息" v-model="shareVisible" :width="isMobile ? 'calc(100vw - 20px)' : '760px'" class="proxy-node-dialog" append-to-body destroy-on-close>
       <div v-if="shareData" class="proxy-share-page">
         <div class="proxy-share-header">
           <div>
@@ -274,7 +294,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog title="修改备注" v-model="remarkEditVisible" width="420px" append-to-body destroy-on-close @closed="remarkEditRow = null">
+    <el-dialog title="修改备注" v-model="remarkEditVisible" :width="isMobile ? 'calc(100vw - 20px)' : '420px'" class="proxy-node-dialog" append-to-body destroy-on-close @closed="remarkEditRow = null">
       <el-input v-model="remarkEditValue" type="textarea" :rows="3" placeholder="选填" maxlength="500" show-word-limit />
       <template #footer>
         <el-button @click="remarkEditVisible = false">取消</el-button>
@@ -282,7 +302,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog title="编辑节点" v-model="editNodeVisible" width="560px" append-to-body destroy-on-close>
+    <el-dialog title="编辑节点" v-model="editNodeVisible" :width="isMobile ? 'calc(100vw - 20px)' : '560px'" class="proxy-node-dialog" append-to-body destroy-on-close>
       <el-form label-width="90px">
         <el-form-item label="有效期">
           <div style="display: flex; align-items: center; gap: 10px; width: 100%">
@@ -337,7 +357,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog :title="rateLimitDialogTitle" v-model="rateLimitVisible" width="480px" append-to-body destroy-on-close>
+    <el-dialog :title="rateLimitDialogTitle" v-model="rateLimitVisible" :width="isMobile ? 'calc(100vw - 20px)' : '480px'" class="proxy-node-dialog" append-to-body destroy-on-close>
       <el-form ref="rateLimitFormRef" :model="rateLimitForm" :rules="rateLimitRules" label-width="96px" class="rate-limit-form">
         <el-form-item label="节点端口">
           <el-input :model-value="rateLimitRow?.port || '-'" disabled />
@@ -392,6 +412,7 @@
 
 <script setup name="ProxyNodeList">
 import QRCode from 'qrcode'
+import useAppStore from '@/store/modules/app'
 import useUserStore from '@/store/modules/user'
 import {
   listProxyNode,
@@ -414,7 +435,9 @@ import AccessLogDialog from '../components/AccessLogDialog.vue'
 const { proxy } = getCurrentInstance()
 const { res_proxy_node_status } = proxy.useDict('res_proxy_node_status')
 const router = useRouter()
+const appStore = useAppStore()
 const userStore = useUserStore()
+const isMobile = computed(() => appStore.device === 'mobile')
 const hasEditPermi = computed(() => (userStore.permissions || []).some(p => p === '*:*:*' || p === 'resource:vps:edit'))
 
 const nodeTypeOptions = [
@@ -425,6 +448,7 @@ const nodeTypeOptions = [
 const showSearch = ref(true)
 const loading = ref(false)
 const nodeList = ref([])
+const filterOpen = ref(false)
 const total = ref(0)
 const instanceOptions = ref([])
 const customerOptions = ref([])
@@ -520,6 +544,7 @@ const queryRef = ref(null)
 
 function getList() {
   loading.value = true
+  selectedIds.value = []
   listProxyNode(queryParams.value).then(res => {
     nodeList.value = res.rows || []
     total.value = res.total || 0
@@ -1129,6 +1154,25 @@ function handleSelectionChange(selection) {
   selectedIds.value = (selection || []).map(r => r.id).filter(id => id != null)
 }
 
+function isNodeSelected(id) {
+  return selectedIds.value.includes(id)
+}
+
+function toggleNodeSelection(id, checked) {
+  if (id == null) return
+  const next = new Set(selectedIds.value)
+  checked ? next.add(id) : next.delete(id)
+  selectedIds.value = Array.from(next)
+}
+
+function instanceName(instanceId) {
+  return instanceOptions.value.find(item => item.id === instanceId)?.name ?? instanceId ?? '-'
+}
+
+function customerName(customerId) {
+  return customerOptions.value.find(item => item.id === customerId)?.username ?? customerId ?? '-'
+}
+
 function handleBatchDelete() {
   if (selectedIds.value.length === 0) return
   proxy.$modal.confirm(`确认要删除选中的 ${selectedIds.value.length} 个节点吗？将同时在服务器上删除配置，执行流程与单个删除一致。`).then(() => {
@@ -1225,6 +1269,25 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.mobile-drawer-actions { display: flex; gap: 8px; }
+.mobile-drawer-actions .el-button { flex: 1; min-height: 40px; }
+.mobile-resource-tools { display: flex; gap: 8px; margin-bottom: 10px; }
+.mobile-resource-tools .el-button { flex: 1; min-height: 40px; margin-left: 0; }
+.mobile-card__wide { grid-column: 1 / -1; overflow-wrap: anywhere; }
+.proxy-node-card .mobile-card__head { gap: 6px; }
+.proxy-node-card .mobile-card__title { flex: 1; }
+.proxy-node-card i { font-style: normal; }
+@media (max-width: 992px) {
+  :deep(.proxy-node-dialog .el-dialog__body) { max-height: calc(100dvh - 144px); padding: 14px 16px; overflow-y: auto; overflow-x: hidden; }
+  :deep(.proxy-node-dialog .el-dialog__footer) { display: flex; flex-wrap: wrap; gap: 6px; }
+  :deep(.proxy-node-dialog .el-dialog__footer) .el-button { margin-left: 0; flex: 1; min-width: 90px; }
+  :deep(.proxy-node-dialog .el-form-item) { display: block; }
+  :deep(.proxy-node-dialog .el-form-item__label) { display: block; width: 100% !important; height: auto; margin-bottom: 6px; line-height: 20px; text-align: left; }
+  :deep(.proxy-node-dialog .el-form-item__content) { width: 100%; margin-left: 0 !important; }
+  .proxy-share-grid { grid-template-columns: 1fr; }
+  .proxy-share-qr { width: 100%; min-height: 220px; }
+  .proxy-share-qr img { max-width: 220px; max-height: 220px; }
+}
 .expire-forever { color: var(--el-color-success); font-weight: 500; }
 .expire-expired { color: var(--el-color-danger); font-weight: 500; }
 .share-url-section { margin-top: 16px; padding: 12px; background: var(--el-fill-color-light); border-radius: 6px; }

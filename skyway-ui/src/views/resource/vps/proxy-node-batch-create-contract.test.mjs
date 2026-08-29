@@ -7,16 +7,19 @@ import { fileURLToPath } from 'node:url'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const source = readFileSync(resolve(__dirname, 'components/ProxyNodePanel.vue'), 'utf8')
 
-test('batch create is only exposed for a fixed VPS instance and keeps single create', () => {
+test('batch create is exposed in both VPS and customer detail panels', () => {
   assert.match(source, /@click="handleAdd"[\s\S]*?>新增节点<\/el-button>/)
-  assert.match(source, /v-if="instanceId"[\s\S]*?@click="handleBatchAdd"[\s\S]*?>批量新增<\/el-button>/)
+  assert.match(source, /@click="handleBatchAdd"[\s\S]*?>批量新增<\/el-button>/)
+  assert.match(source, /v-if="!instanceId" label="服务器" required/)
+  assert.match(source, /batchForm\.instanceId/)
+  assert.match(source, /props\.fixedCustomer \? props\.customerId : undefined/)
 })
 
 test('batch create serially reuses the existing single-node HTTP API', () => {
   const executor = source.match(/async function executeBatchRows\(targetRows\)[\s\S]*?\n}\n\nfunction submitBatchAdd/)?.[0] || ''
   assert.match(executor, /for \(const row of targetRows\)/)
-  assert.match(source, /async function resolveAutoBatchPort[\s\S]*?excludePorts[\s\S]*?await getRecommendPort\(props\.instanceId,/)
-  assert.match(executor, /await addProxyNodeOnInstance\(props\.instanceId, payload\)/)
+  assert.match(source, /async function resolveAutoBatchPort[\s\S]*?excludePorts[\s\S]*?await getRecommendPort\(batchInstanceId\.value,/)
+  assert.match(executor, /await addProxyNodeOnInstance\(batchInstanceId\.value, payload\)/)
   assert.match(executor, /autoPort: row\.autoPort/)
   assert.match(executor, /res\?\.data\?\.port[\s\S]*?row\.port = Number\(res\.data\.port\)/)
   assert.match(executor, /row\.status = 'failed'/)

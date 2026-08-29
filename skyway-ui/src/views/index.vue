@@ -126,7 +126,7 @@
             </div>
           </div>
         </template>
-        <el-table v-loading="loading || vpsRankLoading" :data="vpsRankList" size="small" stripe height="360">
+        <el-table v-if="!isMobile" v-loading="loading || vpsRankLoading" :data="vpsRankList" size="small" stripe height="360">
           <el-table-column label="#" width="48" align="center">
             <template #default="{ $index }">
               <span class="rank-index">{{ $index + 1 }}</span>
@@ -153,6 +153,13 @@
             </template>
           </el-table-column>
         </el-table>
+        <div v-else v-loading="loading || vpsRankLoading" class="mobile-card-list">
+          <article v-for="(row, index) in vpsRankList" :key="row.instanceId" class="mobile-card">
+            <div class="mobile-card__head"><span class="mobile-card__title"><b class="rank-index">{{ index + 1 }}</b> <el-link type="primary" :underline="false" @click="goVpsDetail(row.instanceId)">{{ row.instanceName || ('VPS #' + row.instanceId) }}</el-link></span><el-tag size="small" :type="vpsStatusType(row.status)">{{ vpsStatusText(row.status) }}</el-tag></div>
+            <div class="mobile-card__meta"><span>IP：{{ row.instanceIp || '-' }}</span><span>节点：{{ row.nodeCount || 0 }}</span><span>流量：{{ formatTraffic(row.totalTraffic) }}</span><span>速率：{{ row.realtimeSpeedText || '-' }}</span></div>
+          </article>
+          <el-empty v-if="!loading && !vpsRankLoading && !vpsRankList.length" description="暂无排行数据" />
+        </div>
       </el-card>
 
       <el-card shadow="hover" class="panel-card rank-card">
@@ -182,7 +189,7 @@
             </div>
           </div>
         </template>
-        <el-table v-loading="loading || customerRankLoading" :data="customerNodeRankList" size="small" stripe height="360">
+        <el-table v-if="!isMobile" v-loading="loading || customerRankLoading" :data="customerNodeRankList" size="small" stripe height="360">
           <el-table-column label="#" width="48" align="center">
             <template #default="{ $index }">
               <span class="rank-index">{{ $index + 1 }}</span>
@@ -220,6 +227,13 @@
             </template>
           </el-table-column>
         </el-table>
+        <div v-else v-loading="loading || customerRankLoading" class="mobile-card-list">
+          <article v-for="(row, index) in customerNodeRankList" :key="row.customerId + '-' + row.instanceId + '-' + row.nodeName" class="mobile-card">
+            <div class="mobile-card__head"><span class="mobile-card__title"><b class="rank-index">{{ index + 1 }}</b> <el-link type="primary" :underline="false" @click="goCustomerDetail(row.customerId)">{{ row.username || ('用户 #' + row.customerId) }}</el-link></span><span>{{ row.nodeName || '-' }}</span></div>
+            <div class="mobile-card__meta"><span>VPS：{{ row.instanceName || '-' }}</span><span>速率：{{ nodeRealtimeSpeedText(row) }}</span><span>下载：{{ formatTraffic(row.totalRx) }}</span><span>上传：{{ formatTraffic(row.totalTx) }}</span><strong>合计：{{ formatTraffic(row.totalTraffic) }}</strong></div>
+          </article>
+          <el-empty v-if="!loading && !customerRankLoading && !customerNodeRankList.length" description="暂无排行数据" />
+        </div>
       </el-card>
     </section>
 
@@ -234,7 +248,7 @@
             <el-button link type="primary" @click="goTo('/resource/vps')">查看全部</el-button>
           </div>
         </template>
-        <el-table v-loading="loading" :data="expiringNodeList" size="small" stripe height="300">
+        <el-table v-if="!isMobile" v-loading="loading" :data="expiringNodeList" size="small" stripe height="300">
           <el-table-column label="节点" prop="nodeName" min-width="140" show-overflow-tooltip />
           <el-table-column label="用户" min-width="100" align="left" show-overflow-tooltip>
             <template #default="{ row }">{{ customerName(row.customerId) }}</template>
@@ -256,6 +270,13 @@
             </template>
           </el-table-column>
         </el-table>
+        <div v-else v-loading="loading" class="mobile-card-list">
+          <article v-for="row in expiringNodeList" :key="row.id" class="mobile-card">
+            <div class="mobile-card__head"><span class="mobile-card__title">{{ row.nodeName || '-' }}</span><span :class="{ 'text-danger': isExpired(row.expireTime) }">{{ expireText(row.expireTime) }}</span></div>
+            <div class="mobile-card__meta"><span>用户：{{ customerName(row.customerId) }}</span><span>VPS：{{ instanceName(row.instanceId) }}</span><span>流量：{{ formatTraffic(nodeTrafficTotal(row.id)) }}</span><span>限速：<el-tag size="small" :type="row.rateLimit ? 'warning' : 'info'" effect="plain">{{ row.rateLimit ? '启用' : '无' }}</el-tag></span></div>
+          </article>
+          <el-empty v-if="!loading && !expiringNodeList.length" description="暂无临期节点" />
+        </div>
       </el-card>
     </section>
   </div>
@@ -265,6 +286,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import * as echarts from 'echarts'
+import useAppStore from '@/store/modules/app'
 import {
   getDashboardCustomerTrafficRank,
   getDashboardSummary,
@@ -279,6 +301,8 @@ import { listCustomer } from '@/api/member/customer'
 import { parseTime } from '@/utils/skyway'
 
 const router = useRouter()
+const appStore = useAppStore()
+const isMobile = computed(() => appStore.device === 'mobile')
 
 const summary = ref({
   totalVps: 0,
@@ -1262,6 +1286,35 @@ onUnmounted(() => {
 
   .rank-filter__date {
     width: 100%;
+  }
+
+  .panel-card :deep(.el-card__header) {
+    padding: 12px;
+  }
+
+  .panel-card :deep(.el-card__body) {
+    padding: 12px;
+  }
+
+  .panel-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .rank-filter {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .rank-filter :deep(.el-radio-group) {
+    max-width: 100%;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+
+  .trend-chart,
+  .trend-rank {
+    height: 260px;
   }
 }
 </style>

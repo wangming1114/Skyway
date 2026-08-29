@@ -71,6 +71,10 @@
 .el-form .el-form-item__label {
   font-weight: 700;
 }
+
+.mobile-only {
+  display: none;
+}
 .el-dialog:not(.is-fullscreen) {
   margin-top: 6vh !important;
 }
@@ -128,7 +132,123 @@
 }
 
 /* 移动端适配 */
-@media (max-width: 768px) {
+@media (max-width: 992px) {
+  html,
+  body,
+  #app {
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  .app-container {
+    padding: 12px !important;
+    overflow-x: hidden;
+  }
+
+  .el-form--inline {
+    .el-form-item {
+      width: 100%;
+      margin-right: 0;
+
+      .el-input,
+      .el-cascader,
+      .el-select,
+      .el-autocomplete,
+      .el-date-editor {
+        width: 100% !important;
+      }
+    }
+  }
+
+  .el-dialog:not(.is-fullscreen) {
+    width: calc(100vw - 24px) !important;
+    max-width: calc(100vw - 24px);
+    margin: 12px auto !important;
+  }
+
+  .el-dialog__body {
+    max-height: calc(100vh - 150px);
+    overflow-y: auto;
+  }
+
+  .el-dialog__footer {
+    .el-button {
+      min-width: 88px;
+      min-height: 38px;
+    }
+  }
+
+  .el-table {
+    overflow-x: auto;
+  }
+
+  .mobile-card-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .mobile-card {
+    padding: 12px;
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 8px;
+    background: var(--el-bg-color-overlay);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, .04);
+  }
+
+  .mobile-card__head,
+  .mobile-card__actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .mobile-card__head {
+    margin-bottom: 8px;
+  }
+
+  .mobile-card__title {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--el-text-color-primary);
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mobile-card__meta,
+  .mobile-card__details {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px 12px;
+    color: var(--el-text-color-secondary);
+    font-size: 12px;
+    line-height: 20px;
+  }
+
+  .mobile-card__details {
+    padding-top: 8px;
+    margin-top: 8px;
+    border-top: 1px solid var(--el-border-color-lighter);
+  }
+
+  .mobile-card__actions {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    padding-top: 8px;
+    margin-top: 8px;
+    border-top: 1px solid var(--el-border-color-lighter);
+  }
+
+  .mobile-card__actions .el-button {
+    min-height: 36px;
+    margin-left: 0 !important;
+  }
+
+  .mobile-only { display: block !important; }
+  .desktop-only { display: none !important; }
+
   .pagination-container {
     .el-pagination {
       > .el-pagination__jump {

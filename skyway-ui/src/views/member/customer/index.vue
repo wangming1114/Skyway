@@ -1,6 +1,10 @@
 <template>
   <div class="app-container">
-    <el-form :model="queryParams" ref="queryRef" :inline="true" v-show="showSearch" label-width="68px">
+    <div v-if="isMobile" class="mobile-list-toolbar">
+      <el-button plain icon="Filter" @click="filterOpen = true">筛选</el-button>
+      <el-button type="primary" plain icon="Plus" @click="handleAdd" v-hasPermi="['member:customer:add']">新增客户</el-button>
+    </div>
+    <el-form v-if="!isMobile" :model="queryParams" ref="queryRef" :inline="true" v-show="showSearch" label-width="68px">
       <el-form-item label="关键字" prop="keyword">
         <el-input v-model="queryParams.keyword" placeholder="用户名/手机号" clearable style="width: 200px" @keyup.enter="handleQuery" />
       </el-form-item>
@@ -15,8 +19,15 @@
         <el-button icon="Refresh" @click="resetQuery">重置</el-button>
       </el-form-item>
     </el-form>
+    <el-drawer v-if="isMobile" v-model="filterOpen" title="筛选客户" direction="btt" size="auto">
+      <el-form :model="queryParams" label-width="68px">
+        <el-form-item label="关键字"><el-input v-model="queryParams.keyword" placeholder="用户名/手机号" clearable /></el-form-item>
+        <el-form-item label="状态"><el-select v-model="queryParams.status" placeholder="状态" clearable style="width: 100%"><el-option label="启用" value="0" /><el-option label="禁用" value="1" /></el-select></el-form-item>
+        <div class="mobile-drawer-actions"><el-button type="primary" @click="handleQuery(); filterOpen = false">搜索</el-button><el-button @click="resetQuery(); filterOpen = false">重置</el-button></div>
+      </el-form>
+    </el-drawer>
 
-    <el-row :gutter="10" class="mb8">
+    <el-row v-if="!isMobile" :gutter="10" class="mb8">
       <el-col :span="1.5">
         <el-button type="primary" plain icon="Plus" @click="handleAdd" v-hasPermi="['member:customer:add']">新增客户</el-button>
       </el-col>
@@ -26,7 +37,7 @@
       <right-toolbar v-model:showSearch="showSearch" @queryTable="getList" />
     </el-row>
 
-    <el-table v-loading="loading" :data="customerList">
+    <el-table v-if="!isMobile" v-loading="loading" :data="customerList">
       <el-table-column label="编号" align="center" prop="id" width="80" />
       <el-table-column label="用户名" align="center" prop="username" min-width="100" :show-overflow-tooltip="true" />
       <el-table-column label="邮箱" align="center" min-width="160" :show-overflow-tooltip="true">
@@ -72,9 +83,45 @@
         </template>
       </el-table-column>
     </el-table>
+    <div v-else v-loading="loading" class="mobile-card-list customer-mobile-list">
+      <article v-for="row in customerList" :key="row.id" class="mobile-card">
+        <div class="mobile-card__head">
+          <el-link type="primary" :underline="false" class="mobile-card__title" @click="goDetail(row)">{{ row.username || '-' }}</el-link>
+          <el-tag size="small" :type="row.status === '0' ? 'success' : 'danger'">{{ row.status === '0' ? '启用' : '禁用' }}</el-tag>
+        </div>
+        <div class="mobile-card__meta">
+          <span>手机：{{ row.phone || '-' }}</span>
+          <span>节点：<el-link type="primary" :underline="false" @click="goDetail(row)">{{ row.nodeBindCount ?? 0 }}</el-link></span>
+          <span>创建：{{ parseTime(row.createTime) || '-' }}</span>
+          <span>邮箱：{{ row.email || '-' }}</span>
+        </div>
+        <div v-if="expandedCustomerIds.has(row.id)" class="mobile-card__details">
+          <span>编号：{{ row.id }}</span>
+          <span>微信：{{ row.wechat || '-' }}</span>
+          <span>QQ：{{ row.qq || '-' }}</span>
+          <span>备注：{{ row.remark || '-' }}</span>
+        </div>
+        <div class="mobile-card__actions">
+          <el-button link type="primary" icon="View" @click="goDetail(row)">详情</el-button>
+          <el-button link type="primary" @click="toggleCustomerExpanded(row.id)">{{ expandedCustomerIds.has(row.id) ? '收起' : '展开' }}</el-button>
+          <el-button link type="primary" icon="Edit" @click="handleUpdate(row)" v-hasPermi="['member:customer:edit']">编辑</el-button>
+          <el-dropdown trigger="click" @command="(cmd) => handleCommand(cmd, row)" v-hasPermi="['member:customer:edit', 'member:customer:resetPwd', 'member:customer:remove']">
+            <el-button link type="primary" icon="More">更多</el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="resetPwd" icon="Key" v-if="checkPermi(['member:customer:resetPwd'])">重置密码</el-dropdown-item>
+                <el-dropdown-item command="toggleStatus" :icon="row.status === '0' ? 'SwitchButton' : 'CircleCheck'" v-if="checkPermi(['member:customer:edit'])">{{ row.status === '0' ? '禁用' : '启用' }}</el-dropdown-item>
+                <el-dropdown-item command="delete" icon="Delete" v-if="checkPermi(['member:customer:remove'])">删除</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+        </div>
+      </article>
+      <el-empty v-if="!loading && !customerList.length" description="暂无客户" />
+    </div>
     <pagination v-show="total > 0" :total="total" v-model:page="queryParams.pageNum" v-model:limit="queryParams.pageSize" @pagination="getList" />
 
-    <el-dialog :title="title" v-model="open" width="520px" append-to-body>
+    <el-dialog :title="title" v-model="open" :width="isMobile ? 'calc(100vw - 20px)' : '520px'" class="customer-form-dialog" append-to-body>
       <el-form :model="form" :rules="rules" ref="formRef" label-width="80px">
         <el-form-item label="用户名" prop="username" v-if="!form.id">
           <el-input v-model="form.username" placeholder="请输入用户名" maxlength="64" />
@@ -119,15 +166,26 @@
 import { listCustomer, getCustomer, addCustomer, updateCustomer, delCustomer, resetCustomerPwd, changeCustomerStatus } from '@/api/member/customer'
 import { parseTime } from '@/utils/skyway'
 import { checkPermi } from '@/utils/permission'
+import useAppStore from '@/store/modules/app'
 
 const { proxy } = getCurrentInstance()
 const router = useRouter()
+const appStore = useAppStore()
+const isMobile = computed(() => appStore.device === 'mobile')
 
 const customerList = ref([])
 const loading = ref(true)
 const showSearch = ref(true)
 const total = ref(0)
 const open = ref(false)
+const filterOpen = ref(false)
+const expandedCustomerIds = ref(new Set())
+
+function toggleCustomerExpanded(id) {
+  const next = new Set(expandedCustomerIds.value)
+  next.has(id) ? next.delete(id) : next.add(id)
+  expandedCustomerIds.value = next
+}
 const title = ref('')
 
 const data = reactive({
@@ -296,6 +354,24 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.mobile-list-toolbar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.mobile-list-toolbar .el-button {
+  flex: 1;
+  min-height: 40px;
+  margin-left: 0;
+}
+.mobile-drawer-actions {
+  display: flex;
+  gap: 8px;
+}
+.mobile-drawer-actions .el-button {
+  flex: 1;
+  min-height: 40px;
+}
 .op-btns {
   display: flex;
   align-items: center;
@@ -309,5 +385,33 @@ onMounted(() => {
 }
 .op-btns .el-button {
   padding: 0 4px;
+}
+@media (max-width: 992px) {
+  :deep(.customer-form-dialog .el-dialog__body) {
+    padding: 14px 16px;
+  }
+  :deep(.customer-form-dialog .el-form-item) {
+    display: block;
+  }
+  :deep(.customer-form-dialog .el-form-item__label) {
+    display: block;
+    width: 100% !important;
+    height: auto;
+    margin-bottom: 6px;
+    line-height: 20px;
+    text-align: left;
+  }
+  :deep(.customer-form-dialog .el-form-item__content) {
+    width: 100%;
+    margin-left: 0 !important;
+  }
+  :deep(.customer-form-dialog .el-dialog__footer) {
+    display: flex;
+    gap: 8px;
+  }
+  :deep(.customer-form-dialog .el-dialog__footer .el-button) {
+    flex: 1;
+    margin-left: 0;
+  }
 }
 </style>

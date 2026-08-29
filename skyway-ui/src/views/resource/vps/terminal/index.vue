@@ -840,6 +840,58 @@ onBeforeUnmount(() => {
   width: 100%;
   box-sizing: border-box;
 }
+@media (max-width: 992px) {
+  .vps-terminal-page {
+    height: calc(100dvh - 50px);
+    min-height: 0;
+  }
+  .page-header {
+    padding: 8px;
+  }
+  .page-header .page-title {
+    overflow: hidden;
+    font-size: 13px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ssh-split {
+    display: block;
+  }
+  .ssh-split > :deep(.splitpanes__pane) {
+    width: 100% !important;
+  }
+  .pane-left {
+    display: none !important;
+  }
+  .pane-right {
+    height: 100% !important;
+  }
+  .ssh-split-inner {
+    display: flex;
+    flex-direction: column;
+  }
+  .ssh-split-inner > :deep(.splitpanes__pane) {
+    width: 100% !important;
+  }
+  .pane-terminal {
+    flex: 0 0 58% !important;
+    height: 58% !important;
+  }
+  .pane-files {
+    flex: 1 1 42% !important;
+    height: 42% !important;
+  }
+  .ssh-split-inner > :deep(.splitpanes__splitter) {
+    display: none;
+  }
+  .command-card {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .command-card-desc {
+    flex-basis: calc(100% - 42px);
+  }
+}
 .goecs-option-loading {
   display: flex;
   align-items: center;

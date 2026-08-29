@@ -1,21 +1,22 @@
 <template>
   <div class="proxy-node-panel">
-    <div class="toolbar">
+    <div :class="['toolbar', { 'toolbar--mobile': isMobile }]">
       <el-button type="primary" size="small" icon="Plus" @click="handleAdd" v-hasPermi="['resource:vps:add']">新增节点</el-button>
-      <el-button v-if="instanceId" type="primary" plain size="small" icon="Plus" @click="handleBatchAdd" v-hasPermi="['resource:vps:add']">批量新增</el-button>
+      <el-button type="primary" plain size="small" icon="Plus" @click="handleBatchAdd" v-hasPermi="['resource:vps:add']">批量新增</el-button>
       <el-button type="danger" plain size="small" icon="Delete" :disabled="selectedIds.length === 0" @click="handleBatchDelete" v-hasPermi="['resource:vps:remove']">批量删除</el-button>
-      <el-select v-model="queryParams.nodeType" placeholder="全部类型" clearable size="small" style="width: 180px; margin-left: 10px" @change="handleFilterChange">
+      <span v-if="isMobile" class="selected-count">已选 {{ selectedIds.length }} 个</span>
+      <el-select v-model="queryParams.nodeType" placeholder="全部类型" clearable size="small" class="toolbar-filter toolbar-filter--type" @change="handleFilterChange">
         <el-option v-for="t in nodeTypeOptions" :key="t.value" :label="t.label" :value="t.value" />
       </el-select>
-      <el-select v-model="queryParams.expireStatus" placeholder="过期状态" size="small" style="width: 120px; margin-left: 8px" @change="handleFilterChange">
+      <el-select v-model="queryParams.expireStatus" placeholder="过期状态" size="small" class="toolbar-filter toolbar-filter--expire" @change="handleFilterChange">
         <el-option label="未过期" value="unexpired" />
         <el-option label="已过期" value="expired" />
         <el-option label="全部" value="all" />
       </el-select>
-      <el-button icon="Refresh" size="small" circle style="margin-left: 8px" @click="getList" />
+      <el-button icon="Refresh" size="small" circle class="toolbar-refresh" aria-label="刷新节点" @click="getList" />
     </div>
 
-    <el-table v-loading="loading" :data="nodeList" border size="small" style="margin-top: 10px" :default-sort="{ prop: 'totalTrafficBytes', order: 'descending' }" @selection-change="handleSelectionChange" @sort-change="handleSortChange">
+    <el-table v-if="!isMobile" v-loading="loading" :data="nodeList" border size="small" style="margin-top: 10px" :default-sort="{ prop: 'totalTrafficBytes', order: 'descending' }" @selection-change="handleSelectionChange" @sort-change="handleSortChange">
       <el-table-column type="selection" width="50" align="center" />
       <el-table-column label="节点信息" prop="nodeName" min-width="220" show-overflow-tooltip sortable="custom" :sort-orders="['descending', 'ascending']">
         <template #default="{ row }">
@@ -126,9 +127,55 @@
       </el-table-column>
     </el-table>
 
+    <div v-else v-loading="loading" class="mobile-card-list proxy-node-mobile-list">
+      <article v-for="row in nodeList" :key="row.id" class="mobile-card proxy-node-card">
+        <div class="mobile-card__head">
+          <el-checkbox :model-value="isNodeSelected(row.id)" :aria-label="`选择节点 ${row.nodeName || row.id}`" @change="checked => toggleNodeSelection(row.id, checked)" />
+          <div class="proxy-node-card__identity">
+            <el-link v-if="linkNodeNameToInstance && row.instanceId" type="primary" :underline="false" class="mobile-card__title" @click.stop="goVpsDetail(row.instanceId)">{{ row.nodeName || '-' }}</el-link>
+            <span v-else class="mobile-card__title">{{ row.nodeName || '-' }}</span>
+            <el-tag size="small" :type="getNodeTypeTagColor(row.nodeType)">{{ row.nodeType || '-' }}</el-tag>
+          </div>
+          <span class="status-cell">
+            <el-icon v-if="statusLoadingId === row.id" class="is-loading status-loading"><Loading /></el-icon>
+            <el-switch v-model="row.status" active-value="0" inactive-value="1" :disabled="statusLoadingId === row.id" @change="handleStatusChange(row)" v-hasPermi="['resource:vps:edit']" />
+          </span>
+        </div>
+        <div class="mobile-card__meta proxy-node-card__meta">
+          <span class="mobile-card__wide">地址：<b class="address-port-cell">{{ row.address || '-' }}<template v-if="row.port">:{{ row.port }}</template></b></span>
+          <span v-if="showInstanceColumn">VPS：{{ instanceName(row.instanceId) }}</span>
+          <span v-if="!hideCustomerColumn">客户：{{ customerName(row.customerId) }}</span>
+          <span>有效期：<i v-if="!row.expireTime" class="expire-forever">永久</i><i v-else :class="{ 'expire-expired': isExpired(row.expireTime) }">{{ parseTime(row.expireTime, '{y}-{m}-{d}') }}</i></span>
+          <span>累计流量：{{ trafficMap[row.id] ? nodeTrafficSummaryText(row) : '-' }}</span>
+          <span>实时速率：{{ trafficMap[row.id] ? nodeRealtimeSummaryText(row) : '-' }}</span>
+          <span>限速：{{ rateLimitLogicText(row) }}</span>
+          <span>限速周期：{{ rateLimitDurationText(row) }}</span>
+          <span class="mobile-card__wide">备注：{{ row.remark || '-' }}</span>
+        </div>
+        <div class="mobile-card__actions">
+          <el-button link type="primary" @click="handleDetail(row)">详情</el-button>
+          <el-button link type="primary" @click="handleShare(row)">订阅信息</el-button>
+          <el-button link type="primary" @click="handleCopyUrl(row)">复制链接</el-button>
+          <el-dropdown trigger="click" @command="(cmd) => handleNodeCommand(cmd, row)" v-hasPermi="['resource:vps:list', 'resource:vps:query', 'resource:vps:edit', 'resource:vps:remove']">
+            <el-button link type="primary" icon="DArrowRight">更多</el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="accessLog" icon="View" v-hasPermi="['resource:vps:list', 'resource:vps:query']">访问日志</el-dropdown-item>
+                <el-dropdown-item command="edit" icon="Edit" v-hasPermi="['resource:vps:edit']">编辑</el-dropdown-item>
+                <el-dropdown-item command="rateLimit" icon="Timer" v-hasPermi="['resource:vps:edit']">设置限速</el-dropdown-item>
+                <el-dropdown-item command="delete" icon="Delete" divided v-hasPermi="['resource:vps:remove']">删除</el-dropdown-item>
+                <el-dropdown-item command="forceDelete" icon="DeleteFilled" v-hasPermi="['resource:vps:remove']">强制删除</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+        </div>
+      </article>
+      <el-empty v-if="!loading && !nodeList.length" description="暂无节点" />
+    </div>
+
     <pagination v-show="total > 0" :total="total" v-model:page="queryParams.pageNum" v-model:limit="queryParams.pageSize" @pagination="getList" />
 
-    <el-dialog title="新增节点" v-model="addDialogVisible" width="560px" append-to-body>
+    <el-dialog title="新增节点" v-model="addDialogVisible" :width="isMobile ? 'calc(100vw - 20px)' : '560px'" class="proxy-node-dialog" append-to-body>
       <el-form ref="addFormRef" :model="addForm" :rules="addFormRules" label-width="90px">
         <el-form-item v-if="!fixedCustomer" label="归属客户" prop="customerId">
           <el-select v-model="addForm.customerId" placeholder="请选择客户" style="width: 100%" filterable>
@@ -217,7 +264,8 @@
     <el-dialog
       title="批量新增节点"
       v-model="batchAddVisible"
-      width="1040px"
+      :width="isMobile ? 'calc(100vw - 20px)' : '1040px'"
+      class="proxy-node-dialog batch-node-dialog"
       append-to-body
       :close-on-click-modal="!batchRunning"
       :close-on-press-escape="!batchRunning"
@@ -225,9 +273,14 @@
     >
       <el-form :model="batchForm" label-width="90px" class="batch-add-form">
         <div class="batch-common-grid">
-          <el-form-item label="归属客户" required>
+          <el-form-item v-if="!fixedCustomer" label="归属客户" required>
             <el-select v-model="batchForm.customerId" placeholder="请选择客户" style="width: 100%" filterable :disabled="batchCommonLocked">
               <el-option v-for="c in customerOptions" :key="c.id" :label="c.username" :value="c.id" />
+            </el-select>
+          </el-form-item>
+          <el-form-item v-if="!instanceId" label="服务器" required>
+            <el-select v-model="batchForm.instanceId" placeholder="请选择服务器" style="width: 100%" filterable :disabled="batchCommonLocked">
+              <el-option v-for="i in instanceOptions" :key="i.id" :label="i.name + ' (' + (i.ip || '') + ')'" :value="i.id" />
             </el-select>
           </el-form-item>
           <el-form-item label="协议类型" required>
@@ -281,7 +334,7 @@
         </div>
       </div>
 
-      <el-table :data="batchRows" border size="small" max-height="390" class="batch-node-table">
+      <el-table v-if="!isMobile" :data="batchRows" border size="small" max-height="390" class="batch-node-table">
         <el-table-column type="index" label="#" width="52" align="center" />
         <el-table-column label="端口" width="270">
           <template #default="{ row }">
@@ -327,6 +380,23 @@
           </template>
         </el-table-column>
       </el-table>
+      <div v-else class="batch-mobile-list">
+        <article v-for="(row, index) in batchRows" :key="row.key" class="batch-mobile-card">
+          <div class="batch-mobile-card__head">
+            <strong>节点 {{ index + 1 }}</strong>
+            <el-tag size="small" :type="batchStatusType(row.status)">{{ batchStatusText(row.status) }}</el-tag>
+          </div>
+          <div class="batch-port-cell">
+            <el-switch v-model="row.autoPort" active-text="自动" inactive-text="手动" :disabled="batchRunning || row.status === 'success'" @change="onBatchPortModeChange(row)" />
+            <el-input-number v-if="!row.autoPort" v-model="row.port" :min="1" :max="65535" controls-position="right" size="small" :disabled="batchRunning || row.status === 'success'" @change="onBatchManualPortChange(row)" />
+            <span v-else class="batch-auto-port">{{ row.port ? `本次 ${row.port}` : '执行时推荐端口' }}</span>
+          </div>
+          <el-input v-model="row.relayText" clearable :disabled="batchRunning || row.status === 'success' || batchForm.nodeType !== 'VLESS-REALITY'" placeholder="S5 中转：host:port:username:password" @input="validateBatchRelayRow(row)" />
+          <div v-if="row.validationError" class="batch-row-error">{{ row.validationError }}</div>
+          <div v-if="row.message" :class="['batch-mobile-message', { 'batch-row-error': row.status === 'failed' }]">{{ row.message }}</div>
+          <el-button link type="danger" :disabled="batchRunning || row.status === 'success'" @click="removeBatchRow(row)">删除此项</el-button>
+        </article>
+      </div>
 
       <template #footer>
         <el-button :disabled="batchRunning" @click="batchAddVisible = false">关 闭</el-button>
@@ -339,7 +409,7 @@
       v-model="addLogDrawerVisible"
       :title="execLogTitle"
       direction="rtl"
-      size="520"
+      :size="isMobile ? 'calc(100vw - 20px)' : '520px'"
       :close-on-click-modal="!addLogRunning"
     >
       <div class="add-log-body">
@@ -351,8 +421,8 @@
       </div>
     </el-drawer>
 
-    <el-dialog title="节点详情" v-model="detailVisible" width="620px" append-to-body destroy-on-close>
-      <el-descriptions v-if="detailData" :column="2" border size="small">
+    <el-dialog title="节点详情" v-model="detailVisible" :width="isMobile ? 'calc(100vw - 20px)' : '620px'" class="proxy-node-dialog" append-to-body destroy-on-close>
+      <el-descriptions v-if="detailData" :column="isMobile ? 1 : 2" border size="small">
         <el-descriptions-item label="节点名称">{{ detailData.nodeName || '-' }}</el-descriptions-item>
         <el-descriptions-item label="节点类型">
           <el-tag size="small" :type="getNodeTypeTagColor(detailData.nodeType)">{{ detailData.nodeType }}</el-tag>
@@ -421,7 +491,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog title="订阅信息" v-model="shareVisible" width="760px" append-to-body destroy-on-close>
+    <el-dialog title="订阅信息" v-model="shareVisible" :width="isMobile ? 'calc(100vw - 20px)' : '760px'" class="proxy-node-dialog proxy-share-dialog" append-to-body destroy-on-close>
       <div v-if="shareData" class="proxy-share-page">
         <div class="proxy-share-header">
           <div>
@@ -480,7 +550,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog title="修改备注" v-model="remarkEditVisible" width="420px" append-to-body destroy-on-close @closed="remarkEditRow = null">
+    <el-dialog title="修改备注" v-model="remarkEditVisible" :width="isMobile ? 'calc(100vw - 20px)' : '420px'" class="proxy-node-dialog" append-to-body destroy-on-close @closed="remarkEditRow = null">
       <el-input v-model="remarkEditValue" type="textarea" :rows="3" placeholder="选填" maxlength="500" show-word-limit />
       <template #footer>
         <el-button @click="remarkEditVisible = false">取消</el-button>
@@ -488,7 +558,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog title="编辑节点" v-model="editNodeVisible" width="560px" append-to-body destroy-on-close>
+    <el-dialog title="编辑节点" v-model="editNodeVisible" :width="isMobile ? 'calc(100vw - 20px)' : '560px'" class="proxy-node-dialog" append-to-body destroy-on-close>
       <el-form label-width="90px">
         <el-form-item label="有效期">
           <div style="display: flex; align-items: center; gap: 10px; width: 100%">
@@ -543,7 +613,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog :title="rateLimitDialogTitle" v-model="rateLimitVisible" width="480px" append-to-body destroy-on-close>
+    <el-dialog :title="rateLimitDialogTitle" v-model="rateLimitVisible" :width="isMobile ? 'calc(100vw - 20px)' : '480px'" class="proxy-node-dialog" append-to-body destroy-on-close>
       <el-form ref="rateLimitFormRef" :model="rateLimitForm" :rules="rateLimitRules" label-width="96px" class="rate-limit-form">
         <el-form-item label="节点端口">
           <el-input :model-value="rateLimitRow?.port || '-'" disabled />
@@ -599,6 +669,7 @@
 <script setup>
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import QRCode from 'qrcode'
+import useAppStore from '@/store/modules/app'
 import useUserStore from '@/store/modules/user'
 import {
   listProxyNode,
@@ -626,7 +697,9 @@ import AccessLogDialog from './AccessLogDialog.vue'
 const { proxy } = getCurrentInstance()
 const router = useRouter()
 const { res_proxy_node_status } = proxy.useDict('res_proxy_node_status')
+const appStore = useAppStore()
 const userStore = useUserStore()
+const isMobile = computed(() => appStore.device === 'mobile')
 const hasEditPermi = computed(() => (userStore.permissions || []).some(p => p === '*:*:*' || p === 'resource:vps:edit'))
 
 const props = defineProps({
@@ -708,6 +781,7 @@ const canSubmitAdd = computed(() => {
 
 function getList() {
   loading.value = true
+  selectedIds.value = []
   queryParams.instanceId = props.instanceId || undefined
   queryParams.customerId = props.customerId || undefined
   const params = {
@@ -919,6 +993,7 @@ const batchRunning = ref(false)
 const batchExecutionStarted = ref(false)
 const batchPermanent = ref(true)
 const batchForm = reactive({
+  instanceId: props.instanceId || undefined,
   customerId: undefined,
   nodeType: 'VLESS-REALITY',
   expireTime: null,
@@ -928,6 +1003,7 @@ const batchForm = reactive({
 const batchRows = ref([])
 let batchRowSequence = 0
 const batchCommonLocked = computed(() => batchRunning.value || batchExecutionStarted.value)
+const batchInstanceId = computed(() => props.instanceId || batchForm.instanceId || null)
 const batchCounts = computed(() => {
   const counts = { total: batchRows.value.length, pending: 0, running: 0, success: 0, failed: 0 }
   batchRows.value.forEach(row => {
@@ -1114,8 +1190,8 @@ function createBatchRow(relayText = '', validationError = '') {
 }
 
 function handleBatchAdd() {
-  if (!props.instanceId) return
-  batchForm.customerId = undefined
+  batchForm.instanceId = props.instanceId || undefined
+  batchForm.customerId = props.fixedCustomer ? props.customerId : undefined
   batchForm.nodeType = 'VLESS-REALITY'
   batchForm.expireTime = getDefaultNodeExpireTime()
   batchForm.remark = ''
@@ -1125,6 +1201,7 @@ function handleBatchAdd() {
   batchRows.value = [createBatchRow()]
   batchAddVisible.value = true
   ensureCustomerOptions()
+  ensureInstanceOptions()
 }
 
 function addEmptyBatchRow() {
@@ -1192,6 +1269,10 @@ function batchStatusType(status) {
 }
 
 function validateBatchTargets(targetRows) {
+  if (!batchInstanceId.value) {
+    proxy.$modal.msgWarning('请选择服务器')
+    return false
+  }
   if (!batchForm.customerId) {
     proxy.$modal.msgWarning('请选择归属客户')
     return false
@@ -1250,7 +1331,7 @@ function batchErrorMessage(error, fallback) {
 
 async function resolveAutoBatchPort(row, attemptedPorts) {
   const excludePorts = Array.from(attemptedPorts).filter(Number.isInteger).join(',')
-  const res = await getRecommendPort(props.instanceId, excludePorts ? { excludePorts } : undefined)
+  const res = await getRecommendPort(batchInstanceId.value, excludePorts ? { excludePorts } : undefined)
   let port = Number(res?.data)
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
     throw new Error('未获取到有效的推荐端口')
@@ -1271,7 +1352,7 @@ async function executeBatchRows(targetRows) {
   })
 
   try {
-    await checkInstanceSsh(props.instanceId)
+    await checkInstanceSsh(batchInstanceId.value)
   } catch (error) {
     const message = batchErrorMessage(error, 'SSH 连接失败')
     targetRows.forEach(row => {
@@ -1310,7 +1391,7 @@ async function executeBatchRows(targetRows) {
       }
       const relayText = (row.relayText || '').trim()
       if (relayText) payload.relayText = relayText
-      const res = await addProxyNodeOnInstance(props.instanceId, payload)
+      const res = await addProxyNodeOnInstance(batchInstanceId.value, payload)
       if (res?.data?.port != null) row.port = Number(res.data.port)
       row.status = 'success'
       row.message = res?.data?.nodeName || `端口 ${row.port || port} 已创建`
@@ -1656,6 +1737,25 @@ function handleStatusChange(row) {
 
 function handleSelectionChange(selection) {
   selectedIds.value = (selection || []).map(r => r.id).filter(id => id != null)
+}
+
+function isNodeSelected(id) {
+  return selectedIds.value.includes(id)
+}
+
+function toggleNodeSelection(id, checked) {
+  if (id == null) return
+  const next = new Set(selectedIds.value)
+  checked ? next.add(id) : next.delete(id)
+  selectedIds.value = Array.from(next)
+}
+
+function customerName(customerId) {
+  return customerOptions.value.find(item => item.id === customerId)?.username ?? customerId ?? '-'
+}
+
+function instanceName(instanceId) {
+  return instanceOptions.value.find(item => item.id === instanceId)?.name ?? instanceId ?? '-'
 }
 
 function handleBatchDelete() {
@@ -2047,6 +2147,39 @@ watch(() => props.customerId, () => {
 .toolbar {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.toolbar :deep(.el-button) {
+  margin-left: 0;
+}
+.toolbar-filter--type {
+  width: 180px;
+}
+.toolbar-filter--expire {
+  width: 120px;
+}
+.selected-count {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+.proxy-node-card__identity {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  flex: 1;
+  gap: 6px;
+}
+.proxy-node-card__identity .mobile-card__title {
+  min-width: 0;
+}
+.mobile-card__wide {
+  grid-column: 1 / -1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.proxy-node-card__meta i {
+  font-style: normal;
 }
 .batch-add-form {
   padding-right: 18px;
@@ -2133,6 +2266,30 @@ watch(() => props.customerId, () => {
 }
 .batch-status-cell :deep(.el-tag) {
   flex-shrink: 0;
+}
+.batch-mobile-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.batch-mobile-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  background: var(--el-bg-color-overlay);
+}
+.batch-mobile-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.batch-mobile-message {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
 }
 .expire-forever {
   color: var(--el-color-success);
@@ -2428,5 +2585,125 @@ watch(() => props.customerId, () => {
 .remark-cell-editable:hover .remark-cell-icon {
   opacity: 1;
   color: var(--el-color-primary);
+}
+@media (max-width: 992px) {
+  .proxy-node-panel {
+    padding: 0;
+    min-width: 0;
+  }
+  .toolbar--mobile {
+    align-items: stretch;
+  }
+  .toolbar--mobile > :deep(.el-button:not(.is-circle)) {
+    flex: 1 1 calc(33.333% - 8px);
+    min-width: 92px;
+    min-height: 38px;
+  }
+  .toolbar--mobile .selected-count {
+    display: flex;
+    align-items: center;
+    flex: 1 0 100%;
+  }
+  .toolbar--mobile .toolbar-filter {
+    flex: 1 1 130px;
+    width: auto;
+  }
+  .toolbar--mobile .toolbar-refresh {
+    flex: 0 0 32px;
+    margin-left: 0;
+  }
+  .proxy-node-mobile-list {
+    margin-top: 10px;
+  }
+  .proxy-node-card .mobile-card__head {
+    align-items: flex-start;
+  }
+  .proxy-node-card__meta {
+    grid-template-columns: 1fr;
+  }
+  .mobile-card__wide {
+    grid-column: auto;
+  }
+  .batch-add-form {
+    padding-right: 0;
+  }
+  .batch-common-grid {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+  .batch-expire-row,
+  .rate-limit-duration-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .batch-relay-import {
+    grid-template-columns: 1fr;
+  }
+  .batch-row-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .batch-row-tip {
+    display: block;
+    margin: 6px 0 0;
+  }
+  .batch-summary {
+    flex-wrap: wrap;
+    gap: 6px 12px;
+    white-space: normal;
+  }
+  .batch-port-cell {
+    flex-wrap: wrap;
+  }
+  .batch-port-cell :deep(.el-input-number) {
+    flex: 1;
+    width: auto;
+  }
+  :deep(.proxy-node-dialog .el-dialog__body) {
+    max-height: calc(100dvh - 144px);
+    padding: 14px;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+  :deep(.proxy-node-dialog .el-dialog__footer) {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  :deep(.proxy-node-dialog .el-dialog__footer .el-button) {
+    flex: 1 1 110px;
+    min-height: 40px;
+    margin-left: 0;
+  }
+  :deep(.proxy-node-dialog .el-form-item) {
+    display: block;
+  }
+  :deep(.proxy-node-dialog .el-form-item__label) {
+    display: block;
+    width: 100% !important;
+    height: auto;
+    margin-bottom: 6px;
+    line-height: 20px;
+    text-align: left;
+  }
+  :deep(.proxy-node-dialog .el-form-item__content) {
+    width: 100%;
+    margin-left: 0 !important;
+  }
+  .proxy-share-section-head,
+  .proxy-share-header {
+    flex-direction: column;
+  }
+  .proxy-share-grid {
+    grid-template-columns: 1fr;
+  }
+  .proxy-share-qr {
+    width: 100%;
+    min-height: 220px;
+  }
+  .proxy-share-qr img {
+    max-width: 220px;
+    max-height: 220px;
+  }
 }
 </style>

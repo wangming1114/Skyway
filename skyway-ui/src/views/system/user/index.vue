@@ -1,9 +1,27 @@
 <template>
   <div class="app-container">
+    <div v-if="isMobile" class="mobile-user-tools">
+      <el-button plain icon="OfficeBuilding" @click="deptDrawerOpen = true">部门</el-button>
+      <el-button plain icon="Filter" @click="filterDrawerOpen = true">筛选</el-button>
+      <el-button type="primary" plain icon="Plus" @click="handleAdd" v-hasPermi="['system:user:add']">新增</el-button>
+    </div>
+    <el-drawer v-if="isMobile" v-model="deptDrawerOpen" title="选择部门" direction="ltr" size="82%">
+      <el-input v-model="deptName" placeholder="请输入部门名称" clearable prefix-icon="Search" class="mobile-dept-search" />
+      <el-tree :data="deptOptions" :props="{ label: 'label', children: 'children' }" :expand-on-click-node="false" :filter-node-method="filterNode" ref="mobileDeptTreeRef" node-key="id" highlight-current default-expand-all @node-click="(data) => { handleNodeClick(data); deptDrawerOpen = false }" />
+    </el-drawer>
+    <el-drawer v-if="isMobile" v-model="filterDrawerOpen" title="筛选用户" direction="btt" size="auto">
+      <el-form :model="queryParams" label-width="76px">
+        <el-form-item label="用户名称"><el-input v-model="queryParams.userName" placeholder="请输入用户名称" clearable /></el-form-item>
+        <el-form-item label="手机号码"><el-input v-model="queryParams.phonenumber" placeholder="请输入手机号码" clearable /></el-form-item>
+        <el-form-item label="状态"><el-select v-model="queryParams.status" placeholder="用户状态" clearable style="width: 100%"><el-option v-for="dict in sys_normal_disable" :key="dict.value" :label="dict.label" :value="dict.value" /></el-select></el-form-item>
+        <el-form-item label="创建时间"><el-date-picker v-model="dateRange" value-format="YYYY-MM-DD" type="daterange" range-separator="-" start-placeholder="开始日期" end-placeholder="结束日期" style="width: 100%" /></el-form-item>
+        <div class="mobile-drawer-actions"><el-button type="primary" @click="handleQuery(); filterDrawerOpen = false">搜索</el-button><el-button @click="resetQuery(); filterDrawerOpen = false">重置</el-button></div>
+      </el-form>
+    </el-drawer>
     <el-row :gutter="20">
-      <splitpanes :horizontal="appStore.device === 'mobile'" class="default-theme">
+      <splitpanes :horizontal="isMobile" class="default-theme">
         <!--部门数据-->
-        <pane size="16">
+        <pane v-if="!isMobile" size="16">
           <el-col>
             <div class="head-container">
               <el-input v-model="deptName" placeholder="请输入部门名称" clearable prefix-icon="Search" style="margin-bottom: 20px" />
@@ -14,9 +32,9 @@
           </el-col>
         </pane>
         <!--用户数据-->
-        <pane size="84">
+        <pane :size="isMobile ? 100 : 84">
           <el-col>
-            <el-form :model="queryParams" ref="queryRef" :inline="true" v-show="showSearch" label-width="68px">
+            <el-form v-if="!isMobile" :model="queryParams" ref="queryRef" :inline="true" v-show="showSearch" label-width="68px">
               <el-form-item label="用户名称" prop="userName">
                 <el-input v-model="queryParams.userName" placeholder="请输入用户名称" clearable style="width: 240px" @keyup.enter="handleQuery" />
               </el-form-item>
@@ -37,7 +55,7 @@
               </el-form-item>
             </el-form>
 
-            <el-row :gutter="10" class="mb8">
+            <el-row v-if="!isMobile" :gutter="10" class="mb8">
               <el-col :span="1.5">
                 <el-button type="primary" plain icon="Plus" @click="handleAdd" v-hasPermi="['system:user:add']">新增</el-button>
               </el-col>
@@ -56,7 +74,7 @@
               <right-toolbar v-model:showSearch="showSearch" @queryTable="getList" :columns="columns"></right-toolbar>
             </el-row>
 
-            <el-table v-loading="loading" :data="userList" @selection-change="handleSelectionChange">
+            <el-table v-if="!isMobile" v-loading="loading" :data="userList" @selection-change="handleSelectionChange">
               <el-table-column type="selection" width="50" align="center" />
               <el-table-column label="用户编号" align="center" key="userId" prop="userId" v-if="columns.userId.visible" />
               <el-table-column label="用户名称" align="center" key="userName" prop="userName" v-if="columns.userName.visible" :show-overflow-tooltip="true" />
@@ -95,6 +113,15 @@
                 </template>
               </el-table-column>
             </el-table>
+            <div v-else v-loading="loading" class="mobile-card-list user-mobile-list">
+              <article v-for="row in userList" :key="row.userId" class="mobile-card">
+                <div class="mobile-card__head"><span class="mobile-card__title">{{ row.userName || '-' }}<small v-if="row.nickName">（{{ row.nickName }}）</small></span><el-switch v-model="row.status" active-value="0" inactive-value="1" @change="handleStatusChange(row)" v-hasPermi="['system:user:edit']" /></div>
+                <div class="mobile-card__meta"><span>昵称：{{ row.nickName || '-' }}</span><span>部门：{{ row.dept?.deptName || '-' }}</span><span>手机：{{ row.phonenumber || '-' }}</span><span>创建：{{ parseTime(row.createTime) }}</span></div>
+                <div v-if="expandedUserIds.has(row.userId)" class="mobile-card__details"><span>编号：{{ row.userId }}</span><span>邮箱：{{ row.email || '-' }}</span><span>性别：{{ row.sex || '-' }}</span><span>岗位：{{ row.postIds?.length || 0 }} 个</span><span>角色：{{ row.roleIds?.length || 0 }} 个</span></div>
+                <div class="mobile-card__actions"><el-button link type="primary" @click="toggleUserExpanded(row.userId)">{{ expandedUserIds.has(row.userId) ? '收起' : '更多信息' }}</el-button><el-button link type="primary" icon="Edit" @click="handleUpdate(row)" v-hasPermi="['system:user:edit']">修改</el-button><el-dropdown trigger="click" @command="(cmd) => handleCommand(cmd, row)" v-hasPermi="['system:user:edit', 'system:user:remove', 'system:user:resetPwd']"><el-button link type="primary" icon="More">更多</el-button><template #dropdown><el-dropdown-menu><el-dropdown-item command="handleResetPwd" icon="Key" v-hasPermi="['system:user:resetPwd']">重置密码</el-dropdown-item><el-dropdown-item command="handleAuthRole" icon="CircleCheck" v-hasPermi="['system:user:edit']">分配角色</el-dropdown-item><el-dropdown-item command="delete" icon="Delete" v-hasPermi="['system:user:remove']">删除</el-dropdown-item></el-dropdown-menu></template></el-dropdown></div>
+              </article>
+              <el-empty v-if="!loading && !userList.length" description="暂无用户" />
+            </div>
             <pagination v-show="total > 0" :total="total" v-model:page="queryParams.pageNum" v-model:limit="queryParams.pageSize" @pagination="getList" />
           </el-col>
         </pane>
@@ -102,7 +129,7 @@
     </el-row>
 
     <!-- 添加或修改用户配置对话框 -->
-    <el-dialog :title="title" v-model="open" width="600px" append-to-body>
+    <el-dialog :title="title" v-model="open" :width="isMobile ? 'calc(100vw - 20px)' : '600px'" class="system-user-dialog" append-to-body>
       <el-form :model="form" :rules="rules" ref="userRef" label-width="80px">
         <el-row>
           <el-col :span="12">
@@ -189,7 +216,7 @@
     </el-dialog>
 
     <!-- 用户导入对话框 -->
-    <el-dialog :title="upload.title" v-model="upload.open" width="400px" append-to-body>
+    <el-dialog :title="upload.title" v-model="upload.open" :width="isMobile ? 'calc(100vw - 20px)' : '400px'" class="system-user-dialog" append-to-body>
       <el-upload ref="uploadRef" :limit="1" accept=".xlsx, .xls" :headers="upload.headers" :action="upload.url + '?updateSupport=' + upload.updateSupport" :disabled="upload.isUploading" :on-progress="handleFileUploadProgress" :on-success="handleFileSuccess" :on-change="handleFileChange" :on-remove="handleFileRemove" :auto-upload="false" drag>
         <el-icon class="el-icon--upload"><upload-filled /></el-icon>
         <div class="el-upload__text">将文件拖到此处，或<em>点击上传</em></div>
@@ -222,6 +249,7 @@ import "splitpanes/dist/splitpanes.css"
 
 const router = useRouter()
 const appStore = useAppStore()
+const isMobile = computed(() => appStore.device === 'mobile')
 const { proxy } = getCurrentInstance()
 const { sys_normal_disable, sys_user_sex } = proxy.useDict("sys_normal_disable", "sys_user_sex")
 
@@ -241,6 +269,15 @@ const enabledDeptOptions = ref(undefined)
 const initPassword = ref(undefined)
 const postOptions = ref([])
 const roleOptions = ref([])
+const deptDrawerOpen = ref(false)
+const filterDrawerOpen = ref(false)
+const expandedUserIds = ref(new Set())
+
+function toggleUserExpanded(id) {
+  const next = new Set(expandedUserIds.value)
+  next.has(id) ? next.delete(id) : next.add(id)
+  expandedUserIds.value = next
+}
 /*** 用户导入参数 */
 const upload = reactive({
   // 是否显示弹出层（用户导入）
@@ -389,6 +426,9 @@ function handleCommand(command, row) {
       break
     case "handleAuthRole":
       handleAuthRole(row)
+      break
+    case "delete":
+      handleDelete(row)
       break
     default:
       break
@@ -557,3 +597,19 @@ onMounted(() => {
   })
 })
 </script>
+
+<style scoped>
+.mobile-user-tools { display: flex; gap: 8px; margin-bottom: 10px; }
+.mobile-user-tools .el-button { flex: 1; min-height: 40px; }
+.mobile-dept-search { margin-bottom: 14px; }
+.mobile-drawer-actions { display: flex; gap: 8px; }
+.mobile-drawer-actions .el-button { flex: 1; min-height: 40px; }
+@media (max-width: 992px) {
+  :deep(.splitpanes) { display: block; }
+  :deep(.splitpanes__pane) { width: 100% !important; }
+  :deep(.el-dialog__body) { padding: 14px 16px; }
+  :deep(.el-dialog__footer) { display: flex; gap: 8px; }
+  :deep(.el-dialog__footer) .el-button { flex: 1; margin-left: 0; }
+  :deep(.el-col) { max-width: 100%; flex: 0 0 100%; }
+}
+</style>

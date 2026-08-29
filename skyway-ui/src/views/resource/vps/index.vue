@@ -1,8 +1,28 @@
 <template>
   <div class="app-container">
+    <div v-if="isMobile" class="mobile-resource-tools">
+      <el-button plain icon="FolderOpened" @click="categoryOpenMobile = true">分类</el-button>
+      <el-button plain icon="Filter" @click="filterOpenMobile = true">筛选</el-button>
+      <el-button type="primary" plain icon="Plus" @click="handleAddInstance" v-hasPermi="['resource:vps:add']">新增</el-button>
+    </div>
+    <el-drawer v-if="isMobile" v-model="categoryOpenMobile" title="VPS 分类" direction="ltr" size="82%">
+      <div class="head-container">
+        <el-button type="primary" link icon="Plus" @click="handleAddCategory(null)" v-hasPermi="['resource:vps:add']">新增分类</el-button>
+      </div>
+      <el-tree :data="categoryOptions" :props="{ label: 'name', children: 'children' }" :expand-on-click-node="false" node-key="id" highlight-current default-expand-all @node-click="(data) => { handleCategoryNodeClick(data); categoryOpenMobile = false }" />
+    </el-drawer>
+    <el-drawer v-if="isMobile" v-model="filterOpenMobile" title="筛选 VPS" direction="btt" size="auto">
+      <el-form :model="queryParams" label-width="72px">
+        <el-form-item label="关键字"><el-input v-model="queryParams.keyword" placeholder="名称、编号或 IP" clearable /></el-form-item>
+        <el-form-item label="状态"><el-select v-model="queryParams.status" placeholder="全部状态" clearable style="width: 100%"><el-option v-for="dict in res_instance_status" :key="dict.value" :label="dict.label" :value="dict.value" /></el-select></el-form-item>
+        <el-form-item label="网络"><el-select v-model="queryParams.networkType" placeholder="全部" clearable style="width: 100%"><el-option v-for="dict in res_instance_network_type" :key="dict.value" :label="dict.label" :value="dict.value" /></el-select></el-form-item>
+        <el-form-item label="系统"><el-select v-model="queryParams.osType" placeholder="全部" clearable style="width: 100%"><el-option v-for="t in osTypeOptions" :key="t.value" :label="t.label" :value="t.value" /></el-select></el-form-item>
+        <div class="mobile-drawer-actions"><el-button type="primary" @click="handleQuery(); filterOpenMobile = false">搜索</el-button><el-button @click="resetQuery(); filterOpenMobile = false">重置</el-button></div>
+      </el-form>
+    </el-drawer>
     <el-row :gutter="20">
-      <splitpanes :horizontal="appStore.device === 'mobile'" class="default-theme">
-        <pane size="18">
+      <splitpanes :horizontal="isMobile" class="default-theme">
+        <pane v-if="!isMobile" size="18">
           <el-col>
             <div class="head-container">
               <span class="head-label">VPS 分类</span>
@@ -39,9 +59,9 @@
             </div>
           </el-col>
         </pane>
-        <pane size="82">
+        <pane :size="isMobile ? 100 : 82">
           <el-col>
-            <el-form :model="queryParams" ref="queryRef" :inline="true" v-show="showSearch" label-width="72px" class="query-form">
+            <el-form v-if="!isMobile" :model="queryParams" ref="queryRef" :inline="true" v-show="showSearch" label-width="72px" class="query-form">
               <el-form-item label="关键字" prop="keyword">
                 <el-input v-model="queryParams.keyword" placeholder="名称、编号或 IP" clearable style="width: 180px" @keyup.enter="handleQuery" />
               </el-form-item>
@@ -66,7 +86,7 @@
               </el-form-item>
             </el-form>
 
-            <el-row :gutter="10" class="mb8">
+            <el-row v-if="!isMobile" :gutter="10" class="mb8">
               <el-col :span="1.5">
                 <el-button type="primary" plain icon="Plus" @click="handleAddInstance" v-hasPermi="['resource:vps:add']">新增VPS</el-button>
               </el-col>
@@ -79,7 +99,7 @@
               未选择分类时显示全部 VPS；在左侧选择分类/节点可筛选列表。
             </el-alert>
 
-            <el-table v-loading="loading" :data="instanceList" :row-class-name="() => 'vps-table-row'" :default-sort="{ prop: 'totalTrafficBytes', order: 'descending' }" @sort-change="handleInstanceSortChange">
+            <el-table v-if="!isMobile" v-loading="loading" :data="instanceList" :row-class-name="() => 'vps-table-row'" :default-sort="{ prop: 'totalTrafficBytes', order: 'descending' }" @sort-change="handleInstanceSortChange">
               <el-table-column label="编号" align="center" prop="id" width="88" sortable="custom" :sort-orders="['descending', 'ascending']">
                 <template #default="scope">
                   <span>{{ scope.row.id }}</span>
@@ -175,6 +195,15 @@
                 </template>
               </el-table-column>
             </el-table>
+            <div v-else v-loading="loading" class="mobile-card-list vps-mobile-list">
+              <article v-for="row in instanceList" :key="row.id" class="mobile-card">
+                <div class="mobile-card__head"><el-link type="primary" :underline="false" class="mobile-card__title" @click="goDetail(row.id)">{{ displayName(row) }}</el-link><el-tag size="small" :type="row.status === 'running' ? 'success' : 'danger'">{{ statusLabel(row.status) }}</el-tag></div>
+                <div class="mobile-card__meta"><span>IP：{{ row.ip || '-' }}</span><span>系统：{{ osDisplayText(row) || '未知系统' }}</span><span>节点：{{ row.nodeCount || 0 }}</span><span>流量：{{ formatTraffic(row.totalTrafficBytes) }}</span><span>到期：{{ row.expireTime ? formatExpireTime(row.expireTime) : '-' }}</span><span>分类：{{ row.categoryName || '-' }}</span></div>
+                <div v-if="expandedInstanceIds.has(row.id)" class="mobile-card__details"><span>网络：{{ networkTypeLabel(row.networkType) || '-' }}</span><span>系统版本：{{ row.osVersion || '-' }}</span><span>实时速率：{{ realtimeSpeedText(row) }}</span><span>CPU：{{ row.cpu || '-' }}</span><span>内存：{{ row.memory || '-' }}</span><span>磁盘：{{ row.disk || '-' }}</span><span>带宽：{{ row.bandwidth || '-' }}</span><span>流量限制：{{ configTrafficText(row) }}</span><span>续费：{{ row.renewalAmount || '-' }}</span><span>备注：{{ row.remark || '-' }}</span></div>
+                <div class="mobile-card__actions"><el-button link type="primary" @click="toggleInstanceExpanded(row.id)">{{ expandedInstanceIds.has(row.id) ? '收起' : '更多信息' }}</el-button><el-button link type="primary" icon="Connection" @click="handleConnectServer(row)" v-hasPermi="['resource:vps:list']">连接</el-button><el-button link type="primary" icon="View" @click="goDetail(row.id)" v-hasPermi="['resource:vps:query']">详情</el-button><el-dropdown trigger="click" @command="(cmd) => handleInstanceCommand(cmd, row)" v-hasPermi="['resource:vps:list', 'resource:vps:query', 'resource:vps:add', 'resource:vps:edit', 'resource:vps:remove']"><el-button link type="primary" icon="More">更多</el-button><template #dropdown><el-dropdown-menu><el-dropdown-item command="accessLog" icon="View" v-hasPermi="['resource:vps:list', 'resource:vps:query']">访问日志</el-dropdown-item><el-dropdown-item command="clone" icon="CopyDocument" v-hasPermi="['resource:vps:add']">克隆</el-dropdown-item><el-dropdown-item command="edit" icon="Edit" v-hasPermi="['resource:vps:edit']">编辑</el-dropdown-item><el-dropdown-item command="delete" icon="Delete" v-hasPermi="['resource:vps:remove']">删除</el-dropdown-item></el-dropdown-menu></template></el-dropdown></div>
+              </article>
+              <el-empty v-if="!loading && !instanceList.length" description="暂无 VPS" />
+            </div>
             <pagination v-show="total > 0" :total="total" v-model:page="queryParams.pageNum" v-model:limit="queryParams.pageSize" @pagination="getList" />
           </el-col>
         </pane>
@@ -182,7 +211,7 @@
     </el-row>
 
     <!-- 分类 新增/编辑 -->
-    <el-dialog :title="categoryTitle" v-model="categoryOpen" width="480px" append-to-body>
+    <el-dialog :title="categoryTitle" v-model="categoryOpen" :width="isMobile ? 'calc(100vw - 20px)' : '480px'" append-to-body>
       <el-form ref="categoryRef" :model="categoryForm" :rules="categoryRules" label-width="96px">
         <el-form-item label="上级分类" prop="parentId" v-if="categoryForm.id == null">
           <el-tree-select
@@ -210,7 +239,7 @@
     </el-dialog>
 
     <!-- VPS 实例 新增/编辑/克隆 -->
-    <el-dialog :title="instanceTitle" v-model="instanceOpen" width="760px" class="vps-instance-dialog" append-to-body>
+    <el-dialog :title="instanceTitle" v-model="instanceOpen" :width="isMobile ? 'calc(100vw - 20px)' : '760px'" class="vps-instance-dialog" append-to-body>
       <el-form ref="instanceRef" :model="instanceForm" :rules="instanceRules" label-position="top" class="vps-instance-form">
         <div class="vps-form-section-title">
           <span>基本信息</span>
@@ -408,10 +437,20 @@ import {
 const { proxy } = getCurrentInstance()
 const { res_instance_status, res_instance_network_type } = proxy.useDict('res_instance_status', 'res_instance_network_type')
 const appStore = useAppStore()
+const isMobile = computed(() => appStore.device === 'mobile')
 const route = useRoute()
 const router = useRouter()
 
 const categoryOptions = ref([])
+const categoryOpenMobile = ref(false)
+const filterOpenMobile = ref(false)
+const expandedInstanceIds = ref(new Set())
+
+function toggleInstanceExpanded(id) {
+  const next = new Set(expandedInstanceIds.value)
+  next.has(id) ? next.delete(id) : next.add(id)
+  expandedInstanceIds.value = next
+}
 const categoryTreeRef = ref(null)
 const categoryOpen = ref(false)
 const categoryTitle = ref('')
@@ -1136,6 +1175,23 @@ onBeforeUnmount(() => {
 .query-form {
   margin-bottom: 4px;
 }
+.mobile-resource-tools {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.mobile-resource-tools .el-button {
+  flex: 1;
+  min-height: 40px;
+}
+.mobile-drawer-actions {
+  display: flex;
+  gap: 8px;
+}
+.mobile-drawer-actions .el-button {
+  flex: 1;
+  min-height: 40px;
+}
 .form-tip {
   display: block;
   font-size: 12px;
@@ -1253,7 +1309,7 @@ onBeforeUnmount(() => {
   justify-content: flex-end;
   gap: 8px;
 }
-@media (max-width: 640px) {
+@media (max-width: 992px) {
   :global(.vps-instance-dialog .el-dialog__body) {
     padding-right: 16px;
     padding-left: 16px;
@@ -1271,6 +1327,22 @@ onBeforeUnmount(() => {
   }
   .vps-connection-test .el-button {
     width: 100%;
+  }
+}
+@media (max-width: 992px) {
+  :deep(.splitpanes) {
+    display: block;
+  }
+  :deep(.splitpanes__pane) {
+    width: 100% !important;
+  }
+  :deep(.vps-instance-dialog .el-dialog__footer) {
+    display: flex;
+    gap: 8px;
+  }
+  :deep(.vps-instance-dialog .el-dialog__footer) .el-button {
+    flex: 1;
+    margin-left: 0;
   }
 }
 .vps-row-wrap {

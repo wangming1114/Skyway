@@ -2,8 +2,9 @@
   <div class="app-container">
     <el-card v-loading="loading" class="box-card">
       <template #header>
-        <span>VPS 详情</span>
-        <span style="float: right">
+        <div class="detail-card-header">
+          <span>VPS 详情</span>
+          <span class="detail-card-actions">
           <el-button type="primary" link icon="Connection" @click="openConnect" v-hasPermi="['resource:vps:list']">连接服务器</el-button>
           <el-button type="primary" link icon="View" @click="accessLogVisible = true" v-hasPermi="['resource:vps:list', 'resource:vps:query']">访问日志</el-button>
           <el-dropdown trigger="click" @command="handleDetailCommand">
@@ -16,10 +17,11 @@
               </el-dropdown-menu>
             </template>
           </el-dropdown>
-        </span>
+          </span>
+        </div>
       </template>
       <div v-if="detail" class="detail-section">
-        <el-descriptions title="基础信息" :column="2" border>
+        <el-descriptions title="基础信息" :column="isMobile ? 1 : 2" border>
           <el-descriptions-item label="VPS名称">{{ detail.name }}</el-descriptions-item>
           <el-descriptions-item label="编号">{{ detail.id }}</el-descriptions-item>
           <el-descriptions-item label="状态">
@@ -79,16 +81,19 @@
 </template>
 
 <script setup name="VpsDetail">
-import { ref, watch, onBeforeUnmount } from 'vue'
+import { computed, ref, watch, onBeforeUnmount } from 'vue'
 import { delInstance, forceDelInstance, getInstance } from '@/api/resource/vps'
 import ProxyNodePanel from './components/ProxyNodePanel.vue'
 import AccessLogDialog from './components/AccessLogDialog.vue'
 import { getToken } from '@/utils/auth'
+import useAppStore from '@/store/modules/app'
 
 const { proxy } = getCurrentInstance()
 const { res_instance_status, res_instance_network_type } = proxy.useDict('res_instance_status', 'res_instance_network_type')
 const route = useRoute()
 const router = useRouter()
+const appStore = useAppStore()
+const isMobile = computed(() => appStore.device === 'mobile')
 
 const loading = ref(true)
 const detail = ref(null)
@@ -233,8 +238,27 @@ onMounted(() => {
 .detail-section {
   margin-bottom: 16px;
 }
+.detail-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.detail-card-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
 .expire-expired {
   color: var(--el-color-danger);
   font-weight: 500;
+}
+@media (max-width: 992px) {
+  .box-card :deep(.el-card__header) { padding: 12px; }
+  .detail-card-header { align-items: flex-start; flex-direction: column; }
+  .detail-card-actions { justify-content: flex-start; }
+  :deep(.el-descriptions__cell) { padding: 8px 10px !important; }
+  :deep(.el-descriptions__label) { width: 92px; }
 }
 </style>

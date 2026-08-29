@@ -193,7 +193,7 @@ function sendBinary(data) {
   }
 }
 
-defineExpose({ sendSysinfo, sendJson, sendBinary })
+defineExpose({ sendSysinfo, sendJson, sendBinary, fit: scheduleFit })
 
 /** 仅在容器有尺寸且终端未销毁时调用 fit，避免 dimensions 异常 */
 function doFit() {
@@ -435,6 +435,7 @@ function globalClickClose() {
 
 onMounted(() => {
   document.addEventListener('click', globalClickClose)
+  window.addEventListener('resize', scheduleFit, { passive: true })
 })
 
 onBeforeUnmount(() => {
@@ -445,6 +446,7 @@ onBeforeUnmount(() => {
   }
   cleanup()
   document.removeEventListener('click', globalClickClose)
+  window.removeEventListener('resize', scheduleFit)
 })
 </script>
 

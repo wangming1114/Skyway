@@ -2,14 +2,16 @@
   <div class="app-container">
     <el-card v-loading="infoLoading" class="box-card">
       <template #header>
-        <span>客户详情</span>
-        <span style="float: right">
+        <div class="detail-card-header">
+          <span>客户详情</span>
+          <span class="detail-card-actions">
           <el-button v-if="customer.id" type="primary" link icon="Link" @click="tempShareVisible = true">订阅信息访问</el-button>
           <el-button type="primary" link icon="Back" @click="goBack">返回</el-button>
-        </span>
+          </span>
+        </div>
       </template>
 
-      <el-descriptions :column="2" border v-if="customer.id">
+      <el-descriptions :column="isMobile ? 1 : 2" border v-if="customer.id" class="customer-descriptions">
         <el-descriptions-item label="编号">{{ customer.id }}</el-descriptions-item>
         <el-descriptions-item label="用户名">{{ customer.username }}</el-descriptions-item>
         <el-descriptions-item label="邮箱">{{ customer.email || '-' }}</el-descriptions-item>
@@ -58,9 +60,12 @@ import { getCustomer } from '@/api/member/customer'
 import { parseTime } from '@/utils/skyway'
 import ProxyNodePanel from '@/views/resource/vps/components/ProxyNodePanel.vue'
 import CustomerTempShareDialog from './components/CustomerTempShareDialog.vue'
+import useAppStore from '@/store/modules/app'
 
 const route = useRoute()
 const router = useRouter()
+const appStore = useAppStore()
+const isMobile = computed(() => appStore.device === 'mobile')
 
 const customerId = computed(() => Number(route.params.customerId))
 const customer = ref({})
@@ -88,3 +93,17 @@ onMounted(() => {
   })
 })
 </script>
+
+<style scoped>
+.detail-card-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.detail-card-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; }
+@media (max-width: 992px) {
+  .box-card :deep(.el-card__header) { padding: 12px; }
+  .detail-card-header { align-items: flex-start; flex-direction: column; }
+  .detail-card-actions { justify-content: flex-start; }
+  .customer-descriptions :deep(.el-descriptions__body),
+  .customer-descriptions :deep(.el-descriptions__table) { width: 100%; }
+  .customer-descriptions :deep(.el-descriptions__cell) { padding: 8px 10px !important; }
+  .customer-descriptions :deep(.el-descriptions__label) { width: 92px; }
+}
+</style>

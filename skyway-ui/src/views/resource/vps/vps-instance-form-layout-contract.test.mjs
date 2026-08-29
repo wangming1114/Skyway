@@ -13,7 +13,7 @@ test('VPS create, edit and clone share the improved responsive form layout', () 
   assert.match(source, /width: min\(760px, calc\(100vw - 32px\)\)/)
   assert.match(source, /max-height: calc\(100vh - 180px\)/)
   assert.match(source, /overflow-y: auto/)
-  assert.match(source, /@media \(max-width: 640px\)/)
+  assert.match(source, /@media \(max-width: 992px\)/)
 })
 
 test('connection test is presented as a compact helper panel', () => {
