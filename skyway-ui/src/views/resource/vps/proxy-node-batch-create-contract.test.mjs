@@ -36,3 +36,12 @@ test('single create tracks automatic ports and visibly warns for unverified fall
   assert.match(source, /autoPort: addPortAuto\.value/)
   assert.match(source, /@change="onSingleAddPortChange"/)
 })
+
+test('single and batch create default to one month expiry without changing edit echo', () => {
+  assert.match(source, /addForm\.expireTime = getDefaultNodeExpireTime\(\)/)
+  assert.match(source, /addFormPermanent\.value = false/)
+  assert.match(source, /batchForm\.expireTime = getDefaultNodeExpireTime\(\)/)
+  assert.match(source, /batchPermanent\.value = false/)
+  assert.match(source, /editNodeForm\.expireTime = row\.expireTime \|\| null/)
+  assert.match(source, /editNodePermanent\.value = !row\.expireTime/)
+})

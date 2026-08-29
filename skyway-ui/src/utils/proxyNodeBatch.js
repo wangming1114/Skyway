@@ -26,3 +26,16 @@ export function parseSocks5RelayLines(value) {
     .filter(Boolean)
     .map(text => ({ text, ...parseSocks5RelayText(text) }))
 }
+
+/** Returns one calendar month later in the datetime format used by node forms. */
+export function getDefaultNodeExpireTime(now = new Date()) {
+  const target = new Date(now instanceof Date ? now.getTime() : now)
+  if (Number.isNaN(target.getTime())) return ''
+  const originalDay = target.getDate()
+  target.setDate(1)
+  target.setMonth(target.getMonth() + 1)
+  const lastDayOfTargetMonth = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate()
+  target.setDate(Math.min(originalDay, lastDayOfTargetMonth))
+  const pad = value => String(value).padStart(2, '0')
+  return `${target.getFullYear()}-${pad(target.getMonth() + 1)}-${pad(target.getDate())} ${pad(target.getHours())}:${pad(target.getMinutes())}:${pad(target.getSeconds())}`
+}

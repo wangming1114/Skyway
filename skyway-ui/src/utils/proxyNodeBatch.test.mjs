@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { parseSocks5RelayLines, parseSocks5RelayText } from './proxyNodeBatch.js'
+import { getDefaultNodeExpireTime, parseSocks5RelayLines, parseSocks5RelayText } from './proxyNodeBatch.js'
 
 test('parses one SOCKS5 relay using the existing four-part format', () => {
   assert.deepEqual(parseSocks5RelayText('204.1.132.8:36772:8XmKfHnr:Rrh5bTVrj3'), {
@@ -31,4 +31,15 @@ bad-line
 test('rejects missing credentials and out-of-range ports', () => {
   assert.equal(parseSocks5RelayText('1.2.3.4:1080:user:').ok, false)
   assert.equal(parseSocks5RelayText('1.2.3.4:70000:user:pass').ok, false)
+})
+
+test('defaults node expiry to one calendar month later and clamps month end', () => {
+  assert.equal(
+    getDefaultNodeExpireTime(new Date(2026, 7, 29, 14, 35, 20)),
+    '2026-09-29 14:35:20'
+  )
+  assert.equal(
+    getDefaultNodeExpireTime(new Date(2026, 0, 31, 8, 5, 6)),
+    '2026-02-28 08:05:06'
+  )
 })

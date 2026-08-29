@@ -619,7 +619,7 @@ import {
 import { listCustomer } from '@/api/member/customer'
 import { parseTime } from '@/utils/skyway'
 import { buildClashSubscribeUrl, parseVlessUrl, safeProxyShareFilename } from '@/utils/proxyShare'
-import { parseSocks5RelayLines, parseSocks5RelayText } from '@/utils/proxyNodeBatch'
+import { getDefaultNodeExpireTime, parseSocks5RelayLines, parseSocks5RelayText } from '@/utils/proxyNodeBatch'
 import { DocumentCopy, Loading, Edit, Delete } from '@element-plus/icons-vue'
 import AccessLogDialog from './AccessLogDialog.vue'
 
@@ -1070,9 +1070,9 @@ function handleAdd() {
   addPortAuto.value = false
   addPortWarning.value = ''
   resetRelayForm()
-  addForm.expireTime = null
+  addForm.expireTime = getDefaultNodeExpireTime()
   addForm.remark = ''
-  addFormPermanent.value = true
+  addFormPermanent.value = false
   addDialogVisible.value = true
   const portInstanceId = effectiveInstanceId.value
   if (portInstanceId) loadSingleRecommendedPort(portInstanceId)
@@ -1099,10 +1099,10 @@ function handleBatchAdd() {
   if (!props.instanceId) return
   batchForm.customerId = undefined
   batchForm.nodeType = 'VLESS-REALITY'
-  batchForm.expireTime = null
+  batchForm.expireTime = getDefaultNodeExpireTime()
   batchForm.remark = ''
   batchForm.relayPaste = ''
-  batchPermanent.value = true
+  batchPermanent.value = false
   batchExecutionStarted.value = false
   batchRows.value = [createBatchRow()]
   batchAddVisible.value = true
