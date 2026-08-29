@@ -159,11 +159,12 @@
                   <div class="op-btns">
                     <el-button link icon="Connection" class="op-btn" @click="handleConnectServer(scope.row)" v-hasPermi="['resource:vps:list']">连接</el-button>
                     <el-button link icon="View" class="op-btn" @click="goDetail(scope.row.id)" v-hasPermi="['resource:vps:query']">详情</el-button>
-                    <el-dropdown trigger="click" @command="(cmd) => handleInstanceCommand(cmd, scope.row)" v-hasPermi="['resource:vps:list', 'resource:vps:query', 'resource:vps:edit', 'resource:vps:remove']">
+                    <el-dropdown trigger="click" @command="(cmd) => handleInstanceCommand(cmd, scope.row)" v-hasPermi="['resource:vps:list', 'resource:vps:query', 'resource:vps:add', 'resource:vps:edit', 'resource:vps:remove']">
                       <el-button link icon="DArrowRight" class="op-btn op-dropdown-trigger">更多</el-button>
                       <template #dropdown>
                         <el-dropdown-menu>
                           <el-dropdown-item command="accessLog" icon="View" v-hasPermi="['resource:vps:list', 'resource:vps:query']">访问日志</el-dropdown-item>
+                          <el-dropdown-item command="clone" icon="CopyDocument" v-hasPermi="['resource:vps:add']">克隆</el-dropdown-item>
                           <el-dropdown-item command="edit" icon="Edit" v-hasPermi="['resource:vps:edit']">编辑</el-dropdown-item>
                           <el-dropdown-item command="delete" icon="Delete" v-hasPermi="['resource:vps:remove']">删除</el-dropdown-item>
                           <el-dropdown-item command="forceDelete" icon="DeleteFilled" divided v-hasPermi="['resource:vps:remove']">强制删除</el-dropdown-item>
@@ -208,10 +209,13 @@
       </template>
     </el-dialog>
 
-    <!-- VPS 实例 新增/编辑 -->
-    <el-dialog :title="instanceTitle" v-model="instanceOpen" width="600px" append-to-body>
-      <el-form ref="instanceRef" :model="instanceForm" :rules="instanceRules" label-width="96px">
-        <el-divider content-position="left">基本信息</el-divider>
+    <!-- VPS 实例 新增/编辑/克隆 -->
+    <el-dialog :title="instanceTitle" v-model="instanceOpen" width="760px" class="vps-instance-dialog" append-to-body>
+      <el-form ref="instanceRef" :model="instanceForm" :rules="instanceRules" label-position="top" class="vps-instance-form">
+        <div class="vps-form-section-title">
+          <span>基本信息</span>
+          <small>填写服务器名称、归属和系统信息</small>
+        </div>
         <el-row :gutter="16">
           <el-col :span="12">
             <el-form-item label="VPS名称" prop="name">
@@ -258,7 +262,10 @@
             </el-form-item>
           </el-col>
         </el-row>
-        <el-divider content-position="left">连接信息</el-divider>
+        <div class="vps-form-section-title">
+          <span>连接信息</span>
+          <small>用于连接服务器和自动识别硬件配置</small>
+        </div>
         <el-row :gutter="16">
           <el-col :span="12">
             <el-form-item label="IP" prop="ip">
@@ -283,16 +290,21 @@
             </el-form-item>
           </el-col>
         </el-row>
-        <el-form-item label=" " :span="2">
-          <el-button type="primary" plain :loading="testConnectionLoading" @click="handleTestConnection">
-            连接测试（自动回写 CPU/内存/磁盘/系统类型与版本）
-          </el-button>
-        </el-form-item>
-        <el-divider content-position="left">规格与备注</el-divider>
+        <div class="vps-connection-test">
+          <div class="vps-connection-test__text">
+            <strong>自动识别服务器配置</strong>
+            <span>验证 SSH 连接，并自动回写 CPU、内存、磁盘及系统版本</span>
+          </div>
+          <el-button type="primary" plain icon="Connection" :loading="testConnectionLoading" @click="handleTestConnection">测试连接</el-button>
+        </div>
+        <div class="vps-form-section-title">
+          <span>规格与备注</span>
+          <small>完善资源规格、续费及到期信息</small>
+        </div>
         <el-row :gutter="16">
           <el-col :span="8">
             <el-form-item label="CPU" prop="cpu">
-              <el-input v-model="instanceForm.cpu" placeholder="如 2核，可点连接测试自动填充" maxlength="50" />
+              <el-input v-model="instanceForm.cpu" placeholder="如 2核" maxlength="50" />
             </el-form-item>
           </el-col>
           <el-col :span="8">
@@ -331,8 +343,10 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button type="primary" @click="submitInstanceForm">确 定</el-button>
-        <el-button @click="instanceOpen = false">取 消</el-button>
+        <div class="vps-instance-footer">
+          <el-button @click="instanceOpen = false">取 消</el-button>
+          <el-button type="primary" @click="submitInstanceForm">确 定</el-button>
+        </div>
       </template>
     </el-dialog>
 
@@ -864,23 +878,55 @@ function handleAddInstance() {
   nextTick(() => proxy.resetForm('instanceRef'))
 }
 
+function buildInstanceForm(data, clone = false) {
+  const source = data || {}
+  const sourceName = String(source.name || source.ip || 'VPS').trim()
+  return {
+    id: clone ? undefined : source.id,
+    name: clone ? `${sourceName} - 副本` : (source.name || ''),
+    categoryId: source.categoryId ?? undefined,
+    networkType: source.networkType ?? undefined,
+    osType: source.osType || '',
+    osVersion: source.osVersion || '',
+    bandwidth: source.bandwidth || '',
+    ip: source.ip || '',
+    sshPort: source.sshPort ?? 22,
+    sshUsername: source.sshUsername || 'root',
+    sshPassword: source.sshPassword || '',
+    cpu: source.cpu || '',
+    memory: source.memory || '',
+    disk: source.disk || '',
+    status: source.status || 'running',
+    trafficLimit: source.trafficLimit ?? null,
+    trafficLimitGb: source.trafficLimit != null && source.trafficLimit > 0
+      ? Math.round(source.trafficLimit / (1024 * 1024 * 1024) * 100) / 100
+      : undefined,
+    renewalAmount: source.renewalAmount || '',
+    expireTime: source.expireTime || null,
+    remark: source.remark || ''
+  }
+}
+
 function handleEditInstance(row) {
   getInstance(row.id).then(res => {
-    const d = res.data
-    instanceForm.value = {
-      ...d,
-      networkType: d.networkType ?? undefined,
-      trafficLimitGb: d.trafficLimit != null && d.trafficLimit > 0
-        ? Math.round(d.trafficLimit / (1024 * 1024 * 1024) * 100) / 100
-        : undefined
-    }
+    instanceForm.value = buildInstanceForm(res.data)
     instanceTitle.value = '编辑VPS'
     instanceOpen.value = true
   })
 }
 
+function handleCloneInstance(row) {
+  getInstance(row.id).then(res => {
+    instanceForm.value = buildInstanceForm(res.data, true)
+    instanceTitle.value = '克隆VPS'
+    instanceOpen.value = true
+    nextTick(() => proxy.$refs.instanceRef?.clearValidate())
+  })
+}
+
 function handleInstanceCommand(command, row) {
   if (command === 'accessLog') openVpsAccessLog(row)
+  else if (command === 'clone') handleCloneInstance(row)
   else if (command === 'edit') handleEditInstance(row)
   else if (command === 'delete') handleDeleteInstance(row)
   else if (command === 'forceDelete') handleForceDeleteInstance(row)
@@ -1073,9 +1119,136 @@ onBeforeUnmount(() => {
   margin-bottom: 4px;
 }
 .form-tip {
+  display: block;
   font-size: 12px;
+  line-height: 18px;
   color: var(--el-text-color-secondary);
-  margin-left: 8px;
+  margin-top: 5px;
+}
+:deep(.vps-instance-dialog) {
+  width: min(760px, calc(100vw - 32px)) !important;
+  border-radius: 10px;
+}
+:deep(.vps-instance-dialog .el-dialog__header) {
+  margin-right: 0;
+  padding: 22px 24px 16px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+:deep(.vps-instance-dialog .el-dialog__title) {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+:deep(.vps-instance-dialog .el-dialog__headerbtn) {
+  top: 10px;
+  right: 12px;
+}
+:deep(.vps-instance-dialog .el-dialog__body) {
+  max-height: calc(100vh - 190px);
+  overflow-y: auto;
+  padding: 20px 24px 4px;
+}
+:deep(.vps-instance-dialog .el-dialog__footer) {
+  padding: 16px 24px 20px;
+  border-top: 1px solid var(--el-border-color-lighter);
+}
+.vps-instance-form {
+  .el-form-item {
+    margin-bottom: 16px;
+  }
+  :deep(.el-form-item__label) {
+    height: auto;
+    margin-bottom: 7px;
+    padding: 0;
+    font-weight: 500;
+    line-height: 20px;
+    color: var(--el-text-color-regular);
+  }
+  :deep(.el-input-number) {
+    width: 100%;
+  }
+}
+.vps-form-section-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 5px 0 16px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+  color: var(--el-text-color-primary);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 22px;
+}
+.vps-form-section-title:not(:first-child) {
+  margin-top: 12px;
+}
+.vps-form-section-title::before {
+  width: 3px;
+  height: 15px;
+  border-radius: 2px;
+  background: var(--el-color-primary);
+  content: '';
+}
+.vps-form-section-title small {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  font-weight: 400;
+}
+.vps-connection-test {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 0 0 18px;
+  padding: 13px 15px;
+  border: 1px solid var(--el-color-primary-light-7);
+  border-radius: 8px;
+  background: var(--el-color-primary-light-9);
+}
+.vps-connection-test__text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.vps-connection-test__text strong {
+  color: var(--el-text-color-primary);
+  font-size: 14px;
+  font-weight: 600;
+}
+.vps-connection-test__text span {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+.vps-connection-test .el-button {
+  flex-shrink: 0;
+}
+.vps-instance-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+@media (max-width: 640px) {
+  :deep(.vps-instance-dialog .el-dialog__body) {
+    padding-right: 16px;
+    padding-left: 16px;
+  }
+  .vps-instance-form :deep(.el-col) {
+    max-width: 100%;
+    flex: 0 0 100%;
+  }
+  .vps-form-section-title small {
+    display: none;
+  }
+  .vps-connection-test {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .vps-connection-test .el-button {
+    width: 100%;
+  }
 }
 .vps-row-wrap {
   display: flex;
