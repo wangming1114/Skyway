@@ -59,6 +59,9 @@ public class ProxyNode extends BaseEntity {
     /** 当前端口限速规则 */
     private ProxyNodeRateLimit rateLimit;
 
+    /** 累计流量字节数（关联汇总，不持久化） */
+    private Long totalTrafficBytes;
+
     /** 过期状态筛选：unexpired=未过期，expired=已过期 */
     private String expireStatus;
 
@@ -178,6 +181,14 @@ public class ProxyNode extends BaseEntity {
         this.rateLimit = rateLimit;
     }
 
+    public Long getTotalTrafficBytes() {
+        return totalTrafficBytes;
+    }
+
+    public void setTotalTrafficBytes(Long totalTrafficBytes) {
+        this.totalTrafficBytes = totalTrafficBytes;
+    }
+
     public String getExpireStatus() {
         return expireStatus;
     }
@@ -201,6 +212,7 @@ public class ProxyNode extends BaseEntity {
                 .append("customId", getCustomId())
                 .append("status", getStatus())
                 .append("rateLimit", getRateLimit())
+                .append("totalTrafficBytes", getTotalTrafficBytes())
                 .append("expireStatus", getExpireStatus())
                 .append("remark", getRemark())
                 .append("createBy", getCreateBy())

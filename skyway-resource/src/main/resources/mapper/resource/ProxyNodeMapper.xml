@@ -22,25 +22,29 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         <result property="createTime"  column="create_time"  />
         <result property="updateBy"    column="update_by"    />
         <result property="updateTime"  column="update_time"  />
+        <result property="totalTrafficBytes" column="total_traffic_bytes" />
     </resultMap>
 
     <sql id="selectProxyNodeVo">
-        select id, instance_id, customer_id, node_name, node_type, address, port, url, config_json, expire_time, custom_id, status, remark, create_by, create_time, update_by, update_time
-        from res_proxy_node
+        select p.id, p.instance_id, p.customer_id, p.node_name, p.node_type, p.address, p.port, p.url, p.config_json,
+               p.expire_time, p.custom_id, p.status, p.remark, p.create_by, p.create_time, p.update_by, p.update_time,
+               (select ifnull(sum(ifnull(t.rx_delta, 0) + ifnull(t.tx_delta, 0)), 0)
+                  from res_proxy_node_traffic t where t.node_id = p.id) as total_traffic_bytes
+        from res_proxy_node p
     </sql>
 
     <select id="selectList" parameterType="com.skyway.resource.domain.ProxyNode" resultMap="ProxyNodeResult">
         <include refid="selectProxyNodeVo"/>
         <where>
-            <if test="instanceId != null"> and instance_id = #{instanceId} </if>
-            <if test="customerId != null"> and customer_id = #{customerId} </if>
-            <if test="nodeType != null and nodeType != ''"> and node_type = #{nodeType} </if>
-            <if test="status != null and status != ''"> and status = #{status} </if>
-            <if test="nodeName != null and nodeName != ''"> and node_name like concat('%', #{nodeName}, '%') </if>
-            <if test="expireStatus == 'unexpired'"> and (expire_time is null or expire_time &gt;= sysdate()) </if>
-            <if test="expireStatus == 'expired'"> and expire_time is not null and expire_time &lt; sysdate() </if>
+            <if test="instanceId != null"> and p.instance_id = #{instanceId} </if>
+            <if test="customerId != null"> and p.customer_id = #{customerId} </if>
+            <if test="nodeType != null and nodeType != ''"> and p.node_type = #{nodeType} </if>
+            <if test="status != null and status != ''"> and p.status = #{status} </if>
+            <if test="nodeName != null and nodeName != ''"> and p.node_name like concat('%', #{nodeName}, '%') </if>
+            <if test="expireStatus == 'unexpired'"> and (p.expire_time is null or p.expire_time &gt;= sysdate()) </if>
+            <if test="expireStatus == 'expired'"> and p.expire_time is not null and p.expire_time &lt; sysdate() </if>
         </where>
-        order by create_time desc
+        order by p.create_time desc
     </select>
 
     <select id="count" parameterType="com.skyway.resource.domain.ProxyNode" resultType="int">

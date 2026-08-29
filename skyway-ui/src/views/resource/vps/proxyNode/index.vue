@@ -38,9 +38,9 @@
       <right-toolbar v-model:showSearch="showSearch" @queryTable="getList" />
     </el-row>
 
-    <el-table ref="tableRef" v-loading="loading" :data="nodeList" border size="small" @selection-change="handleSelectionChange">
+    <el-table ref="tableRef" v-loading="loading" :data="nodeList" border size="small" :default-sort="{ prop: 'totalTrafficBytes', order: 'descending' }" @selection-change="handleSelectionChange" @sort-change="handleSortChange">
       <el-table-column type="selection" width="50" align="center" />
-      <el-table-column label="节点信息" min-width="220" show-overflow-tooltip>
+      <el-table-column label="节点信息" prop="nodeName" min-width="220" show-overflow-tooltip sortable="custom" :sort-orders="['descending', 'ascending']">
         <template #default="{ row }">
           <div class="node-info-cell">
             <span class="node-info-name">{{ row.nodeName || '-' }}</span>
@@ -48,12 +48,12 @@
           </div>
         </template>
       </el-table-column>
-      <el-table-column label="地址端口" min-width="220" show-overflow-tooltip>
+      <el-table-column label="地址端口" prop="port" min-width="220" show-overflow-tooltip sortable="custom" :sort-orders="['descending', 'ascending']">
         <template #default="{ row }">
           <span class="address-port-cell">{{ row.address || '-' }}<span v-if="row.port">:{{ row.port }}</span></span>
         </template>
       </el-table-column>
-      <el-table-column label="所属实例" min-width="140" align="center" show-overflow-tooltip>
+      <el-table-column label="所属实例" prop="instanceId" min-width="160" align="center" show-overflow-tooltip sortable="custom" :sort-orders="['descending', 'ascending']">
         <template #default="{ row }">
           <el-link v-if="row.instanceId" type="primary" @click="goVpsDetail(row.instanceId)" :underline="false">
             #{{ row.instanceId }} {{ instanceOptions.find(i => i.id === row.instanceId)?.name || '' }}
@@ -61,7 +61,7 @@
           <span v-else>-</span>
         </template>
       </el-table-column>
-      <el-table-column label="归属客户" min-width="140" align="center" show-overflow-tooltip>
+      <el-table-column label="归属客户" prop="customerId" min-width="160" align="center" show-overflow-tooltip sortable="custom" :sort-orders="['descending', 'ascending']">
         <template #default="{ row }">
           <el-link v-if="row.customerId" type="primary" @click="goCustomerDetail(row.customerId)" :underline="false">
             #{{ row.customerId }} {{ customerOptions.find(c => c.id === row.customerId)?.username || '' }}
@@ -69,13 +69,13 @@
           <span v-else>-</span>
         </template>
       </el-table-column>
-      <el-table-column label="有效期" width="120" align="center">
+      <el-table-column label="有效期" prop="expireTime" width="140" align="center" sortable="custom" :sort-orders="['descending', 'ascending']">
         <template #default="{ row }">
           <span v-if="!row.expireTime" class="expire-forever">永久</span>
           <span v-else :class="{ 'expire-expired': isExpired(row.expireTime) }">{{ parseTime(row.expireTime, '{y}-{m}-{d}') }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="流量" min-width="220" align="left" header-align="left">
+      <el-table-column label="流量" prop="totalTrafficBytes" min-width="220" align="left" header-align="left" sortable="custom" :sort-orders="['descending', 'ascending']">
         <template #default="{ row }">
           <div v-if="trafficMap[row.id]" class="traffic-cell">
             <div class="traffic-cell-line">
@@ -99,7 +99,7 @@
           </div>
         </template>
       </el-table-column>
-      <el-table-column label="状态" width="100" align="center">
+      <el-table-column label="状态" prop="status" width="120" align="center" sortable="custom" :sort-orders="['descending', 'ascending']">
         <template #default="{ row }">
           <span class="status-cell">
             <el-icon v-if="statusLoadingId === row.id" class="is-loading status-loading"><Loading /></el-icon>
@@ -435,8 +435,19 @@ const queryParams = ref({
   instanceId: undefined,
   customerId: undefined,
   nodeType: undefined,
-  status: undefined
+  status: undefined,
+  orderByColumn: 'total_traffic_bytes',
+  isAsc: 'descending'
 })
+const PROXY_NODE_SORT_COLUMNS = {
+  nodeName: 'p.node_name',
+  port: 'p.port',
+  instanceId: 'p.instance_id',
+  customerId: 'p.customer_id',
+  expireTime: 'p.expire_time',
+  totalTrafficBytes: 'total_traffic_bytes',
+  status: 'p.status'
+}
 
 const tableRef = ref(null)
 const selectedIds = ref([])
@@ -732,6 +743,13 @@ function loadOptions() {
 }
 
 function handleQuery() {
+  queryParams.value.pageNum = 1
+  getList()
+}
+
+function handleSortChange({ prop, order }) {
+  queryParams.value.orderByColumn = order ? PROXY_NODE_SORT_COLUMNS[prop] : undefined
+  queryParams.value.isAsc = order || undefined
   queryParams.value.pageNum = 1
   getList()
 }

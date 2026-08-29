@@ -30,13 +30,18 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         <result property="categoryName" column="category_name" />
         <result property="nodeName"     column="node_name"     />
         <result property="nodeCount"    column="node_count"    />
+        <result property="totalTrafficBytes" column="total_traffic_bytes" />
     </resultMap>
 
     <sql id="selectVpsInstanceVo">
         select i.id, i.name, i.category_id, i.node_id, i.ip, i.ssh_port, i.ssh_username, i.ssh_password, i.cpu, i.memory, i.disk, i.status, i.network_type, i.os_type, i.os_version, i.bandwidth, i.traffic_limit, i.renewal_amount, i.expire_time, i.remark, i.create_time, i.update_time,
                c.name as category_name,
                n.name as node_name,
-               (select count(*) from res_proxy_node p where p.instance_id = i.id) as node_count
+               (select count(*) from res_proxy_node p where p.instance_id = i.id) as node_count,
+               (select ifnull(sum(ifnull(t.rx_delta, 0) + ifnull(t.tx_delta, 0)), 0)
+                  from res_proxy_node p
+                  left join res_proxy_node_traffic t on t.node_id = p.id
+                 where p.instance_id = i.id) as total_traffic_bytes
         from res_instance i
         left join res_category c on i.category_id = c.id
         left join res_category n on i.node_id = n.id

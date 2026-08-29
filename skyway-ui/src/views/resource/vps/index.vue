@@ -79,13 +79,13 @@
               未选择分类时显示全部 VPS；在左侧选择分类/节点可筛选列表。
             </el-alert>
 
-            <el-table v-loading="loading" :data="instanceList" :row-class-name="() => 'vps-table-row'">
-              <el-table-column label="编号" align="center" prop="id" width="72">
+            <el-table v-loading="loading" :data="instanceList" :row-class-name="() => 'vps-table-row'" :default-sort="{ prop: 'totalTrafficBytes', order: 'descending' }" @sort-change="handleInstanceSortChange">
+              <el-table-column label="编号" align="center" prop="id" width="88" sortable="custom" :sort-orders="['descending', 'ascending']">
                 <template #default="scope">
                   <span>{{ scope.row.id }}</span>
                 </template>
               </el-table-column>
-              <el-table-column label="主机信息" align="left" prop="name" min-width="300" show-overflow-tooltip class-name="vps-name-column">
+              <el-table-column label="主机信息" align="left" prop="name" min-width="300" show-overflow-tooltip class-name="vps-name-column" sortable="custom" :sort-orders="['descending', 'ascending']">
                 <template #default="scope">
                   <div class="vps-row-wrap">
                     <div class="vps-icon-box" :title="statusLabel(scope.row.status)">
@@ -128,17 +128,17 @@
                   </div>
                 </template>
               </el-table-column>
-              <el-table-column label="分类" align="left" prop="categoryName" width="90" show-overflow-tooltip>
+              <el-table-column label="分类" align="left" prop="categoryName" width="110" show-overflow-tooltip sortable="custom" :sort-orders="['descending', 'ascending']">
                 <template #default="scope">
                   <span>{{ scope.row.categoryName }}</span>
                 </template>
               </el-table-column>
-              <el-table-column label="节点数" align="center" prop="nodeCount" width="72">
+              <el-table-column label="节点数" align="center" prop="nodeCount" width="96" sortable="custom" :sort-orders="['descending', 'ascending']">
                 <template #default="scope">
                   <span>{{ scope.row.nodeCount }}</span>
                 </template>
               </el-table-column>
-              <el-table-column label="累计流量" align="center" prop="totalTrafficBytes" min-width="230" show-overflow-tooltip>
+              <el-table-column label="累计流量" align="left" header-align="left" prop="totalTrafficBytes" min-width="230" show-overflow-tooltip sortable="custom" :sort-orders="['descending', 'ascending']">
                 <template #default="scope">
                   <div class="traffic-cell">
                     <div class="traffic-cell-total">{{ trafficTotalText(scope.row) }}</div>
@@ -146,7 +146,7 @@
                   </div>
                 </template>
               </el-table-column>
-              <el-table-column label="到期时间" align="center" prop="expireTime" width="128" show-overflow-tooltip>
+              <el-table-column label="到期时间" align="center" prop="expireTime" width="150" show-overflow-tooltip sortable="custom" :sort-orders="['descending', 'ascending']">
                 <template #default="scope">
                   <span>
                     <span v-if="!scope.row.expireTime">-</span>
@@ -645,8 +645,19 @@ const queryParams = ref({
   status: undefined,
   networkType: undefined,
   osType: undefined,
-  categoryId: undefined
+  categoryId: undefined,
+  orderByColumn: 'total_traffic_bytes',
+  isAsc: 'descending'
 })
+
+const INSTANCE_SORT_COLUMNS = {
+  id: 'i.id',
+  name: 'i.name',
+  categoryName: 'category_name',
+  nodeCount: 'node_count',
+  totalTrafficBytes: 'total_traffic_bytes',
+  expireTime: 'i.expire_time'
+}
 
 /** 加载分类树 */
 function getCategoryTree() {
@@ -769,6 +780,13 @@ function getList() {
     refreshCurrentPageSpeed()
     restartSpeedPolling()
   })
+}
+
+function handleInstanceSortChange({ prop, order }) {
+  queryParams.value.orderByColumn = order ? INSTANCE_SORT_COLUMNS[prop] : undefined
+  queryParams.value.isAsc = order || undefined
+  queryParams.value.pageNum = 1
+  getList()
 }
 
 function pruneSpeedMap(rows) {
@@ -1093,7 +1111,7 @@ onBeforeUnmount(() => {
 .traffic-cell {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
   gap: 4px;
   line-height: 1.25;
   white-space: nowrap;
