@@ -2,6 +2,7 @@
   <div class="proxy-node-panel">
     <div class="toolbar">
       <el-button type="primary" size="small" icon="Plus" @click="handleAdd" v-hasPermi="['resource:vps:add']">新增节点</el-button>
+      <el-button v-if="instanceId" type="primary" plain size="small" icon="Plus" @click="handleBatchAdd" v-hasPermi="['resource:vps:add']">批量新增</el-button>
       <el-button type="danger" plain size="small" icon="Delete" :disabled="selectedIds.length === 0" @click="handleBatchDelete" v-hasPermi="['resource:vps:remove']">批量删除</el-button>
       <el-select v-model="queryParams.nodeType" placeholder="全部类型" clearable size="small" style="width: 180px; margin-left: 10px" @change="handleFilterChange">
         <el-option v-for="t in nodeTypeOptions" :key="t.value" :label="t.label" :value="t.value" />
@@ -205,6 +206,127 @@
         <el-button type="primary" :disabled="!canSubmitAdd" :loading="httpExecSubmitting" @click="submitAddForm">
           {{ canSubmitAdd ? '确定（将在服务器执行）' : '等待 SSH 连接...' }}
         </el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      title="批量新增节点"
+      v-model="batchAddVisible"
+      width="1040px"
+      append-to-body
+      :close-on-click-modal="!batchRunning"
+      :close-on-press-escape="!batchRunning"
+      :before-close="beforeBatchClose"
+    >
+      <el-form :model="batchForm" label-width="90px" class="batch-add-form">
+        <div class="batch-common-grid">
+          <el-form-item label="归属客户" required>
+            <el-select v-model="batchForm.customerId" placeholder="请选择客户" style="width: 100%" filterable :disabled="batchCommonLocked">
+              <el-option v-for="c in customerOptions" :key="c.id" :label="c.username" :value="c.id" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="协议类型" required>
+            <el-select v-model="batchForm.nodeType" style="width: 100%" :disabled="batchCommonLocked">
+              <el-option v-for="t in nodeTypeOptions" :key="t.value" :label="t.label" :value="t.value" />
+            </el-select>
+          </el-form-item>
+        </div>
+        <el-form-item label="有效期">
+          <div class="batch-expire-row">
+            <el-date-picker
+              v-model="batchForm.expireTime"
+              type="datetime"
+              placeholder="选择过期时间"
+              :disabled="batchPermanent || batchCommonLocked"
+              value-format="YYYY-MM-DD HH:mm:ss"
+              style="flex: 1"
+            />
+            <el-checkbox v-model="batchPermanent" :disabled="batchCommonLocked" @change="v => v && (batchForm.expireTime = null)">永久有效</el-checkbox>
+          </div>
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="batchForm.remark" maxlength="200" show-word-limit clearable :disabled="batchCommonLocked" placeholder="选填，应用于本批节点" />
+        </el-form-item>
+        <el-form-item label="批量 S5">
+          <div class="batch-relay-import">
+            <el-input
+              v-model="batchForm.relayPaste"
+              type="textarea"
+              :rows="4"
+              :disabled="batchCommonLocked || batchForm.nodeType !== 'VLESS-REALITY'"
+              placeholder="每行一个：host:port:username:password；粘贴后点击“解析并添加”"
+            />
+            <el-button :disabled="batchCommonLocked || batchForm.nodeType !== 'VLESS-REALITY'" @click="appendRelayRows">解析并添加</el-button>
+          </div>
+          <div v-if="batchForm.nodeType !== 'VLESS-REALITY'" class="batch-field-tip">当前协议不支持 SOCKS5 中转，请保持各行 S5 为空。</div>
+        </el-form-item>
+      </el-form>
+
+      <div class="batch-row-toolbar">
+        <div>
+          <el-button size="small" icon="Plus" :disabled="batchCommonLocked" @click="addEmptyBatchRow">添加无中转节点</el-button>
+          <span class="batch-row-tip">每行创建一个节点；自动端口会在该行执行前获取。</span>
+        </div>
+        <div class="batch-summary">
+          <span>共 {{ batchCounts.total }}</span>
+          <span>待执行 {{ batchCounts.pending }}</span>
+          <span class="is-running">执行中 {{ batchCounts.running }}</span>
+          <span class="is-success">成功 {{ batchCounts.success }}</span>
+          <span class="is-failed">失败 {{ batchCounts.failed }}</span>
+        </div>
+      </div>
+
+      <el-table :data="batchRows" border size="small" max-height="390" class="batch-node-table">
+        <el-table-column type="index" label="#" width="52" align="center" />
+        <el-table-column label="端口" width="270">
+          <template #default="{ row }">
+            <div class="batch-port-cell">
+              <el-switch v-model="row.autoPort" active-text="自动" inactive-text="手动" :disabled="batchRunning || row.status === 'success'" @change="onBatchPortModeChange(row)" />
+              <el-input-number
+                v-if="!row.autoPort"
+                v-model="row.port"
+                :min="1"
+                :max="65535"
+                controls-position="right"
+                size="small"
+                :disabled="batchRunning || row.status === 'success'"
+                @change="onBatchManualPortChange(row)"
+              />
+              <span v-else class="batch-auto-port">{{ row.port ? `本次 ${row.port}` : '执行时推荐' }}</span>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column label="S5 中转（可留空）" min-width="390">
+          <template #default="{ row }">
+            <el-input
+              v-model="row.relayText"
+              clearable
+              :disabled="batchRunning || row.status === 'success' || batchForm.nodeType !== 'VLESS-REALITY'"
+              placeholder="host:port:username:password"
+              @input="validateBatchRelayRow(row)"
+            />
+            <div v-if="row.validationError" class="batch-row-error">{{ row.validationError }}</div>
+          </template>
+        </el-table-column>
+        <el-table-column label="状态" min-width="220">
+          <template #default="{ row }">
+            <div class="batch-status-cell">
+              <el-tag size="small" :type="batchStatusType(row.status)">{{ batchStatusText(row.status) }}</el-tag>
+              <span v-if="row.message" :class="{ 'batch-row-error': row.status === 'failed' }">{{ row.message }}</span>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="72" align="center" fixed="right">
+          <template #default="{ row }">
+            <el-button link type="danger" size="small" :disabled="batchRunning || row.status === 'success'" @click="removeBatchRow(row)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <template #footer>
+        <el-button :disabled="batchRunning" @click="batchAddVisible = false">关 闭</el-button>
+        <el-button v-if="batchCounts.failed > 0" type="warning" :loading="batchRunning" @click="retryFailedBatchRows">只重试失败项</el-button>
+        <el-button type="primary" :loading="batchRunning" :disabled="batchRunning || batchRows.length === 0 || batchCounts.pending === 0" @click="submitBatchAdd">开始创建</el-button>
       </template>
     </el-dialog>
 
@@ -492,6 +614,7 @@ import {
 import { listCustomer } from '@/api/member/customer'
 import { parseTime } from '@/utils/skyway'
 import { buildClashSubscribeUrl, parseVlessUrl, safeProxyShareFilename } from '@/utils/proxyShare'
+import { parseSocks5RelayLines, parseSocks5RelayText } from '@/utils/proxyNodeBatch'
 import { DocumentCopy, Loading, Edit, Delete } from '@element-plus/icons-vue'
 import AccessLogDialog from './AccessLogDialog.vue'
 
@@ -765,6 +888,28 @@ const addFormRules = {
 }
 const httpExecSubmitting = ref(false)
 
+const batchAddVisible = ref(false)
+const batchRunning = ref(false)
+const batchExecutionStarted = ref(false)
+const batchPermanent = ref(true)
+const batchForm = reactive({
+  customerId: undefined,
+  nodeType: 'VLESS-REALITY',
+  expireTime: null,
+  remark: '',
+  relayPaste: ''
+})
+const batchRows = ref([])
+let batchRowSequence = 0
+const batchCommonLocked = computed(() => batchRunning.value || batchExecutionStarted.value)
+const batchCounts = computed(() => {
+  const counts = { total: batchRows.value.length, pending: 0, running: 0, success: 0, failed: 0 }
+  batchRows.value.forEach(row => {
+    if (Object.prototype.hasOwnProperty.call(counts, row.status)) counts[row.status]++
+  })
+  return counts
+})
+
 const remarkEditVisible = ref(false)
 const remarkEditRow = ref(null)
 const remarkEditValue = ref('')
@@ -832,26 +977,6 @@ function resetRelayForm() {
   addForm.relayPort = ''
   addForm.relayUsername = ''
   addForm.relayPassword = ''
-}
-
-function parseSocks5RelayText(value) {
-  const text = (value || '').trim()
-  if (!text) return { ok: false, message: '请输入 SOCKS5 中转配置' }
-  const parts = text.split(':')
-  if (parts.length !== 4 || parts.some(part => !part.trim())) {
-    return { ok: false, message: '格式应为 host:port:username:password' }
-  }
-  const port = Number(parts[1].trim())
-  if (!Number.isInteger(port) || port < 1 || port > 65535) {
-    return { ok: false, message: 'SOCKS5 端口范围为 1-65535' }
-  }
-  return {
-    ok: true,
-    host: parts[0].trim(),
-    port: String(port),
-    username: parts[2].trim(),
-    password: parts[3].trim()
-  }
 }
 
 function parseRelayTextToForm() {
@@ -945,6 +1070,248 @@ function handleAdd() {
   ensureCustomerOptions()
   ensureInstanceOptions()
   nextTick(() => addFormRef.value?.clearValidate())
+}
+
+function createBatchRow(relayText = '', validationError = '') {
+  return {
+    key: ++batchRowSequence,
+    autoPort: true,
+    port: undefined,
+    relayText,
+    validationError,
+    status: 'pending',
+    message: '',
+    attemptedPorts: []
+  }
+}
+
+function handleBatchAdd() {
+  if (!props.instanceId) return
+  batchForm.customerId = undefined
+  batchForm.nodeType = 'VLESS-REALITY'
+  batchForm.expireTime = null
+  batchForm.remark = ''
+  batchForm.relayPaste = ''
+  batchPermanent.value = true
+  batchExecutionStarted.value = false
+  batchRows.value = [createBatchRow()]
+  batchAddVisible.value = true
+  ensureCustomerOptions()
+}
+
+function addEmptyBatchRow() {
+  batchRows.value.push(createBatchRow())
+}
+
+function isPristineBatchRow(row) {
+  return row && row.status === 'pending' && row.autoPort && !row.port && !row.relayText && !row.message
+}
+
+function appendRelayRows() {
+  const parsedLines = parseSocks5RelayLines(batchForm.relayPaste)
+  if (parsedLines.length === 0) {
+    proxy.$modal.msgWarning('请粘贴至少一行 S5 中转配置')
+    return
+  }
+  const generated = parsedLines.map(item => createBatchRow(item.text, item.ok ? '' : item.message))
+  if (batchRows.value.length === 1 && isPristineBatchRow(batchRows.value[0])) {
+    batchRows.value = generated
+  } else {
+    batchRows.value.push(...generated)
+  }
+  batchForm.relayPaste = ''
+}
+
+function removeBatchRow(row) {
+  const index = batchRows.value.findIndex(item => item.key === row.key)
+  if (index >= 0) batchRows.value.splice(index, 1)
+}
+
+function onBatchPortModeChange(row) {
+  row.port = undefined
+  row.message = ''
+  row.validationError = ''
+}
+
+function onBatchManualPortChange(row) {
+  row.message = ''
+  row.validationError = ''
+}
+
+function validateBatchRelayRow(row) {
+  const text = (row.relayText || '').trim()
+  const parsed = text ? parseSocks5RelayText(text) : null
+  row.validationError = parsed && !parsed.ok ? parsed.message : ''
+  row.message = ''
+}
+
+function batchStatusText(status) {
+  return {
+    pending: '待执行',
+    running: '执行中',
+    success: '成功',
+    failed: '失败'
+  }[status] || '待执行'
+}
+
+function batchStatusType(status) {
+  return {
+    pending: 'info',
+    running: 'warning',
+    success: 'success',
+    failed: 'danger'
+  }[status] || 'info'
+}
+
+function validateBatchTargets(targetRows) {
+  if (!batchForm.customerId) {
+    proxy.$modal.msgWarning('请选择归属客户')
+    return false
+  }
+  if (!batchForm.nodeType) {
+    proxy.$modal.msgWarning('请选择协议类型')
+    return false
+  }
+  if (!batchPermanent.value && !batchForm.expireTime) {
+    proxy.$modal.msgWarning('请选择有效期或勾选永久有效')
+    return false
+  }
+  if (!targetRows.length) {
+    proxy.$modal.msgWarning('没有待创建的节点')
+    return false
+  }
+
+  let valid = true
+  targetRows.forEach(row => {
+    row.validationError = ''
+    if (!row.autoPort) {
+      const port = Number(row.port)
+      if (!Number.isInteger(port) || port < 1 || port > 65535) {
+        row.validationError = '请输入 1-65535 的手工端口'
+        valid = false
+      } else {
+        const duplicated = batchRows.value.some(other => other.key !== row.key && !other.autoPort && Number(other.port) === port)
+        if (duplicated) {
+          row.validationError = `手工端口 ${port} 在本批中重复`
+          valid = false
+        }
+      }
+    }
+    const relayText = (row.relayText || '').trim()
+    if (relayText) {
+      if (batchForm.nodeType !== 'VLESS-REALITY') {
+        row.validationError = '当前协议不支持 SOCKS5 中转，请清空该行 S5'
+        valid = false
+      } else {
+        const parsed = parseSocks5RelayText(relayText)
+        if (!parsed.ok) {
+          row.validationError = parsed.message
+          valid = false
+        }
+      }
+    }
+  })
+  if (!valid) proxy.$modal.msgWarning('请先修正批量节点表格中的错误')
+  return valid
+}
+
+function batchErrorMessage(error, fallback) {
+  if (typeof error === 'string' && error.trim()) return error.trim()
+  return error?.msg || error?.message || fallback
+}
+
+async function resolveAutoBatchPort(row, attemptedPorts) {
+  const res = await getRecommendPort(props.instanceId)
+  let port = Number(res?.data)
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error('未获取到有效的推荐端口')
+  }
+  while (attemptedPorts.has(port) && port <= 65535) port++
+  if (port > 65535) throw new Error('没有可用的自动端口')
+  row.port = port
+  return port
+}
+
+async function executeBatchRows(targetRows) {
+  if (!validateBatchTargets(targetRows)) return
+  batchExecutionStarted.value = true
+  batchRunning.value = true
+  targetRows.forEach(row => {
+    row.status = 'pending'
+    row.message = ''
+  })
+
+  try {
+    await checkInstanceSsh(props.instanceId)
+  } catch (error) {
+    const message = batchErrorMessage(error, 'SSH 连接失败')
+    targetRows.forEach(row => {
+      row.status = 'failed'
+      row.message = `SSH 检查失败：${message}`
+    })
+    batchRunning.value = false
+    proxy.$modal.msgError(`SSH 检查失败：${message}`)
+    return
+  }
+
+  const attemptedPorts = new Set()
+  batchRows.value.forEach(row => {
+    ;(row.attemptedPorts || []).forEach(port => attemptedPorts.add(Number(port)))
+    if (row.status === 'success' && row.port) attemptedPorts.add(Number(row.port))
+  })
+  let successCount = 0
+
+  for (const row of targetRows) {
+    row.status = 'running'
+    row.message = row.autoPort ? '正在获取推荐端口…' : `正在创建端口 ${row.port}…`
+    try {
+      const port = row.autoPort ? await resolveAutoBatchPort(row, attemptedPorts) : Number(row.port)
+      attemptedPorts.add(port)
+      if (!row.attemptedPorts.includes(port)) row.attemptedPorts.push(port)
+      row.message = `正在创建端口 ${port}…`
+      const payload = {
+        customerId: batchForm.customerId,
+        nodeType: batchForm.nodeType,
+        port,
+        expireTime: batchPermanent.value ? null : batchForm.expireTime,
+        remark: (batchForm.remark || '').trim() || undefined
+      }
+      const relayText = (row.relayText || '').trim()
+      if (relayText) payload.relayText = relayText
+      const res = await addProxyNodeOnInstance(props.instanceId, payload)
+      row.status = 'success'
+      row.message = res?.data?.nodeName || `端口 ${port} 已创建`
+      successCount++
+    } catch (error) {
+      row.status = 'failed'
+      row.message = batchErrorMessage(error, '创建失败')
+    }
+  }
+
+  batchRunning.value = false
+  if (successCount > 0) getList()
+  const failedCount = targetRows.filter(row => row.status === 'failed').length
+  if (failedCount > 0) {
+    proxy.$modal.msgWarning(`批量创建完成：成功 ${successCount} 个，失败 ${failedCount} 个`)
+  } else {
+    proxy.$modal.msgSuccess(`批量创建完成：成功 ${successCount} 个`)
+  }
+}
+
+function submitBatchAdd() {
+  executeBatchRows(batchRows.value.filter(row => row.status === 'pending'))
+}
+
+function retryFailedBatchRows() {
+  executeBatchRows(batchRows.value.filter(row => row.status === 'failed'))
+}
+
+function beforeBatchClose(done) {
+  if (batchRunning.value) {
+    proxy.$modal.msgWarning('批量创建正在执行，请等待完成')
+    return
+  }
+  done()
 }
 
 function onAddInstanceChange(instanceId) {
@@ -1616,6 +1983,92 @@ watch(() => props.customerId, () => {
 .toolbar {
   display: flex;
   align-items: center;
+}
+.batch-add-form {
+  padding-right: 18px;
+}
+.batch-common-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+.batch-expire-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+.batch-relay-import {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+  width: 100%;
+}
+.batch-field-tip,
+.batch-row-tip {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+.batch-field-tip {
+  width: 100%;
+  margin-top: 4px;
+}
+.batch-row-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 4px 0 10px;
+}
+.batch-row-tip {
+  margin-left: 10px;
+}
+.batch-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  white-space: nowrap;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+.batch-summary .is-running {
+  color: var(--el-color-warning);
+}
+.batch-summary .is-success {
+  color: var(--el-color-success);
+}
+.batch-summary .is-failed,
+.batch-row-error {
+  color: var(--el-color-danger);
+}
+.batch-port-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.batch-port-cell :deep(.el-input-number) {
+  width: 132px;
+}
+.batch-auto-port {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+.batch-row-error {
+  margin-top: 3px;
+  font-size: 12px;
+  line-height: 16px;
+}
+.batch-status-cell {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 20px;
+  word-break: break-all;
+}
+.batch-status-cell :deep(.el-tag) {
+  flex-shrink: 0;
 }
 .expire-forever {
   color: var(--el-color-success);
