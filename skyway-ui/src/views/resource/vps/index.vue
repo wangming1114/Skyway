@@ -159,10 +159,11 @@
                   <div class="op-btns">
                     <el-button link icon="Connection" class="op-btn" @click="handleConnectServer(scope.row)" v-hasPermi="['resource:vps:list']">连接</el-button>
                     <el-button link icon="View" class="op-btn" @click="goDetail(scope.row.id)" v-hasPermi="['resource:vps:query']">详情</el-button>
-                    <el-dropdown trigger="click" @command="(cmd) => handleInstanceCommand(cmd, scope.row)" v-hasPermi="['resource:vps:edit', 'resource:vps:remove']">
+                    <el-dropdown trigger="click" @command="(cmd) => handleInstanceCommand(cmd, scope.row)" v-hasPermi="['resource:vps:list', 'resource:vps:query', 'resource:vps:edit', 'resource:vps:remove']">
                       <el-button link icon="DArrowRight" class="op-btn op-dropdown-trigger">更多</el-button>
                       <template #dropdown>
                         <el-dropdown-menu>
+                          <el-dropdown-item command="accessLog" icon="View" v-hasPermi="['resource:vps:list', 'resource:vps:query']">访问日志</el-dropdown-item>
                           <el-dropdown-item command="edit" icon="Edit" v-hasPermi="['resource:vps:edit']">编辑</el-dropdown-item>
                           <el-dropdown-item command="delete" icon="Delete" v-hasPermi="['resource:vps:remove']">删除</el-dropdown-item>
                           <el-dropdown-item command="forceDelete" icon="DeleteFilled" divided v-hasPermi="['resource:vps:remove']">强制删除</el-dropdown-item>
@@ -335,6 +336,13 @@
       </template>
     </el-dialog>
 
+    <AccessLogDialog
+      v-model="accessLogVisible"
+      scope="vps"
+      :instance-id="accessLogInstance?.id"
+      :title="`${accessLogInstance?.name || accessLogInstance?.ip || 'VPS'} - 访问日志`"
+    />
+
   </div>
 </template>
 
@@ -348,6 +356,7 @@ import centosIcon from '@/assets/images/os/centos.svg'
 import debianIcon from '@/assets/images/os/debian.svg'
 import alpineIcon from '@/assets/images/os/alpine.svg'
 import otherIcon from '@/assets/images/os/other.svg'
+import AccessLogDialog from './components/AccessLogDialog.vue'
 
 const osIconMap = {
   ubuntu: ubuntuIcon,
@@ -608,6 +617,13 @@ function handleConnectServer(row) {
   })
 }
 
+const accessLogVisible = ref(false)
+const accessLogInstance = ref(null)
+function openVpsAccessLog(row) {
+  accessLogInstance.value = row
+  accessLogVisible.value = true
+}
+
 const queryParams = ref({
   pageNum: 1,
   pageSize: 10,
@@ -864,7 +880,8 @@ function handleEditInstance(row) {
 }
 
 function handleInstanceCommand(command, row) {
-  if (command === 'edit') handleEditInstance(row)
+  if (command === 'accessLog') openVpsAccessLog(row)
+  else if (command === 'edit') handleEditInstance(row)
   else if (command === 'delete') handleDeleteInstance(row)
   else if (command === 'forceDelete') handleForceDeleteInstance(row)
 }

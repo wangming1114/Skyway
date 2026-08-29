@@ -5,6 +5,7 @@
         <span>VPS 详情</span>
         <span style="float: right">
           <el-button type="primary" link icon="Connection" @click="openConnect" v-hasPermi="['resource:vps:list']">连接服务器</el-button>
+          <el-button type="primary" link icon="View" @click="accessLogVisible = true" v-hasPermi="['resource:vps:list', 'resource:vps:query']">访问日志</el-button>
           <el-dropdown trigger="click" @command="handleDetailCommand">
             <el-button type="primary" link icon="DArrowRight">更多</el-button>
             <template #dropdown>
@@ -67,6 +68,13 @@
       </el-tabs>
     </el-card>
 
+    <AccessLogDialog
+      v-model="accessLogVisible"
+      scope="vps"
+      :instance-id="detail?.id"
+      :title="`${detail?.name || detail?.ip || 'VPS'} - 访问日志`"
+    />
+
   </div>
 </template>
 
@@ -74,6 +82,7 @@
 import { ref, watch, onBeforeUnmount } from 'vue'
 import { delInstance, forceDelInstance, getInstance } from '@/api/resource/vps'
 import ProxyNodePanel from './components/ProxyNodePanel.vue'
+import AccessLogDialog from './components/AccessLogDialog.vue'
 import { getToken } from '@/utils/auth'
 
 const { proxy } = getCurrentInstance()
@@ -85,6 +94,7 @@ const loading = ref(true)
 const detail = ref(null)
 const activeTab = ref('proxyNode')
 const showPassword = ref(false)
+const accessLogVisible = ref(false)
 
 const wsRef = ref(null)
 const wsConnected = ref(false)

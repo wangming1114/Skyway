@@ -108,10 +108,11 @@
             <el-button link type="primary" size="small" @click="handleDetail(row)">详情</el-button>
             <el-button link type="primary" size="small" @click="handleShare(row)">订阅信息</el-button>
             <el-button link type="primary" size="small" @click="handleCopyUrl(row)">复制链接</el-button>
-            <el-dropdown class="node-op-dropdown" trigger="click" @command="(cmd) => handleNodeCommand(cmd, row)" v-hasPermi="['resource:vps:edit', 'resource:vps:remove']">
+            <el-dropdown class="node-op-dropdown" trigger="click" @command="(cmd) => handleNodeCommand(cmd, row)" v-hasPermi="['resource:vps:list', 'resource:vps:query', 'resource:vps:edit', 'resource:vps:remove']">
               <el-button link type="primary" size="small" icon="DArrowRight">更多</el-button>
               <template #dropdown>
                 <el-dropdown-menu>
+                  <el-dropdown-item command="accessLog" icon="View" v-hasPermi="['resource:vps:list', 'resource:vps:query']">访问日志</el-dropdown-item>
                   <el-dropdown-item command="edit" icon="Edit" v-hasPermi="['resource:vps:edit']">编辑</el-dropdown-item>
                   <el-dropdown-item command="rateLimit" icon="Timer" v-hasPermi="['resource:vps:edit']">设置限速</el-dropdown-item>
                   <el-dropdown-item command="delete" icon="Delete" divided v-hasPermi="['resource:vps:remove']">删除</el-dropdown-item>
@@ -276,6 +277,7 @@
       </div>
 
       <template #footer>
+        <el-button type="primary" plain @click="openNodeAccessLog(detailData)" v-hasPermi="['resource:vps:list', 'resource:vps:query']">访问日志</el-button>
         <el-dropdown trigger="click" @command="(cmd) => handleDetailNodeCommand(cmd)" v-hasPermi="['resource:vps:edit', 'resource:vps:remove']">
           <el-button>更多</el-button>
           <template #dropdown>
@@ -457,6 +459,13 @@
         <el-button type="primary" :loading="rateLimitSaving" @click="submitRateLimit">确定</el-button>
       </template>
     </el-dialog>
+
+    <AccessLogDialog
+      v-model="accessLogVisible"
+      scope="node"
+      :node-id="accessLogNode?.id"
+      :title="`${accessLogNode?.nodeName || '代理节点'} - 访问日志`"
+    />
   </div>
 </template>
 
@@ -484,6 +493,7 @@ import { listCustomer } from '@/api/member/customer'
 import { parseTime } from '@/utils/skyway'
 import { buildClashSubscribeUrl, parseVlessUrl, safeProxyShareFilename } from '@/utils/proxyShare'
 import { DocumentCopy, Loading, Edit, Delete } from '@element-plus/icons-vue'
+import AccessLogDialog from './AccessLogDialog.vue'
 
 const { proxy } = getCurrentInstance()
 const router = useRouter()
@@ -536,6 +546,8 @@ const allNodeTypesForAdd = [
 const loading = ref(false)
 const nodeList = ref([])
 const total = ref(0)
+const accessLogVisible = ref(false)
+const accessLogNode = ref(null)
 const speedSnapshot = ref(null)
 const speedRefreshing = ref(false)
 let speedTimer = null
@@ -1232,10 +1244,17 @@ function handleBatchDelete() {
 }
 
 function handleNodeCommand(command, row) {
-  if (command === 'edit') openNodeEdit(row)
+  if (command === 'accessLog') openNodeAccessLog(row)
+  else if (command === 'edit') openNodeEdit(row)
   else if (command === 'rateLimit') openRateLimitDialog(row)
   else if (command === 'delete') handleDelete(row)
   else if (command === 'forceDelete') handleForceDelete(row)
+}
+
+function openNodeAccessLog(row) {
+  if (!row?.id) return
+  accessLogNode.value = row
+  accessLogVisible.value = true
 }
 
 function handleDetailNodeCommand(command) {

@@ -9,6 +9,8 @@ import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry
 import org.springframework.web.socket.server.standard.ServletServerContainerFactoryBean;
 import com.skyway.web.websocket.SshWebSocketHandler;
 import com.skyway.web.websocket.SshWebSocketHandshakeInterceptor;
+import com.skyway.web.websocket.AccessLogWebSocketHandler;
+import com.skyway.web.websocket.AccessLogWebSocketHandshakeInterceptor;
 
 /**
  * WebSocket 配置：注册 SSH 连接端点
@@ -25,10 +27,19 @@ public class WebSocketConfig implements WebSocketConfigurer {
     @Autowired
     private SshWebSocketHandshakeInterceptor sshWebSocketHandshakeInterceptor;
 
+    @Autowired
+    private AccessLogWebSocketHandler accessLogWebSocketHandler;
+
+    @Autowired
+    private AccessLogWebSocketHandshakeInterceptor accessLogWebSocketHandshakeInterceptor;
+
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
         registry.addHandler(sshWebSocketHandler, "/ws/ssh")
                 .addInterceptors(sshWebSocketHandshakeInterceptor)
+                .setAllowedOrigins("*");
+        registry.addHandler(accessLogWebSocketHandler, "/ws/access-log")
+                .addInterceptors(accessLogWebSocketHandshakeInterceptor)
                 .setAllowedOrigins("*");
     }
 
