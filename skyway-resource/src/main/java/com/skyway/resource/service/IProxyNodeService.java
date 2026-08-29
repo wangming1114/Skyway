@@ -61,6 +61,11 @@ public interface IProxyNodeService {
     Integer recommendPort(Long instanceId);
 
     /**
+     * 查询实例下数据库已登记的全部节点端口。
+     */
+    List<Integer> listUsedPorts(Long instanceId);
+
+    /**
      * 新增（自动生成分享链接）
      *
      * @param row 实体

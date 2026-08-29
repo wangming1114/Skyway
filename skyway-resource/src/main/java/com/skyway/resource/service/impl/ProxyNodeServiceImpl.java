@@ -73,6 +73,15 @@ public class ProxyNodeServiceImpl implements IProxyNodeService {
     }
 
     @Override
+    public List<Integer> listUsedPorts(Long instanceId) {
+        if (instanceId == null) {
+            return Collections.emptyList();
+        }
+        List<Integer> ports = proxyNodeMapper.selectPortsByInstanceId(instanceId);
+        return ports != null ? ports : Collections.emptyList();
+    }
+
+    @Override
     public int insert(ProxyNode row) {
         row.setUrl(buildShareUrl(row));
         return proxyNodeMapper.insert(row);

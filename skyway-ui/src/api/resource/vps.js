@@ -237,11 +237,12 @@ export function forceDelProxyNode(ids) {
   })
 }
 
-/** 推荐可用端口（从 10000 起连续、未占用的端口，用于添加节点时预填） */
-export function getRecommendPort(instanceId) {
+/** 推荐 VPS 实时可用端口；params 可传 excludePorts 排除本批已尝试端口 */
+export function getRecommendPort(instanceId, params) {
   return request({
     url: '/resource/vps/instance/' + instanceId + '/recommendPort',
-    method: 'get'
+    method: 'get',
+    params
   })
 }
 

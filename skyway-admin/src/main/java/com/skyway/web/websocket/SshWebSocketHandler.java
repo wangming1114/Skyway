@@ -31,6 +31,8 @@ import com.skyway.resource.service.IProxyNodeService;
 import com.skyway.resource.service.IProxyNodeTrafficService;
 import com.skyway.resource.service.IVpsInstanceService;
 import com.skyway.web.service.VpsSshCommandService;
+import com.skyway.web.service.VpsInstanceOperationCoordinator;
+import com.skyway.web.service.VpsPortAvailabilityService;
 import net.schmizz.sshj.SSHClient;
 import net.schmizz.sshj.connection.channel.direct.Session;
 import net.schmizz.sshj.sftp.FileAttributes;
@@ -93,6 +95,12 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
 
     @Autowired
     private IProxyNodeRateLimitService proxyNodeRateLimitService;
+
+    @Autowired
+    private VpsPortAvailabilityService vpsPortAvailabilityService;
+
+    @Autowired
+    private VpsInstanceOperationCoordinator vpsInstanceOperationCoordinator;
 
     private final ExecutorService executor = Executors.newCachedThreadPool(r -> {
         Thread t = new Thread(r, "ssh-ws-bridge-" + r.hashCode());
@@ -533,7 +541,8 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
      */
     private void handleAddProxyNode(WebSocketSession wsSession, JSONObject obj) {
         Object reqId = obj.get("reqId");
-        Integer port = obj.getInteger("port");
+        Integer requestedPort = obj.getInteger("port");
+        boolean autoPort = Boolean.TRUE.equals(obj.getBoolean("autoPort"));
         String expireTimeStr = obj.getString("expireTime");
         Long customerId = obj.getLong("customerId");
         String remark = obj.getString("remark");
@@ -569,7 +578,7 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
             return;
         }
         String customerIdStr = String.valueOf(customerId);
-        if (port == null || port < 1 || port > 65535) {
+        if (!autoPort && (requestedPort == null || requestedPort < 1 || requestedPort > 65535)) {
             sendExecError(wsSession, reqId, "端口无效（1-65535）");
             return;
         }
@@ -588,7 +597,18 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
             Session newSession = null;
             Command cmd = null;
             StringBuilder fullOutput = new StringBuilder();
+            VpsInstanceOperationCoordinator.LockHandle operationLock = null;
+            int port = requestedPort != null ? requestedPort : 0;
             try {
+                operationLock = vpsInstanceOperationCoordinator.lock(instanceId);
+                if (autoPort) {
+                    port = vpsPortAvailabilityService.resolveAutoPortForCreate(instanceId, requestedPort);
+                    if (requestedPort == null || requestedPort.intValue() != port) {
+                        sendExecOutput(wsSession, reqId, "自动端口已更新为 " + port + "。\n", false);
+                    }
+                } else {
+                    vpsPortAvailabilityService.assertAvailableForCreate(instanceId, port);
+                }
                 ssh = createSshClient(instanceId);
                 try (Session checkSession = ssh.startSession()) {
                     String sbCheck = execAndRead(checkSession, "command -v sb 2>/dev/null || which sb 2>/dev/null || echo ''");
@@ -599,6 +619,7 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                         return;
                     }
                 }
+                vpsSshCommandService.assertRemotePortAvailable(ssh, port);
 
                 String runCmd;
                 String oldJsonName;
@@ -739,6 +760,7 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                 if (cmd != null) try { cmd.close(); } catch (IOException ignored) {}
                 if (newSession != null) try { newSession.close(); } catch (IOException ignored) {}
                 if (ssh != null) try { ssh.close(); } catch (IOException ignored) {}
+                if (operationLock != null) operationLock.close();
             }
         });
     }

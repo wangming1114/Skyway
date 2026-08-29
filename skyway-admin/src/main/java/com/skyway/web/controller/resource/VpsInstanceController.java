@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import com.skyway.common.annotation.Log;
 import com.skyway.common.core.controller.BaseController;
@@ -28,6 +29,9 @@ import com.skyway.resource.service.IProxyNodeService;
 import com.skyway.resource.service.IProxyNodeTrafficService;
 import com.skyway.resource.service.IVpsInstanceService;
 import com.skyway.web.service.VpsSshCommandService;
+import com.skyway.web.service.VpsInstanceOperationCoordinator;
+import com.skyway.web.service.VpsPortAvailabilityService;
+import com.skyway.web.service.VpsPortAvailabilityService.PortRecommendation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -59,6 +63,12 @@ public class VpsInstanceController extends BaseController {
 
     @Autowired
     private IProxyNodeRateLimitService proxyNodeRateLimitService;
+
+    @Autowired
+    private VpsPortAvailabilityService vpsPortAvailabilityService;
+
+    @Autowired
+    private VpsInstanceOperationCoordinator vpsInstanceOperationCoordinator;
 
     /**
      * 分页查询VPS实例列表
@@ -97,9 +107,20 @@ public class VpsInstanceController extends BaseController {
      */
     @PreAuthorize("@ss.hasPermi('resource:vps:add')")
     @GetMapping("/{instanceId}/recommendPort")
-    public AjaxResult recommendPort(@PathVariable Long instanceId) {
-        Integer port = proxyNodeService.recommendPort(instanceId);
-        return success(port);
+    public AjaxResult recommendPort(@PathVariable Long instanceId,
+                                    @RequestParam(required = false) String excludePorts) {
+        try {
+            PortRecommendation recommendation = vpsPortAvailabilityService.recommend(
+                    instanceId, vpsPortAvailabilityService.parseExcludedPorts(excludePorts));
+            AjaxResult result = success(recommendation.getPort());
+            result.put("verified", recommendation.isVerified());
+            if (recommendation.getWarning() != null) {
+                result.put("warning", recommendation.getWarning());
+            }
+            return result;
+        } catch (Exception e) {
+            return AjaxResult.error(e.getMessage() != null ? e.getMessage() : "推荐端口失败");
+        }
     }
 
     /**
@@ -258,7 +279,13 @@ public class VpsInstanceController extends BaseController {
         if (port < 1 || port > 65535) {
             return AjaxResult.error("端口范围为 1-65535");
         }
-        try {
+        boolean autoPort = body != null && Boolean.parseBoolean(String.valueOf(body.get("autoPort")));
+        try (VpsInstanceOperationCoordinator.LockHandle ignored = vpsInstanceOperationCoordinator.lock(instanceId)) {
+            if (autoPort) {
+                port = vpsPortAvailabilityService.resolveAutoPortForCreate(instanceId, port);
+            } else {
+                vpsPortAvailabilityService.assertAvailableForCreate(instanceId, port);
+            }
             String relayText = body != null && body.get("relayText") != null ? body.get("relayText").toString().trim() : null;
             VpsSshCommandService.Socks5RelayConfig relay = null;
             if (relayText != null && !relayText.isEmpty()) {

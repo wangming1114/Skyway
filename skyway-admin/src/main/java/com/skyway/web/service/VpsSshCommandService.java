@@ -9,9 +9,11 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -49,6 +51,46 @@ public class VpsSshCommandService {
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
     private static final Pattern SPEED_LINE = Pattern.compile("^\\s*(\\d{1,5})\\s*\\|\\s*([0-9]+(?:\\.[0-9]+)?)\\s*\\|\\s*([0-9]+(?:\\.[0-9]+)?)\\s*$");
     private static final Pattern TC_RULE_LINE = Pattern.compile("^\\s*(\\d{1,5})\\s*:\\s*(\\d+)\\s*:\\s*(\\d+)\\s*$");
+    private static final String PORT_SCAN_SCRIPT = ""
+            + "socket_ok=1\n"
+            + "for file in /proc/net/tcp /proc/net/tcp6 /proc/net/udp /proc/net/udp6; do\n"
+            + "  if [ ! -r \"$file\" ]; then\n"
+            + "    socket_ok=0\n"
+            + "  elif ! awk 'NR > 1 { split($2, a, \":\"); print \"SOCKET_HEX=\" a[2] }' \"$file\"; then\n"
+            + "    socket_ok=0\n"
+            + "  fi\n"
+            + "done\n"
+            + "[ \"$socket_ok\" -eq 1 ] && echo SOCKETS_OK\n"
+            + "conf_dir=\"/etc/sing-box/conf\"\n"
+            + "if [ ! -e \"$conf_dir\" ]; then\n"
+            + "  echo CONFIG_OK\n"
+            + "elif [ -d \"$conf_dir\" ] && [ -r \"$conf_dir\" ] && [ -x \"$conf_dir\" ]; then\n"
+            + "  config_ok=1\n"
+            + "  for file in \"$conf_dir\"/*.json \"$conf_dir\"/*.json.disabled; do\n"
+            + "    [ -e \"$file\" ] || continue\n"
+            + "    if [ ! -r \"$file\" ]; then config_ok=0; continue; fi\n"
+            + "    matches=$(grep -hoE '\"listen_port\"[[:space:]]*:[[:space:]]*[0-9]+' \"$file\" 2>/dev/null)\n"
+            + "    grep_status=$?\n"
+            + "    if [ \"$grep_status\" -gt 1 ]; then config_ok=0; else printf '%s\\n' \"$matches\" | grep -oE '[0-9]+$' | sed 's/^/CONFIG_PORT=/'; fi\n"
+            + "  done\n"
+            + "  [ \"$config_ok\" -eq 1 ] && echo CONFIG_OK\n"
+            + "fi\n"
+            + "if command -v docker >/dev/null 2>&1; then\n"
+            + "  docker_ok=1\n"
+            + "  ids=$(docker ps -q 2>/dev/null) || docker_ok=0\n"
+            + "  if [ \"$docker_ok\" -eq 1 ]; then\n"
+            + "    for id in $ids; do\n"
+            + "      lines=$(docker port \"$id\" 2>/dev/null) || docker_ok=0\n"
+            + "      printf '%s\\n' \"$lines\" | sed -n 's/.*:\\([0-9][0-9]*\\)$/DOCKER_PORT=\\1/p'\n"
+            + "    done\n"
+            + "  fi\n"
+            + "  [ \"$docker_ok\" -eq 1 ] && echo DOCKER_OK\n"
+            + "else\n"
+            + "  echo DOCKER_OK\n"
+            + "fi\n"
+            + "if [ -r /proc/sys/net/ipv4/ip_local_port_range ]; then\n"
+            + "  if awk 'NF == 2 { print \"EPHEMERAL=\" $1 \"-\" $2; ok=1 } END { exit ok ? 0 : 1 }' /proc/sys/net/ipv4/ip_local_port_range; then echo EPHEMERAL_OK; fi\n"
+            + "fi\n";
     private static final String TC_MANAGER_SCRIPT = "#!/bin/bash\n"
             + "CONF_FILE=\"/etc/tc_ports_rules.conf\"\n"
             + "GLOBAL_CONF=\"/etc/tc_global_rules.conf\"\n"
@@ -831,6 +873,117 @@ public class VpsSshCommandService {
             if (ssh != null) {
                 try { ssh.close(); } catch (IOException e) { log.debug("SSH close: {}", e.getMessage()); }
             }
+        }
+    }
+
+    /** Reads live TCP/UDP sockets, sing-box configs, Docker mappings and the kernel ephemeral range. */
+    public RemotePortScan scanRemotePorts(Long instanceId) throws IOException {
+        SSHClient ssh = null;
+        try {
+            ssh = createSshClient(instanceId);
+            return scanRemotePorts(ssh);
+        } finally {
+            if (ssh != null) {
+                try { ssh.close(); } catch (IOException e) { log.debug("SSH close: {}", e.getMessage()); }
+            }
+        }
+    }
+
+    public RemotePortScan scanRemotePorts(SSHClient ssh) throws IOException {
+        if (ssh == null || !ssh.isConnected()) {
+            throw new IOException("SSH 连接不可用");
+        }
+        try (Session session = ssh.startSession()) {
+            String output = execAndRead(session, "sh -c " + quoteSh(PORT_SCAN_SCRIPT));
+            return parseRemotePortScan(output);
+        }
+    }
+
+    public void assertRemotePortAvailable(SSHClient ssh, int port) throws IOException {
+        RemotePortScan scan = scanRemotePorts(ssh);
+        if (!scan.isComplete()) {
+            throw new IOException("服务器端口扫描不完整：" + String.join("、", scan.getMissingSources()));
+        }
+        if (scan.getUnavailablePorts().contains(port)) {
+            String sources = scan.describeSources(port);
+            throw new IllegalStateException("端口 (" + port + ") 已被占用"
+                    + (sources.isEmpty() ? "" : "（" + sources + "）") + "，请更换端口");
+        }
+    }
+
+    static RemotePortScan parseRemotePortScan(String output) throws IOException {
+        if (output == null) throw new IOException("服务器端口扫描无输出");
+        RemotePortScan scan = new RemotePortScan();
+        String[] lines = output.split("\\r?\\n");
+        for (String raw : lines) {
+            String line = raw != null ? raw.trim() : "";
+            if (line.isEmpty()) continue;
+            if ("SOCKETS_OK".equals(line)) scan.socketsComplete = true;
+            else if ("CONFIG_OK".equals(line)) scan.configComplete = true;
+            else if ("DOCKER_OK".equals(line)) scan.dockerComplete = true;
+            else if ("EPHEMERAL_OK".equals(line)) scan.ephemeralComplete = true;
+            else if (line.startsWith("SOCKET_HEX=")) {
+                String hex = line.substring("SOCKET_HEX=".length()).trim();
+                try { scan.addUnavailable(Integer.parseInt(hex, 16), "系统 TCP/UDP socket"); } catch (NumberFormatException ignored) {}
+            } else if (line.startsWith("CONFIG_PORT=")) {
+                scan.addDecimalPort(line.substring("CONFIG_PORT=".length()), "sing-box 配置");
+            } else if (line.startsWith("DOCKER_PORT=")) {
+                scan.addDecimalPort(line.substring("DOCKER_PORT=".length()), "Docker 映射");
+            } else if (line.startsWith("EPHEMERAL=")) {
+                String[] range = line.substring("EPHEMERAL=".length()).split("-", -1);
+                if (range.length == 2) {
+                    try {
+                        int start = Integer.parseInt(range[0].trim());
+                        int end = Integer.parseInt(range[1].trim());
+                        if (start >= 1 && end <= 65535 && start <= end) {
+                            scan.ephemeralStart = start;
+                            scan.ephemeralEnd = end;
+                        }
+                    } catch (NumberFormatException ignored) {}
+                }
+            }
+        }
+        if (scan.ephemeralStart == null || scan.ephemeralEnd == null) scan.ephemeralComplete = false;
+        return scan;
+    }
+
+    public static final class RemotePortScan {
+        private final Set<Integer> unavailablePorts = new LinkedHashSet<>();
+        private final Map<Integer, Set<String>> sources = new LinkedHashMap<>();
+        private boolean socketsComplete;
+        private boolean configComplete;
+        private boolean dockerComplete;
+        private boolean ephemeralComplete;
+        private Integer ephemeralStart;
+        private Integer ephemeralEnd;
+
+        private void addDecimalPort(String value, String source) {
+            try { addUnavailable(Integer.parseInt(value.trim()), source); } catch (NumberFormatException ignored) {}
+        }
+
+        private void addUnavailable(int port, String source) {
+            if (port < 1 || port > 65535) return;
+            unavailablePorts.add(port);
+            sources.computeIfAbsent(port, ignored -> new LinkedHashSet<>()).add(source);
+        }
+
+        public Set<Integer> getUnavailablePorts() { return new LinkedHashSet<>(unavailablePorts); }
+        public Integer getEphemeralStart() { return ephemeralStart; }
+        public Integer getEphemeralEnd() { return ephemeralEnd; }
+        public boolean isComplete() { return socketsComplete && configComplete && dockerComplete && ephemeralComplete; }
+
+        public List<String> getMissingSources() {
+            List<String> missing = new ArrayList<>();
+            if (!socketsComplete) missing.add("系统 socket");
+            if (!configComplete) missing.add("sing-box 配置");
+            if (!dockerComplete) missing.add("Docker 映射");
+            if (!ephemeralComplete) missing.add("动态端口范围");
+            return missing;
+        }
+
+        public String describeSources(int port) {
+            Set<String> values = sources.get(port);
+            return values == null ? "" : String.join("、", values);
         }
     }
 
@@ -1710,14 +1863,8 @@ public class VpsSshCommandService {
                     throw new IllegalStateException("未检测到 sing-box 脚本 (sb)，请先在服务器上安装 sing-box");
                 }
             }
-            // 先检查端口是否已被占用，避免 sb 进入交互等待导致超时
-            try (Session portSession = ssh.startSession()) {
-                String portCheckCmd = "sh -c '(ss -tlnp 2>/dev/null || netstat -tlnp 2>/dev/null) | grep -q \":" + port + " \" && echo in_use || echo free'";
-                String portOut = execAndRead(portSession, portCheckCmd);
-                if (portOut != null && portOut.trim().contains("in_use")) {
-                    throw new IllegalStateException("端口 (" + port + ") 已被占用，请选择其他端口（可使用推荐端口）");
-                }
-            }
+            // 在真正执行 sb 前再次检查数据库以外的系统端口、配置和 Docker 映射。
+            assertRemotePortAvailable(ssh, port);
             String runCmd;
             String oldJsonName;
             String typeLabel;

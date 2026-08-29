@@ -155,7 +155,12 @@
           </el-select>
         </el-form-item>
         <el-form-item label="端口" prop="port">
-          <el-input-number v-model="addForm.port" :min="1" :max="65535" controls-position="right" style="width: 100%" placeholder="如 5000" />
+          <div class="add-port-input-wrap">
+            <el-input-number v-model="addForm.port" :min="1" :max="65535" controls-position="right" style="width: 100%" placeholder="如 5000" @change="onSingleAddPortChange" />
+            <div v-if="addPortAuto" :class="['add-port-recommendation', { warning: addPortWarning }]">
+              {{ addPortWarning || '自动推荐；提交时将再次检查真实占用' }}
+            </div>
+          </div>
         </el-form-item>
         <template v-if="canConfigureRelay">
           <el-form-item label="启用中转">
@@ -864,6 +869,9 @@ const addForm = reactive({
   remark: ''
 })
 const addFormPermanent = ref(true)
+const addPortAuto = ref(false)
+const addPortWarning = ref('')
+let addPortRecommendationVersion = 0
 const canConfigureRelay = computed(() => addForm.nodeType === 'VLESS-REALITY')
 const addFormRules = {
   customerId: [{ required: true, message: '请选择归属客户', trigger: 'change' }],
@@ -1054,19 +1062,20 @@ function addRelayPayload(payload) {
 }
 
 function handleAdd() {
+  addPortRecommendationVersion++
   addForm.customerId = props.fixedCustomer ? props.customerId : undefined
   addForm.instanceId = props.instanceId || undefined
   addForm.nodeType = 'VLESS-REALITY'
   addForm.port = undefined
+  addPortAuto.value = false
+  addPortWarning.value = ''
   resetRelayForm()
   addForm.expireTime = null
   addForm.remark = ''
   addFormPermanent.value = true
   addDialogVisible.value = true
   const portInstanceId = effectiveInstanceId.value
-  if (portInstanceId) getRecommendPort(portInstanceId).then(res => {
-    if (res.data != null) addForm.port = res.data
-  }).catch(() => {})
+  if (portInstanceId) loadSingleRecommendedPort(portInstanceId)
   ensureCustomerOptions()
   ensureInstanceOptions()
   nextTick(() => addFormRef.value?.clearValidate())
@@ -1081,6 +1090,7 @@ function createBatchRow(relayText = '', validationError = '') {
     validationError,
     status: 'pending',
     message: '',
+    recommendationWarning: '',
     attemptedPorts: []
   }
 }
@@ -1221,14 +1231,15 @@ function batchErrorMessage(error, fallback) {
 }
 
 async function resolveAutoBatchPort(row, attemptedPorts) {
-  const res = await getRecommendPort(props.instanceId)
+  const excludePorts = Array.from(attemptedPorts).filter(Number.isInteger).join(',')
+  const res = await getRecommendPort(props.instanceId, excludePorts ? { excludePorts } : undefined)
   let port = Number(res?.data)
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
     throw new Error('未获取到有效的推荐端口')
   }
-  while (attemptedPorts.has(port) && port <= 65535) port++
-  if (port > 65535) throw new Error('没有可用的自动端口')
+  if (attemptedPorts.has(port)) throw new Error('推荐接口返回了本批已排除的端口')
   row.port = port
+  row.recommendationWarning = formatPortVerificationWarning(res)
   return port
 }
 
@@ -1268,19 +1279,23 @@ async function executeBatchRows(targetRows) {
       const port = row.autoPort ? await resolveAutoBatchPort(row, attemptedPorts) : Number(row.port)
       attemptedPorts.add(port)
       if (!row.attemptedPorts.includes(port)) row.attemptedPorts.push(port)
-      row.message = `正在创建端口 ${port}…`
+      row.message = row.recommendationWarning
+        ? `端口 ${port} 未完整验证，创建前正在复核…`
+        : `正在创建端口 ${port}…`
       const payload = {
         customerId: batchForm.customerId,
         nodeType: batchForm.nodeType,
         port,
+        autoPort: row.autoPort,
         expireTime: batchPermanent.value ? null : batchForm.expireTime,
         remark: (batchForm.remark || '').trim() || undefined
       }
       const relayText = (row.relayText || '').trim()
       if (relayText) payload.relayText = relayText
       const res = await addProxyNodeOnInstance(props.instanceId, payload)
+      if (res?.data?.port != null) row.port = Number(res.data.port)
       row.status = 'success'
-      row.message = res?.data?.nodeName || `端口 ${port} 已创建`
+      row.message = res?.data?.nodeName || `端口 ${row.port || port} 已创建`
       successCount++
     } catch (error) {
       row.status = 'failed'
@@ -1314,13 +1329,42 @@ function beforeBatchClose(done) {
   done()
 }
 
+function applySingleRecommendedPort(res) {
+  if (res?.data == null) return
+  addForm.port = Number(res.data)
+  addPortAuto.value = true
+  addPortWarning.value = formatPortVerificationWarning(res)
+  if (addPortWarning.value) proxy.$modal.msgWarning(addPortWarning.value)
+}
+
+function formatPortVerificationWarning(res) {
+  if (res?.verified !== false) return ''
+  return `服务器未验证：${res.warning || '当前推荐端口仅按数据库占用生成'}`
+}
+
+function loadSingleRecommendedPort(instanceId) {
+  const version = ++addPortRecommendationVersion
+  getRecommendPort(instanceId).then(res => {
+    if (version === addPortRecommendationVersion) applySingleRecommendedPort(res)
+  }).catch(() => {})
+}
+
+function onSingleAddPortChange() {
+  addPortRecommendationVersion++
+  addPortAuto.value = false
+  addPortWarning.value = ''
+}
+
 function onAddInstanceChange(instanceId) {
   if (instanceId != null) {
-    getRecommendPort(instanceId).then(res => {
-      if (res.data != null) addForm.port = res.data
-    }).catch(() => {})
+    addPortAuto.value = false
+    addPortWarning.value = ''
+    loadSingleRecommendedPort(instanceId)
   } else {
+    addPortRecommendationVersion++
     addForm.port = undefined
+    addPortAuto.value = false
+    addPortWarning.value = ''
   }
 }
 
@@ -1362,6 +1406,7 @@ function submitAddForm() {
       customerId: addForm.customerId,
       nodeType: addForm.nodeType,
       port: addForm.port,
+      autoPort: addPortAuto.value,
       expireTime: addFormPermanent.value ? null : addForm.expireTime,
       remark: addForm.remark ? String(addForm.remark).trim() : undefined,
       reqId: addNodeReqId
@@ -1398,6 +1443,7 @@ function submitAddFormByHttp() {
     customerId: addForm.customerId,
     nodeType: addForm.nodeType,
     port: addForm.port,
+    autoPort: addPortAuto.value,
     expireTime: addFormPermanent.value ? null : addForm.expireTime,
     remark: addForm.remark ? String(addForm.remark).trim() : undefined
   })
@@ -2325,6 +2371,18 @@ watch(() => props.customerId, () => {
 }
 .add-form-node-type {
   width: 100%;
+}
+.add-port-input-wrap {
+  width: 100%;
+}
+.add-port-recommendation {
+  margin-top: 4px;
+  color: var(--el-color-success);
+  font-size: 12px;
+  line-height: 18px;
+}
+.add-port-recommendation.warning {
+  color: var(--el-color-warning);
 }
 .add-form-type-tip {
   float: right;
