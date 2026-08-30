@@ -1059,12 +1059,12 @@ function submitRemoveRateLimit() {
   })
 }
 
-function buildNodeNameByExpire(row, expireTime) {
-  const now = expireTime ? new Date(expireTime) : null
-  const tag = now
-    ? `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`
-    : 'permanent'
-  return `${row.nodeType}-${row.address || 'unknown'}-${row.port}-${row.customerId ?? 0}-${tag}`
+function syncUpdatedNodeName(row, updatedNode) {
+  if (updatedNode?.nodeName == null) return
+  row.nodeName = updatedNode.nodeName
+  if (detailData.value?.id === row.id) {
+    detailData.value.nodeName = updatedNode.nodeName
+  }
 }
 
 function submitNodeEdit() {
@@ -1087,12 +1087,12 @@ function submitNodeEdit() {
     payload.relayEnabled = false
   }
   editNodeSaving.value = true
-  updateProxyNode(payload).then(() => {
+  updateProxyNode(payload).then(res => {
     const row = editNodeRow.value
     row.expireTime = payload.expireTime
     row.port = payload.port
     row.url = payload.url
-    row.nodeName = buildNodeNameByExpire(row, payload.expireTime)
+    syncUpdatedNodeName(row, res?.data)
     if (payload.relayText) {
       row.remark = payload.relayText
       row.configJson = buildConfigJsonWithRelay(row.configJson, payload.relayText)
@@ -1127,8 +1127,9 @@ function submitRemarkEdit() {
   const id = remarkEditRow.value.id
   const remark = (remarkEditValue.value || '').trim()
   remarkSaving.value = true
-  updateProxyNode({ id, remark }).then(() => {
+  updateProxyNode({ id, remark }).then(res => {
     remarkEditRow.value.remark = remark
+    syncUpdatedNodeName(remarkEditRow.value, res?.data)
     proxy.$modal.msgSuccess('备注已更新')
     remarkEditVisible.value = false
   }).catch(() => {}).finally(() => {
@@ -1141,7 +1142,8 @@ function handleStatusChange(row) {
   proxy.$modal.confirm(`确认要${text}节点"${row.nodeName}"吗？`).then(() => {
     statusLoadingId.value = row.id
     return updateProxyNode({ id: row.id, status: row.status })
-  }).then(() => {
+  }).then(res => {
+    syncUpdatedNodeName(row, res?.data)
     proxy.$modal.msgSuccess(`${text}成功`)
   }).catch(() => {
     row.status = row.status === '0' ? '1' : '0'

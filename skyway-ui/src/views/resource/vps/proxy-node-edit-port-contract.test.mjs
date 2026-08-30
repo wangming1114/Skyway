@@ -30,5 +30,7 @@ for (const surface of editSurfaces) {
     assert.match(source, /const editNodeForm = reactive\(\{[\s\S]*port:/)
     assert.match(source, /editNodeForm\.port\s*=\s*row\.port/)
     assert.match(source, /port:\s*editNodeForm\.port/)
+    assert.match(source, /function syncUpdatedNodeName\(row, updatedNode\)/)
+    assert.match(source, /syncUpdatedNodeName\(row, res\?\.data\)/)
   })
 }

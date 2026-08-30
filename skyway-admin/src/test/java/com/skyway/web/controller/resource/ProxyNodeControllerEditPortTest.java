@@ -6,6 +6,7 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.util.HashMap;
@@ -102,7 +103,7 @@ public class ProxyNodeControllerEditPortTest {
     }
 
     @Test
-    public void editPortUpdatesRemoteConfigBeforeSavingNewPortAndNodeName() throws Exception {
+    public void editPortUpdatesDatabaseNodeNameWithoutTouchingRemoteConfig() throws Exception {
         ProxyNode existing = existingNode();
         when(proxyNodeService.getById(10L)).thenReturn(existing);
         when(proxyNodeService.getByInstanceIdAndPort(20L, 10088)).thenReturn(null);
@@ -117,79 +118,50 @@ public class ProxyNodeControllerEditPortTest {
 
         assertEquals(HttpStatus.SUCCESS, result.get(AjaxResult.CODE_TAG));
         ArgumentCaptor<ProxyNode> rowCaptor = ArgumentCaptor.forClass(ProxyNode.class);
-        InOrder inOrder = inOrder(vpsSshCommandService, proxyNodeService);
-        inOrder.verify(vpsSshCommandService).updateProxyNodeConfigPortAndName(
-                20L,
-                "VLESS-REALITY-203.0.113.8-10001-5-20260701",
-                "VLESS-REALITY-203.0.113.8-10088-5-20260809",
-                false,
-                10001,
-                10088);
-        inOrder.verify(proxyNodeService).update(rowCaptor.capture());
+        verify(proxyNodeService).update(rowCaptor.capture());
+        verifyNoInteractions(vpsSshCommandService);
 
         ProxyNode saved = rowCaptor.getValue();
         assertEquals(10088, saved.getPort());
         assertEquals("VLESS-REALITY-203.0.113.8-10088-5-20260809", saved.getNodeName());
-        assertEquals(null, saved.getUrl());
+        assertEquals("vless://old-url-with-old-port", saved.getUrl());
         assertEquals("tester", saved.getUpdateBy());
+        assertEquals(saved, result.get(AjaxResult.DATA_TAG));
     }
 
     @Test
-    public void editPortMovesTrafficRulesWhenNodeHasNoActiveRateLimit() throws Exception {
+    public void editRewritesStaleDatabaseNodeNameWithoutTouchingRemoteConfig() throws Exception {
         ProxyNode existing = existingNode();
+        existing.setNodeName("stale-node-name");
         when(proxyNodeService.getById(10L)).thenReturn(existing);
-        when(proxyNodeService.getByInstanceIdAndPort(20L, 10088)).thenReturn(null);
-        when(proxyNodeRateLimitService.getActiveByNodeId(10L)).thenReturn(null);
         when(proxyNodeService.update(any(ProxyNode.class))).thenReturn(1);
         Map<String, Object> body = new HashMap<>();
         body.put("id", 10L);
-        body.put("port", 10088);
+        body.put("remark", "updated remark");
 
         AjaxResult result = controller.edit(body);
 
         assertEquals(HttpStatus.SUCCESS, result.get(AjaxResult.CODE_TAG));
-        verify(vpsSshCommandService).removeTrafficRulesForPort(20L, 10001);
-        verify(vpsSshCommandService).ensureTrafficRulesForPort(20L, 10088);
-        verify(vpsSshCommandService, never()).setPortRateLimit(any(), any(Integer.class), any(Integer.class), any(Integer.class));
-        verify(proxyNodeRateLimitService, never()).saveActive(any(ProxyNodeRateLimit.class));
+        ArgumentCaptor<ProxyNode> rowCaptor = ArgumentCaptor.forClass(ProxyNode.class);
+        verify(proxyNodeService).update(rowCaptor.capture());
+        verifyNoInteractions(vpsSshCommandService);
+        assertEquals("VLESS-REALITY-203.0.113.8-10001-5-permanent", rowCaptor.getValue().getNodeName());
     }
 
     @Test
-    public void editPortReappliesActiveRateLimitOnNewPort() throws Exception {
+    public void editStatusUpdatesDatabaseNodeNameWithoutTouchingRemoteConfig() throws Exception {
         ProxyNode existing = existingNode();
-        ProxyNodeRateLimit activeLimit = new ProxyNodeRateLimit();
-        activeLimit.setId(30L);
-        activeLimit.setInstanceId(20L);
-        activeLimit.setProxyNodeId(10L);
-        activeLimit.setPort(10001);
-        activeLimit.setDownloadMbps(50);
-        activeLimit.setUploadMbps(20);
         when(proxyNodeService.getById(10L)).thenReturn(existing);
-        when(proxyNodeService.getByInstanceIdAndPort(20L, 10088)).thenReturn(null);
-        when(proxyNodeRateLimitService.getActiveByNodeId(10L)).thenReturn(activeLimit);
-        when(vpsSshCommandService.removePortRateLimit(20L, 10001))
-                .thenReturn(new PortRateLimitRemoteResult(10001, "old removed"));
-        when(vpsSshCommandService.setPortRateLimit(20L, 10088, 50, 20))
-                .thenReturn(new PortRateLimitRemoteResult(10088, "new applied"));
         when(proxyNodeService.update(any(ProxyNode.class))).thenReturn(1);
         Map<String, Object> body = new HashMap<>();
         body.put("id", 10L);
-        body.put("port", 10088);
+        body.put("status", "1");
 
         AjaxResult result = controller.edit(body);
 
         assertEquals(HttpStatus.SUCCESS, result.get(AjaxResult.CODE_TAG));
-        ArgumentCaptor<ProxyNodeRateLimit> limitCaptor = ArgumentCaptor.forClass(ProxyNodeRateLimit.class);
-        verify(vpsSshCommandService).removePortRateLimit(20L, 10001);
-        verify(vpsSshCommandService).setPortRateLimit(20L, 10088, 50, 20);
-        verify(vpsSshCommandService).removeTrafficRulesForPort(20L, 10001);
-        verify(vpsSshCommandService).ensureTrafficRulesForPort(20L, 10088);
-        verify(proxyNodeRateLimitService).saveActive(limitCaptor.capture());
-
-        ProxyNodeRateLimit savedLimit = limitCaptor.getValue();
-        assertEquals(10088, savedLimit.getPort());
-        assertEquals("new applied", savedLimit.getLastApplyResult());
-        assertEquals("tester", savedLimit.getUpdateBy());
+        verify(proxyNodeService).update(any(ProxyNode.class));
+        verifyNoInteractions(vpsSshCommandService);
     }
 
     @Test

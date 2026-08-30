@@ -276,12 +276,6 @@ public class ProxyNodeController extends BaseController {
             if (!"VLESS-REALITY".equals(existing.getNodeType())) {
                 return AjaxResult.error("当前仅 VLESS-REALITY 支持 SOCKS5 中转");
             }
-            try {
-                vpsSshCommandService.removeSocks5RelayFromProxyNodeConfig(existing);
-            } catch (Exception e) {
-                log.warn("remove socks5 relay failed: nodeId={}, instanceId={}", existing.getId(), existing.getInstanceId(), e);
-                return AjaxResult.error("中转配置关闭失败: " + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
-            }
             row.setConfigJson(removeRelayConfigJson(existing.getConfigJson()));
             row.setRemark("");
         } else if (hasRelayText) {
@@ -299,12 +293,6 @@ public class ProxyNodeController extends BaseController {
             } catch (IllegalArgumentException e) {
                 return AjaxResult.error(e.getMessage());
             }
-            try {
-                vpsSshCommandService.applySocks5RelayToProxyNodeConfig(existing, relay);
-            } catch (Exception e) {
-                log.warn("apply socks5 relay failed: nodeId={}, instanceId={}", existing.getId(), existing.getInstanceId(), e);
-                return AjaxResult.error("中转配置更新失败: " + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
-            }
             row.setConfigJson(updateRelayConfigJson(existing.getConfigJson(), relay));
             row.setRemark(relayText);
         }
@@ -316,81 +304,13 @@ public class ProxyNodeController extends BaseController {
             }
         }
 
-        String effectiveNodeName = existing.getNodeName();
-        String oldBaseName = normalizeNodeBaseName(existing.getNodeName());
         String newBaseName = buildNodeBaseName(existing.getNodeType(), existing.getAddress(), newPort, row.getCustomerId(), newExpireTime);
-        boolean nameChanged = !oldBaseName.equals(newBaseName);
-        if (nameChanged) {
-            try {
-                boolean currentlyDisabled = "1".equals(existing.getStatus());
-                if (portChanged) {
-                    vpsSshCommandService.updateProxyNodeConfigPortAndName(
-                            existing.getInstanceId(), oldBaseName, newBaseName, currentlyDisabled, existing.getPort(), newPort);
-                } else {
-                    vpsSshCommandService.renameProxyNodeConfig(existing.getInstanceId(), oldBaseName, newBaseName, currentlyDisabled);
-                }
-            } catch (Exception e) {
-                log.warn("update proxy config failed: instanceId={}, oldNodeName={}, newNodeName={}",
-                        existing.getInstanceId(), oldBaseName, newBaseName, e);
-                return AjaxResult.error("服务器配置更新失败: " + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
-            }
-            effectiveNodeName = newBaseName;
-            if (portChanged) {
-                row.setUrl(null);
-            }
-        }
-        row.setNodeName(effectiveNodeName);
+        row.setNodeName(newBaseName);
 
         String username = getUsername();
-        if (portChanged) {
-            AjaxResult migrateResult = migratePortRules(existing, newPort, username);
-            if (!migrateResult.isSuccess()) {
-                return migrateResult;
-            }
-        }
-
-        if (StringUtils.isNotEmpty(row.getStatus()) && !row.getStatus().equals(existing.getStatus())) {
-            try {
-                vpsSshCommandService.renameProxyNodeConfig(existing.getInstanceId(), effectiveNodeName, "1".equals(row.getStatus()));
-            } catch (Exception e) {
-                log.warn("rename proxy config failed: instanceId={}, nodeName={}", existing.getInstanceId(), effectiveNodeName, e);
-                return AjaxResult.error("服务器配置重命名失败: " + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
-            }
-        }
-
         row.setUpdateBy(username);
-        return toAjax(proxyNodeService.update(row));
-    }
-
-    private AjaxResult migratePortRules(ProxyNode existing, Integer newPort, String username) {
-        if (existing == null || existing.getInstanceId() == null || existing.getPort() == null || newPort == null) {
-            return AjaxResult.error("节点实例或端口信息不完整");
-        }
-        Long instanceId = existing.getInstanceId();
-        Integer oldPort = existing.getPort();
-        ProxyNodeRateLimit activeLimit = proxyNodeRateLimitService.getActiveByNodeId(existing.getId());
-        try {
-            if (activeLimit != null) {
-                vpsSshCommandService.removePortRateLimit(instanceId, oldPort);
-            }
-            vpsSshCommandService.removeTrafficRulesForPort(instanceId, oldPort);
-            if (activeLimit != null) {
-                PortRateLimitRemoteResult remoteResult = vpsSshCommandService.setPortRateLimit(
-                        instanceId, newPort, activeLimit.getDownloadMbps(), activeLimit.getUploadMbps());
-                activeLimit.setInstanceId(instanceId);
-                activeLimit.setProxyNodeId(existing.getId());
-                activeLimit.setPort(newPort);
-                activeLimit.setLastApplyResult(remoteResult.getOutput());
-                activeLimit.setUpdateBy(username);
-                proxyNodeRateLimitService.saveActive(activeLimit);
-            }
-            vpsSshCommandService.ensureTrafficRulesForPort(instanceId, newPort);
-            return success();
-        } catch (Exception e) {
-            log.warn("migrate proxy node port rules failed: nodeId={}, instanceId={}, oldPort={}, newPort={}",
-                    existing.getId(), instanceId, oldPort, newPort, e);
-            return AjaxResult.error("端口规则迁移失败: " + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
-        }
+        int rows = proxyNodeService.update(row);
+        return rows > 0 ? success(row) : toAjax(rows);
     }
 
     private void fillRequiredFromExisting(ProxyNode row, ProxyNode existing) {
@@ -434,12 +354,6 @@ public class ProxyNodeController extends BaseController {
         return "true".equalsIgnoreCase(s) || "1".equals(s) || "yes".equalsIgnoreCase(s);
     }
 
-    private static boolean isSameTime(Date a, Date b) {
-        if (a == null && b == null) return true;
-        if (a == null || b == null) return false;
-        return a.getTime() == b.getTime();
-    }
-
     private static Long parseLong(Object value) {
         if (value == null) return null;
         if (value instanceof Number) return ((Number) value).longValue();
@@ -473,15 +387,6 @@ public class ProxyNodeController extends BaseController {
                 return null;
             }
         }
-    }
-
-    private static String normalizeNodeBaseName(String nodeName) {
-        if (nodeName == null) return "";
-        String name = nodeName.trim();
-        if (name.endsWith(".json.disabled")) return name.substring(0, name.length() - ".json.disabled".length());
-        if (name.endsWith(".json")) return name.substring(0, name.length() - ".json".length());
-        if (name.endsWith(".disabled")) return name.substring(0, name.length() - ".disabled".length());
-        return name;
     }
 
     private static String buildNodeBaseName(String nodeType, String address, Integer port, Long customerId, Date expireTime) {
