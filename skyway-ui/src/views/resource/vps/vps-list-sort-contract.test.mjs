@@ -21,12 +21,12 @@ test('VPS cumulative traffic is left aligned and server sortable', () => {
 for (const [name, source] of [['VPS detail nodes', vpsDetailNodes], ['proxy nodes', proxyList]]) {
   test(`${name} supports paginated server sorting including cumulative traffic`, () => {
     assert.match(source, /@sort-change="handleSortChange"/)
-    assert.match(source, /:default-sort="\{ prop: 'totalTrafficBytes', order: 'descending' \}"/)
+    assert.doesNotMatch(source, /:default-sort="\{ prop: 'totalTrafficBytes', order: 'descending' \}"/)
     assert.match(source, /prop="nodeName"[\s\S]*?sortable="custom"/)
     assert.match(source, /prop="port"[\s\S]*?sortable="custom"/)
     assert.match(source, /prop="expireTime"[\s\S]*?sortable="custom"/)
     assert.match(source, /prop="totalTrafficBytes"[\s\S]*?sortable="custom"/)
     assert.match(source, /totalTrafficBytes: 'total_traffic_bytes'/)
-    assert.match(source, /orderByColumn: 'total_traffic_bytes',[\s\S]*?isAsc: 'descending'/)
+    assert.match(source, /orderByColumn: 'create_time',[\s\S]*?isAsc: 'descending'/)
   })
 }

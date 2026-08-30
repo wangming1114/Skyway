@@ -50,7 +50,7 @@
       <right-toolbar v-model:showSearch="showSearch" @queryTable="getList" />
     </el-row>
 
-    <el-table v-if="!isMobile" ref="tableRef" v-loading="loading" :data="nodeList" border size="small" :default-sort="{ prop: 'totalTrafficBytes', order: 'descending' }" @selection-change="handleSelectionChange" @sort-change="handleSortChange">
+    <el-table v-if="!isMobile" ref="tableRef" v-loading="loading" :data="nodeList" border size="small" @selection-change="handleSelectionChange" @sort-change="handleSortChange">
       <el-table-column type="selection" width="50" align="center" />
       <el-table-column label="节点信息" prop="nodeName" min-width="220" show-overflow-tooltip sortable="custom" :sort-orders="['descending', 'ascending']">
         <template #default="{ row }">
@@ -460,7 +460,7 @@ const queryParams = ref({
   customerId: undefined,
   nodeType: undefined,
   status: undefined,
-  orderByColumn: 'total_traffic_bytes',
+  orderByColumn: 'create_time',
   isAsc: 'descending'
 })
 const PROXY_NODE_SORT_COLUMNS = {
