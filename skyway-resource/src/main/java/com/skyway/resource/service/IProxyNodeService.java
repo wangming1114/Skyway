@@ -81,6 +81,8 @@ public interface IProxyNodeService {
      */
     int update(ProxyNode row);
 
+    int updateDomainPolicy(Long id, String domainPolicyJson, String updateBy);
+
     /**
      * 删除
      *

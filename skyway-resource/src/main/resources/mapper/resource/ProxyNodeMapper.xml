@@ -14,6 +14,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         <result property="port"        column="port"         />
         <result property="url"         column="url"          />
         <result property="configJson"  column="config_json"  />
+        <result property="domainPolicyJson" column="domain_policy_json" />
         <result property="expireTime"  column="expire_time"  />
         <result property="customId"    column="custom_id"    />
         <result property="status"      column="status"       />
@@ -26,7 +27,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     </resultMap>
 
     <sql id="selectProxyNodeVo">
-        select p.id, p.instance_id, p.customer_id, p.node_name, p.node_type, p.address, p.port, p.url, p.config_json,
+        select p.id, p.instance_id, p.customer_id, p.node_name, p.node_type, p.address, p.port, p.url, p.config_json, p.domain_policy_json,
                p.expire_time, p.custom_id, p.status, p.remark, p.create_by, p.create_time, p.update_by, p.update_time,
                (select ifnull(sum(ifnull(t.rx_delta, 0) + ifnull(t.tx_delta, 0)), 0)
                   from res_proxy_node_traffic t where t.node_id = p.id) as total_traffic_bytes
@@ -96,8 +97,8 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     </select>
 
     <insert id="insert" parameterType="com.skyway.resource.domain.ProxyNode" useGeneratedKeys="true" keyProperty="id">
-        insert into res_proxy_node (instance_id, customer_id, node_name, node_type, address, port, url, config_json, expire_time, custom_id, status, remark, create_by, create_time, update_time)
-        values (#{instanceId}, #{customerId}, #{nodeName}, #{nodeType}, #{address}, #{port}, #{url}, #{configJson}, #{expireTime}, #{customId}, #{status}, #{remark}, #{createBy}, sysdate(), sysdate())
+        insert into res_proxy_node (instance_id, customer_id, node_name, node_type, address, port, url, config_json, domain_policy_json, expire_time, custom_id, status, remark, create_by, create_time, update_time)
+        values (#{instanceId}, #{customerId}, #{nodeName}, #{nodeType}, #{address}, #{port}, #{url}, #{configJson}, #{domainPolicyJson}, #{expireTime}, #{customId}, #{status}, #{remark}, #{createBy}, sysdate(), sysdate())
     </insert>
 
     <update id="update" parameterType="com.skyway.resource.domain.ProxyNode">
@@ -117,6 +118,12 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             <if test="updateBy != null and updateBy != ''">update_by = #{updateBy},</if>
             update_time = sysdate()
         </set>
+        where id = #{id}
+    </update>
+
+    <update id="updateDomainPolicy">
+        update res_proxy_node
+        set domain_policy_json = #{domainPolicyJson}, update_by = #{updateBy}, update_time = sysdate()
         where id = #{id}
     </update>
 

@@ -7,6 +7,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,11 +31,14 @@ import com.skyway.common.enums.BusinessType;
 import com.skyway.common.utils.StringUtils;
 import com.skyway.resource.domain.ProxyNode;
 import com.skyway.resource.domain.ProxyNodeRateLimit;
+import com.skyway.resource.domain.ProxyNodeDomainWhitelist;
 import com.skyway.resource.service.IProxyNodeService;
 import com.skyway.resource.service.IProxyNodeRateLimitService;
 import com.skyway.resource.service.IProxyNodeTrafficService;
 import com.skyway.web.service.VpsSshCommandService;
 import com.skyway.web.service.VpsSshCommandService.PortRateLimitRemoteResult;
+import com.skyway.web.service.ProxyDomainWhitelistService;
+import com.skyway.web.service.VpsInstanceOperationCoordinator;
 
 /**
  * 代理节点
@@ -56,11 +61,18 @@ public class ProxyNodeController extends BaseController {
     @Autowired
     private IProxyNodeRateLimitService proxyNodeRateLimitService;
 
+    @Autowired
+    private ProxyDomainWhitelistService proxyDomainWhitelistService;
+
+    @Autowired
+    private VpsInstanceOperationCoordinator vpsInstanceOperationCoordinator;
+
     @PreAuthorize("@ss.hasPermi('resource:vps:list')")
     @GetMapping("/list")
     public TableDataInfo list(ProxyNode proxyNode) {
         startPage();
         List<ProxyNode> list = proxyNodeService.selectList(proxyNode);
+        proxyDomainWhitelistService.hydrate(list);
         fillRateLimits(list);
         return getDataTable(list);
     }
@@ -70,9 +82,125 @@ public class ProxyNodeController extends BaseController {
     public AjaxResult getInfo(@PathVariable Long id) {
         ProxyNode node = proxyNodeService.getById(id);
         if (node != null) {
+            proxyDomainWhitelistService.hydrate(node);
             node.setRateLimit(proxyNodeRateLimitService.getActiveByNodeId(id));
         }
         return success(node);
+    }
+
+    @PreAuthorize("@ss.hasPermi('resource:vps:query') or @ss.hasPermi('resource:vps:list')")
+    @GetMapping("/domainWhitelist/presets")
+    public AjaxResult domainWhitelistPresets() {
+        return success(proxyDomainWhitelistService.listPresets());
+    }
+
+    @PreAuthorize("@ss.hasPermi('resource:vps:edit')")
+    @Log(title = "代理节点域名白名单", businessType = BusinessType.UPDATE)
+    @PutMapping("/{id}/domainWhitelist")
+    public AjaxResult updateDomainWhitelist(@PathVariable Long id, @RequestBody(required = false) Map<String, Object> body) {
+        ProxyNode node = proxyNodeService.getById(id);
+        if (node == null) return AjaxResult.error("节点不存在");
+        ProxyNodeDomainWhitelist policy;
+        try {
+            Object policyBody = body != null && body.containsKey("domainWhitelist")
+                    ? body.get("domainWhitelist") : body;
+            policy = proxyDomainWhitelistService.resolve(policyBody);
+        } catch (IllegalArgumentException e) {
+            return AjaxResult.error(e.getMessage());
+        }
+        ProxyNodeDomainWhitelist previous = proxyDomainWhitelistService.parseStored(node.getDomainPolicyJson());
+        String json = proxyDomainWhitelistService.serialize(policy);
+        try (VpsInstanceOperationCoordinator.LockHandle ignored = vpsInstanceOperationCoordinator.lock(node.getInstanceId())) {
+            vpsSshCommandService.applyDomainWhitelistToProxyNodeConfig(node, policy);
+            try {
+                if (proxyNodeService.updateDomainPolicy(id, json, getUsername()) <= 0) {
+                    vpsSshCommandService.applyDomainWhitelistToProxyNodeConfig(node, previous);
+                    return AjaxResult.error("白名单保存失败，远端配置已恢复");
+                }
+            } catch (Exception dbError) {
+                try { vpsSshCommandService.applyDomainWhitelistToProxyNodeConfig(node, previous); } catch (Exception ignoredRollback) {}
+                throw dbError;
+            }
+            node.setDomainPolicyJson(json);
+            node.setDomainWhitelist(policy);
+            return success(node);
+        } catch (Exception e) {
+            log.warn("apply domain whitelist failed: nodeId={}", id, e);
+            return AjaxResult.error("白名单应用失败: " + (e.getMessage() != null ? e.getMessage() : "服务器操作异常"));
+        }
+    }
+
+    @PreAuthorize("@ss.hasPermi('resource:vps:edit')")
+    @Log(title = "批量配置代理节点域名白名单", businessType = BusinessType.UPDATE)
+    @PutMapping("/domainWhitelist/batch")
+    public AjaxResult batchUpdateDomainWhitelist(@RequestBody Map<String, Object> body) {
+        List<Long> nodeIds = parseLongList(body != null ? body.get("nodeIds") : null);
+        if (nodeIds.isEmpty()) return AjaxResult.error("请选择代理节点");
+        if (nodeIds.size() > 100) return AjaxResult.error("单次最多配置 100 个节点");
+        ProxyNodeDomainWhitelist policy;
+        try {
+            Object policyBody = body != null && body.containsKey("domainWhitelist")
+                    ? body.get("domainWhitelist") : body;
+            policy = proxyDomainWhitelistService.resolve(policyBody);
+        } catch (IllegalArgumentException e) {
+            return AjaxResult.error(e.getMessage());
+        }
+
+        List<Map<String, Object>> results = new ArrayList<>();
+        Map<Long, List<ProxyNode>> groups = new LinkedHashMap<>();
+        for (Long nodeId : nodeIds) {
+            ProxyNode node = proxyNodeService.getById(nodeId);
+            if (node == null) {
+                results.add(domainApplyResult(nodeId, false, "节点不存在"));
+            } else {
+                groups.computeIfAbsent(node.getInstanceId(), ignored -> new ArrayList<>()).add(node);
+            }
+        }
+        String targetJson = proxyDomainWhitelistService.serialize(policy);
+        for (Map.Entry<Long, List<ProxyNode>> entry : groups.entrySet()) {
+            List<ProxyNode> saved = new ArrayList<>();
+            boolean remotelyApplied = false;
+            String failure = null;
+            try (VpsInstanceOperationCoordinator.LockHandle ignored = vpsInstanceOperationCoordinator.lock(entry.getKey())) {
+                Map<ProxyNode, ProxyNodeDomainWhitelist> remoteUpdates = new LinkedHashMap<>();
+                for (ProxyNode node : entry.getValue()) remoteUpdates.put(node, policy);
+                vpsSshCommandService.applyDomainWhitelistsToProxyNodeConfigs(remoteUpdates);
+                remotelyApplied = true;
+                for (ProxyNode node : entry.getValue()) {
+                    if (proxyNodeService.updateDomainPolicy(node.getId(), targetJson, getUsername()) <= 0) {
+                        throw new IllegalStateException("节点 " + node.getId() + " 保存失败");
+                    }
+                    saved.add(node);
+                }
+            } catch (Exception e) {
+                failure = e.getMessage() != null ? e.getMessage() : "服务器操作异常";
+                if (remotelyApplied) {
+                    try (VpsInstanceOperationCoordinator.LockHandle ignored = vpsInstanceOperationCoordinator.lock(entry.getKey())) {
+                        Map<ProxyNode, ProxyNodeDomainWhitelist> rollbackUpdates = new LinkedHashMap<>();
+                        for (ProxyNode node : entry.getValue()) {
+                            rollbackUpdates.put(node, proxyDomainWhitelistService.parseStored(node.getDomainPolicyJson()));
+                        }
+                        vpsSshCommandService.applyDomainWhitelistsToProxyNodeConfigs(rollbackUpdates);
+                    } catch (Exception rollbackError) {
+                        log.error("rollback batch domain whitelist failed: instanceId={}", entry.getKey(), rollbackError);
+                    }
+                }
+                for (ProxyNode node : saved) {
+                    proxyNodeService.updateDomainPolicy(node.getId(), node.getDomainPolicyJson(), getUsername());
+                }
+            }
+            for (ProxyNode node : entry.getValue()) {
+                results.add(domainApplyResult(node.getId(), failure == null,
+                        failure == null ? "已应用 " + (policy != null ? policy.getDomains().size() : 0) + " 个域名" : failure));
+            }
+        }
+        int successCount = 0;
+        for (Map<String, Object> result : results) if (Boolean.TRUE.equals(result.get("success"))) successCount++;
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("successCount", successCount);
+        summary.put("failedCount", results.size() - successCount);
+        summary.put("results", results);
+        return success(summary);
     }
 
     @PreAuthorize("@ss.hasPermi('resource:vps:query')")
@@ -232,6 +360,7 @@ public class ProxyNodeController extends BaseController {
         boolean hasRelayText = body != null && body.containsKey("relayText");
         boolean hasRelayEnabled = body != null && body.containsKey("relayEnabled");
         boolean hasPort = body != null && body.containsKey("port");
+        boolean relayChanged = false;
 
         Date newExpireTime = hasExpireTime ? parseExpireTime(body.get("expireTime")) : existing.getExpireTime();
         row.setExpireTime(newExpireTime);
@@ -276,6 +405,14 @@ public class ProxyNodeController extends BaseController {
             if (!"VLESS-REALITY".equals(existing.getNodeType())) {
                 return AjaxResult.error("当前仅 VLESS-REALITY 支持 SOCKS5 中转");
             }
+            try {
+                vpsSshCommandService.removeSocks5RelayFromProxyNodeConfig(existing);
+                relayChanged = true;
+            } catch (Exception e) {
+                log.warn("remove socks5 relay failed: nodeId={}, instanceId={}", existing.getId(), existing.getInstanceId(), e);
+                return AjaxResult.error("中转配置关闭失败: "
+                        + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
+            }
             row.setConfigJson(removeRelayConfigJson(existing.getConfigJson()));
             row.setRemark("");
         } else if (hasRelayText) {
@@ -292,6 +429,14 @@ public class ProxyNodeController extends BaseController {
                 relay = VpsSshCommandService.parseSocks5RelayText(relayText);
             } catch (IllegalArgumentException e) {
                 return AjaxResult.error(e.getMessage());
+            }
+            try {
+                vpsSshCommandService.applySocks5RelayToProxyNodeConfig(existing, relay);
+                relayChanged = true;
+            } catch (Exception e) {
+                log.warn("apply socks5 relay failed: nodeId={}, instanceId={}", existing.getId(), existing.getInstanceId(), e);
+                return AjaxResult.error("中转配置更新失败: "
+                        + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
             }
             row.setConfigJson(updateRelayConfigJson(existing.getConfigJson(), relay));
             row.setRemark(relayText);
@@ -314,7 +459,8 @@ public class ProxyNodeController extends BaseController {
                 && (body == null || !body.containsKey("customerId"));
         if (statusOnly) {
             row.setNodeName(existing.getNodeName());
-            if (StringUtils.isNotEmpty(row.getStatus()) && !row.getStatus().equals(existing.getStatus())) {
+            boolean statusChanged = StringUtils.isNotEmpty(row.getStatus()) && !row.getStatus().equals(existing.getStatus());
+            if (statusChanged) {
                 try {
                     vpsSshCommandService.renameProxyNodeConfig(
                             existing.getInstanceId(), existing.getNodeName(), "1".equals(row.getStatus()));
@@ -326,17 +472,209 @@ public class ProxyNodeController extends BaseController {
                 }
             }
             row.setUpdateBy(getUsername());
-            int rows = proxyNodeService.update(row);
-            return rows > 0 ? success(row) : toAjax(rows);
+            try {
+                int rows = proxyNodeService.update(row);
+                if (rows > 0) return success(row);
+                if (statusChanged) rollbackRemoteStatus(existing);
+                return toAjax(rows);
+            } catch (RuntimeException e) {
+                if (statusChanged) rollbackRemoteStatus(existing);
+                throw e;
+            }
         }
 
-        String newBaseName = buildNodeBaseName(existing.getNodeType(), existing.getAddress(), newPort, row.getCustomerId(), newExpireTime);
-        row.setNodeName(newBaseName);
+        String effectiveNodeName = existing.getNodeName();
+        String oldBaseName = normalizeNodeBaseName(existing.getNodeName());
+        String newBaseName = buildNodeBaseName(existing.getNodeType(), existing.getAddress(), newPort,
+                row.getCustomerId(), newExpireTime);
+        boolean nameChanged = !oldBaseName.equals(newBaseName);
+        if (nameChanged || portChanged) {
+            try {
+                boolean currentlyDisabled = "1".equals(existing.getStatus());
+                if (portChanged) {
+                    vpsSshCommandService.updateProxyNodeConfigPortAndName(
+                            existing.getInstanceId(), oldBaseName, newBaseName, currentlyDisabled,
+                            existing.getPort(), newPort);
+                } else {
+                    vpsSshCommandService.renameProxyNodeConfig(
+                            existing.getInstanceId(), oldBaseName, newBaseName, currentlyDisabled);
+                }
+            } catch (Exception e) {
+                log.warn("update proxy config failed: instanceId={}, oldNodeName={}, newNodeName={}",
+                        existing.getInstanceId(), oldBaseName, newBaseName, e);
+                if (relayChanged) rollbackRemoteRelay(existing);
+                return AjaxResult.error("服务器配置更新失败: "
+                        + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
+            }
+            effectiveNodeName = nameChanged ? newBaseName : oldBaseName;
+            if (portChanged) {
+                // The existing share URL still contains the old port and must not be returned as valid.
+                row.setUrl(null);
+            }
+        }
+        row.setNodeName(effectiveNodeName);
 
         String username = getUsername();
+        if (portChanged) {
+            AjaxResult migrateResult = migratePortRules(existing, newPort, username);
+            if (!migrateResult.isSuccess()) {
+                rollbackRemoteNodeIdentity(existing, effectiveNodeName, newPort, true);
+                if (relayChanged) rollbackRemoteRelay(existing);
+                return migrateResult;
+            }
+        }
+
+        if (StringUtils.isNotEmpty(row.getStatus()) && !row.getStatus().equals(existing.getStatus())) {
+            try {
+                vpsSshCommandService.renameProxyNodeConfig(
+                        existing.getInstanceId(), effectiveNodeName, "1".equals(row.getStatus()));
+            } catch (Exception e) {
+                log.warn("rename proxy config failed: instanceId={}, nodeName={}",
+                        existing.getInstanceId(), effectiveNodeName, e);
+                if (portChanged) {
+                    migratePortRules(row, existing.getPort(), username);
+                    rollbackRemoteNodeIdentity(existing, effectiveNodeName, newPort, true);
+                } else if (nameChanged) {
+                    rollbackRemoteNodeIdentity(existing, effectiveNodeName, newPort, false);
+                }
+                if (relayChanged) rollbackRemoteRelay(existing);
+                return AjaxResult.error("服务器配置重命名失败: "
+                        + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
+            }
+        }
+
         row.setUpdateBy(username);
-        int rows = proxyNodeService.update(row);
-        return rows > 0 ? success(row) : toAjax(rows);
+        try {
+            int rows = proxyNodeService.update(row);
+            if (rows > 0) return success(row);
+            rollbackEditedNode(existing, row, effectiveNodeName, newPort, nameChanged, portChanged,
+                    relayChanged, username);
+            return toAjax(rows);
+        } catch (RuntimeException e) {
+            rollbackEditedNode(existing, row, effectiveNodeName, newPort, nameChanged, portChanged,
+                    relayChanged, username);
+            throw e;
+        }
+    }
+
+    private void rollbackEditedNode(ProxyNode existing, ProxyNode row, String effectiveNodeName,
+            Integer newPort, boolean nameChanged, boolean portChanged, boolean relayChanged, String username) {
+        boolean statusChanged = StringUtils.isNotEmpty(row.getStatus()) && !row.getStatus().equals(existing.getStatus());
+        if (statusChanged) {
+            try {
+                vpsSshCommandService.renameProxyNodeConfig(
+                        existing.getInstanceId(), effectiveNodeName, "1".equals(existing.getStatus()));
+            } catch (Exception rollbackError) {
+                log.error("rollback proxy node status failed: nodeId={}", existing.getId(), rollbackError);
+            }
+        }
+        if (portChanged) {
+            ProxyNode changed = new ProxyNode();
+            changed.setId(existing.getId());
+            changed.setInstanceId(existing.getInstanceId());
+            changed.setPort(newPort);
+            migratePortRules(changed, existing.getPort(), username);
+        }
+        if (nameChanged || portChanged) rollbackRemoteNodeIdentity(existing, effectiveNodeName, newPort, portChanged);
+        if (relayChanged) rollbackRemoteRelay(existing);
+    }
+
+    private void rollbackRemoteStatus(ProxyNode existing) {
+        try {
+            vpsSshCommandService.renameProxyNodeConfig(
+                    existing.getInstanceId(), existing.getNodeName(), "1".equals(existing.getStatus()));
+        } catch (Exception rollbackError) {
+            log.error("rollback proxy node status failed: nodeId={}", existing.getId(), rollbackError);
+        }
+    }
+
+    private void rollbackRemoteRelay(ProxyNode existing) {
+        try {
+            VpsSshCommandService.Socks5RelayConfig previous = parseStoredRelay(existing.getConfigJson());
+            if (previous != null) {
+                vpsSshCommandService.applySocks5RelayToProxyNodeConfig(existing, previous);
+            } else {
+                vpsSshCommandService.removeSocks5RelayFromProxyNodeConfig(existing);
+            }
+        } catch (Exception rollbackError) {
+            log.error("rollback proxy relay failed: nodeId={}", existing.getId(), rollbackError);
+        }
+    }
+
+    private void rollbackRemoteNodeIdentity(ProxyNode existing, String currentNodeName,
+            Integer currentPort, boolean portChanged) {
+        try {
+            boolean disabled = "1".equals(existing.getStatus());
+            if (portChanged) {
+                vpsSshCommandService.updateProxyNodeConfigPortAndName(
+                        existing.getInstanceId(), currentNodeName, existing.getNodeName(), disabled,
+                        currentPort, existing.getPort());
+            } else {
+                vpsSshCommandService.renameProxyNodeConfig(
+                        existing.getInstanceId(), currentNodeName, existing.getNodeName(), disabled);
+            }
+        } catch (Exception rollbackError) {
+            log.error("rollback proxy node identity failed: nodeId={}, currentName={}",
+                    existing.getId(), currentNodeName, rollbackError);
+        }
+    }
+
+    private AjaxResult migratePortRules(ProxyNode existing, Integer newPort, String username) {
+        if (existing == null || existing.getInstanceId() == null || existing.getPort() == null || newPort == null) {
+            return AjaxResult.error("节点实例或端口信息不完整");
+        }
+        Long instanceId = existing.getInstanceId();
+        Integer oldPort = existing.getPort();
+        ProxyNodeRateLimit activeLimit = proxyNodeRateLimitService.getActiveByNodeId(existing.getId());
+        boolean activeLimitRemoved = false;
+        boolean oldTrafficRemoved = false;
+        boolean newLimitApplied = false;
+        try {
+            if (activeLimit != null) {
+                vpsSshCommandService.removePortRateLimit(instanceId, oldPort);
+                activeLimitRemoved = true;
+            }
+            vpsSshCommandService.removeTrafficRulesForPort(instanceId, oldPort);
+            oldTrafficRemoved = true;
+            if (activeLimit != null) {
+                PortRateLimitRemoteResult remoteResult = vpsSshCommandService.setPortRateLimit(
+                        instanceId, newPort, activeLimit.getDownloadMbps(), activeLimit.getUploadMbps());
+                newLimitApplied = true;
+                activeLimit.setInstanceId(instanceId);
+                activeLimit.setProxyNodeId(existing.getId());
+                activeLimit.setPort(newPort);
+                activeLimit.setLastApplyResult(remoteResult.getOutput());
+                activeLimit.setUpdateBy(username);
+                proxyNodeRateLimitService.saveActive(activeLimit);
+            }
+            vpsSshCommandService.ensureTrafficRulesForPort(instanceId, newPort);
+            return success();
+        } catch (Exception e) {
+            log.warn("migrate proxy node port rules failed: nodeId={}, instanceId={}, oldPort={}, newPort={}",
+                    existing.getId(), instanceId, oldPort, newPort, e);
+            try { vpsSshCommandService.removeTrafficRulesForPort(instanceId, newPort); } catch (Exception ignored) {}
+            if (activeLimit != null && newLimitApplied) {
+                try { vpsSshCommandService.removePortRateLimit(instanceId, newPort); } catch (Exception ignored) {}
+            }
+            if (oldTrafficRemoved) {
+                try { vpsSshCommandService.ensureTrafficRulesForPort(instanceId, oldPort); } catch (Exception ignored) {}
+            }
+            if (activeLimit != null && activeLimitRemoved) {
+                try {
+                    PortRateLimitRemoteResult rollback = vpsSshCommandService.setPortRateLimit(
+                            instanceId, oldPort, activeLimit.getDownloadMbps(), activeLimit.getUploadMbps());
+                    activeLimit.setPort(oldPort);
+                    activeLimit.setLastApplyResult(rollback.getOutput());
+                    activeLimit.setUpdateBy(username);
+                    proxyNodeRateLimitService.saveActive(activeLimit);
+                } catch (Exception rollbackError) {
+                    log.error("rollback proxy node rate limit failed: nodeId={}, port={}",
+                            existing.getId(), oldPort, rollbackError);
+                }
+            }
+            return AjaxResult.error("端口规则迁移失败: "
+                    + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
+        }
     }
 
     private void fillRequiredFromExisting(ProxyNode row, ProxyNode existing) {
@@ -373,6 +711,24 @@ public class ProxyNodeController extends BaseController {
         }
     }
 
+    private static VpsSshCommandService.Socks5RelayConfig parseStoredRelay(String configJson) {
+        if (StringUtils.isEmpty(configJson)) return null;
+        try {
+            com.alibaba.fastjson2.JSONObject config = com.alibaba.fastjson2.JSON.parseObject(configJson);
+            com.alibaba.fastjson2.JSONObject relay = config != null ? config.getJSONObject("relay") : null;
+            if (relay == null) return null;
+            String server = relay.getString("server");
+            Integer port = relay.getInteger("serverPort");
+            String username = relay.getString("username");
+            String password = relay.getString("password");
+            if (StringUtils.isEmpty(server) || port == null) return null;
+            return new VpsSshCommandService.Socks5RelayConfig(server, port,
+                    username != null ? username : "", password != null ? password : "");
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
     private static boolean parseBoolean(Object value) {
         if (value instanceof Boolean) return (Boolean) value;
         if (value == null) return false;
@@ -388,6 +744,24 @@ public class ProxyNodeController extends BaseController {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    private static List<Long> parseLongList(Object value) {
+        if (!(value instanceof Iterable)) return Collections.emptyList();
+        LinkedHashSet<Long> ids = new LinkedHashSet<>();
+        for (Object item : (Iterable<?>) value) {
+            Long id = parseLong(item);
+            if (id != null) ids.add(id);
+        }
+        return new ArrayList<>(ids);
+    }
+
+    private static Map<String, Object> domainApplyResult(Long nodeId, boolean success, String message) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("nodeId", nodeId);
+        result.put("success", success);
+        result.put("message", message);
+        return result;
     }
 
     private static Integer parseInteger(Object value) {
@@ -413,6 +787,15 @@ public class ProxyNodeController extends BaseController {
                 return null;
             }
         }
+    }
+
+    private static String normalizeNodeBaseName(String nodeName) {
+        if (nodeName == null) return "";
+        String name = nodeName.trim();
+        if (name.endsWith(".json.disabled")) return name.substring(0, name.length() - ".json.disabled".length());
+        if (name.endsWith(".json")) return name.substring(0, name.length() - ".json".length());
+        if (name.endsWith(".disabled")) return name.substring(0, name.length() - ".disabled".length());
+        return name;
     }
 
     private static String buildNodeBaseName(String nodeType, String address, Integer port, Long customerId, Date expireTime) {

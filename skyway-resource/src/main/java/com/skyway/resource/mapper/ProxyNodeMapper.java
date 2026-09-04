@@ -87,6 +87,9 @@ public interface ProxyNodeMapper {
      */
     int update(ProxyNode row);
 
+    int updateDomainPolicy(@Param("id") Long id, @Param("domainPolicyJson") String domainPolicyJson,
+                           @Param("updateBy") String updateBy);
+
     /**
      * 删除
      *

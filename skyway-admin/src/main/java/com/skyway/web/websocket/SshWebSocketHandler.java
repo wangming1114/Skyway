@@ -24,6 +24,7 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import com.skyway.common.utils.StringUtils;
 import com.skyway.resource.domain.ProxyNode;
+import com.skyway.resource.domain.ProxyNodeDomainWhitelist;
 import com.skyway.resource.domain.ProxyNodeRateLimit;
 import com.skyway.resource.domain.VpsInstance;
 import com.skyway.resource.service.IProxyNodeRateLimitService;
@@ -32,6 +33,7 @@ import com.skyway.resource.service.IProxyNodeTrafficService;
 import com.skyway.resource.service.IVpsInstanceService;
 import com.skyway.web.service.VpsSshCommandService;
 import com.skyway.web.service.VpsInstanceOperationCoordinator;
+import com.skyway.web.service.ProxyDomainWhitelistService;
 import com.skyway.web.service.VpsPortAvailabilityService;
 import net.schmizz.sshj.SSHClient;
 import net.schmizz.sshj.connection.channel.direct.Session;
@@ -101,6 +103,9 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
 
     @Autowired
     private VpsInstanceOperationCoordinator vpsInstanceOperationCoordinator;
+
+    @Autowired
+    private ProxyDomainWhitelistService proxyDomainWhitelistService;
 
     private final ExecutorService executor = Executors.newCachedThreadPool(r -> {
         Thread t = new Thread(r, "ssh-ws-bridge-" + r.hashCode());
@@ -548,6 +553,14 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
         String remark = obj.getString("remark");
         String nodeType = obj.getString("nodeType");
         String relayText = obj.getString("relayText");
+        ProxyNodeDomainWhitelist domainWhitelist;
+        try {
+            domainWhitelist = proxyDomainWhitelistService.resolve(obj.get("domainWhitelist"));
+        } catch (IllegalArgumentException e) {
+            sendExecError(wsSession, reqId, e.getMessage());
+            sendExecEnd(wsSession, reqId, -1);
+            return;
+        }
         if (nodeType != null) nodeType = nodeType.trim();
         if (nodeType == null || nodeType.isEmpty()) {
             nodeType = "VLESS-REALITY";
@@ -591,6 +604,7 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
         Long instanceId = (Long) instanceIdObj;
         final String nodeTypeFinal = nodeType;
         final VpsSshCommandService.Socks5RelayConfig relayFinal = relay;
+        final ProxyNodeDomainWhitelist domainWhitelistFinal = domainWhitelist;
 
         executor.execute(() -> {
             SSHClient ssh = null;
@@ -599,6 +613,8 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
             StringBuilder fullOutput = new StringBuilder();
             VpsInstanceOperationCoordinator.LockHandle operationLock = null;
             int port = requestedPort != null ? requestedPort : 0;
+            ProxyNode createdNode = null;
+            boolean databaseSaved = false;
             try {
                 operationLock = vpsInstanceOperationCoordinator.lock(instanceId);
                 if (autoPort) {
@@ -712,6 +728,13 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                     sendExecEnd(wsSession, reqId, -1);
                     return;
                 }
+                parsed.setInstanceId(instanceId);
+                parsed.setCustomerId(customerId);
+                parsed.setNodeName(targetBaseName);
+                parsed.setCustomId(customerIdStr);
+                parsed.setExpireTime(expireDate);
+                parsed.setStatus("0");
+                createdNode = parsed;
                 if (relayFinal != null) {
                     sendExecOutput(wsSession, reqId, "应用 SOCKS5 中转配置并重启 sing-box...\n", false);
                     vpsSshCommandService.applySocks5RelayToRemoteConfig(ssh, confDir + "/" + newJsonName, relayFinal);
@@ -720,19 +743,22 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                     parsed.setConfigJson(config.toJSONString());
                 }
 
-                parsed.setInstanceId(instanceId);
-                parsed.setCustomerId(customerId);
-                parsed.setNodeName(targetBaseName);
-                parsed.setCustomId(customerIdStr);
-                parsed.setExpireTime(expireDate);
-                parsed.setStatus("0");
                 if (relayFinal != null) {
                     parsed.setRemark(relayText.trim());
                 } else if (remark != null && !remark.trim().isEmpty()) {
                     parsed.setRemark(remark.trim());
                 }
+                if (domainWhitelistFinal != null) {
+                    sendExecOutput(wsSession, reqId, "应用域名白名单（" + domainWhitelistFinal.getDomains().size() + " 个域名）...\n", false);
+                    vpsSshCommandService.applyDomainWhitelistToProxyNodeConfig(parsed, domainWhitelistFinal);
+                }
+                parsed.setDomainWhitelist(domainWhitelistFinal);
+                parsed.setDomainPolicyJson(proxyDomainWhitelistService.serialize(domainWhitelistFinal));
                 try {
-                    proxyNodeService.insert(parsed);
+                    if (proxyNodeService.insert(parsed) <= 0) {
+                        throw new IllegalStateException("节点数据库保存失败");
+                    }
+                    databaseSaved = true;
                     try {
                         vpsSshCommandService.ensureTrafficRulesForPort(instanceId, parsed.getPort() != null ? parsed.getPort() : port);
                     } catch (Exception ex) {
@@ -749,11 +775,27 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                     }
                 } catch (Exception e) {
                     log.warn("proxy node insert failed: {}", e.getMessage());
+                    if (!databaseSaved) {
+                        try {
+                            vpsSshCommandService.removeProxyNodeFromServer(parsed);
+                        } catch (Exception cleanupError) {
+                            log.error("cleanup unsaved websocket proxy node failed: instanceId={}, nodeName={}",
+                                    instanceId, parsed.getNodeName(), cleanupError);
+                        }
+                    }
                     sendExecError(wsSession, reqId, "保存节点失败: " + e.getMessage());
                     sendExecEnd(wsSession, reqId, -1);
                 }
             } catch (Exception e) {
                 log.debug("add_proxy_node error: {}", e.getMessage());
+                if (createdNode != null && !databaseSaved) {
+                    try {
+                        vpsSshCommandService.removeProxyNodeFromServer(createdNode);
+                    } catch (Exception cleanupError) {
+                        log.error("cleanup failed websocket proxy node failed: instanceId={}, nodeName={}",
+                                instanceId, createdNode.getNodeName(), cleanupError);
+                    }
+                }
                 sendExecError(wsSession, reqId, e.getMessage());
                 sendExecEnd(wsSession, reqId, -1);
             } finally {
@@ -1167,6 +1209,7 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
         o.put("expireTime", node.getExpireTime() != null ? new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(node.getExpireTime()) : null);
         o.put("status", node.getStatus());
         o.put("remark", node.getRemark());
+        o.put("domainWhitelist", node.getDomainWhitelist());
         return o;
     }
 

@@ -2,6 +2,7 @@ package com.skyway.web.controller.resource;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -14,6 +15,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -24,10 +26,12 @@ import com.skyway.common.core.domain.AjaxResult;
 import com.skyway.common.core.domain.entity.SysUser;
 import com.skyway.common.core.domain.model.LoginUser;
 import com.skyway.resource.domain.ProxyNode;
+import com.skyway.resource.domain.ProxyNodeDomainWhitelist;
 import com.skyway.resource.service.IProxyNodeService;
 import com.skyway.web.service.VpsInstanceOperationCoordinator;
 import com.skyway.web.service.VpsPortAvailabilityService;
 import com.skyway.web.service.VpsPortAvailabilityService.PortRecommendation;
+import com.skyway.web.service.ProxyDomainWhitelistService;
 import com.skyway.web.service.VpsSshCommandService;
 
 @ExtendWith(MockitoExtension.class)
@@ -41,6 +45,9 @@ public class VpsInstanceControllerPortTest {
 
     @Mock
     private VpsPortAvailabilityService vpsPortAvailabilityService;
+
+    @Mock
+    private ProxyDomainWhitelistService proxyDomainWhitelistService;
 
     @InjectMocks
     private VpsInstanceController controller;
@@ -84,6 +91,7 @@ public class VpsInstanceControllerPortTest {
         created.setPort(10005);
         when(vpsSshCommandService.addProxyNodeOnInstance(7L, 9L, 10005, null, "VLESS-REALITY"))
                 .thenReturn(created);
+        when(proxyNodeService.insert(created)).thenReturn(1);
         Map<String, Object> body = new HashMap<>();
         body.put("customerId", 9L);
         body.put("port", 10000);
@@ -98,5 +106,59 @@ public class VpsInstanceControllerPortTest {
         verify(vpsPortAvailabilityService, never()).assertAvailableForCreate(7L, 10000);
         verify(proxyNodeService).insert(created);
         verify(vpsSshCommandService).ensureTrafficRulesForPort(7L, 10005);
+    }
+
+    @Test
+    public void httpCreationAppliesWhitelistBeforeSavingSnapshot() throws Exception {
+        ProxyNode created = new ProxyNode();
+        created.setInstanceId(7L);
+        created.setNodeName("node-a");
+        created.setPort(10005);
+        ProxyNodeDomainWhitelist policy = new ProxyNodeDomainWhitelist();
+        policy.setDomains(Collections.singletonList("example.com"));
+        Map<String, Object> rawPolicy = new HashMap<>();
+        rawPolicy.put("customDomains", Collections.singletonList("example.com"));
+        when(vpsPortAvailabilityService.resolveAutoPortForCreate(7L, 10000)).thenReturn(10005);
+        when(proxyDomainWhitelistService.resolve(rawPolicy)).thenReturn(policy);
+        when(proxyDomainWhitelistService.serialize(policy)).thenReturn("{\"domains\":[\"example.com\"]}");
+        when(vpsSshCommandService.addProxyNodeOnInstance(7L, 9L, 10005, null, "VLESS-REALITY"))
+                .thenReturn(created);
+        when(proxyNodeService.insert(created)).thenReturn(1);
+        Map<String, Object> body = new HashMap<>();
+        body.put("customerId", 9L);
+        body.put("port", 10000);
+        body.put("autoPort", true);
+        body.put("domainWhitelist", rawPolicy);
+
+        AjaxResult result = controller.addProxyNode(7L, body);
+
+        assertEquals(HttpStatus.SUCCESS, result.get(AjaxResult.CODE_TAG));
+        InOrder order = inOrder(vpsSshCommandService, proxyNodeService);
+        order.verify(vpsSshCommandService).applyDomainWhitelistToProxyNodeConfig(created, policy);
+        order.verify(proxyNodeService).insert(created);
+        assertEquals(policy, created.getDomainWhitelist());
+        assertEquals("{\"domains\":[\"example.com\"]}", created.getDomainPolicyJson());
+    }
+
+    @Test
+    public void httpCreationRemovesRemoteNodeWhenDatabaseSaveFails() throws Exception {
+        ProxyNode created = new ProxyNode();
+        created.setInstanceId(7L);
+        created.setNodeName("node-a");
+        created.setPort(10005);
+        when(vpsPortAvailabilityService.resolveAutoPortForCreate(7L, 10000)).thenReturn(10005);
+        when(vpsSshCommandService.addProxyNodeOnInstance(7L, 9L, 10005, null, "VLESS-REALITY"))
+                .thenReturn(created);
+        when(proxyNodeService.insert(created)).thenReturn(0);
+        Map<String, Object> body = new HashMap<>();
+        body.put("customerId", 9L);
+        body.put("port", 10000);
+        body.put("autoPort", true);
+
+        AjaxResult result = controller.addProxyNode(7L, body);
+
+        assertEquals(HttpStatus.ERROR, result.get(AjaxResult.CODE_TAG));
+        verify(vpsSshCommandService).removeProxyNodeFromServer(created);
+        verify(vpsSshCommandService, never()).ensureTrafficRulesForPort(7L, 10005);
     }
 }

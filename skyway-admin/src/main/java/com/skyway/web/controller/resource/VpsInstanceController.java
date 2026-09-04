@@ -32,6 +32,8 @@ import com.skyway.web.service.VpsSshCommandService;
 import com.skyway.web.service.VpsInstanceOperationCoordinator;
 import com.skyway.web.service.VpsPortAvailabilityService;
 import com.skyway.web.service.VpsPortAvailabilityService.PortRecommendation;
+import com.skyway.web.service.ProxyDomainWhitelistService;
+import com.skyway.resource.domain.ProxyNodeDomainWhitelist;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -69,6 +71,9 @@ public class VpsInstanceController extends BaseController {
 
     @Autowired
     private VpsInstanceOperationCoordinator vpsInstanceOperationCoordinator;
+
+    @Autowired
+    private ProxyDomainWhitelistService proxyDomainWhitelistService;
 
     /**
      * 分页查询VPS实例列表
@@ -282,6 +287,7 @@ public class VpsInstanceController extends BaseController {
             return AjaxResult.error("端口范围为 1-65535");
         }
         boolean autoPort = body != null && Boolean.parseBoolean(String.valueOf(body.get("autoPort")));
+        ProxyNode createdNode = null;
         try (VpsInstanceOperationCoordinator.LockHandle ignored = vpsInstanceOperationCoordinator.lock(instanceId)) {
             if (autoPort) {
                 port = vpsPortAvailabilityService.resolveAutoPortForCreate(instanceId, port);
@@ -296,16 +302,26 @@ public class VpsInstanceController extends BaseController {
                 }
                 relay = VpsSshCommandService.parseSocks5RelayText(relayText);
             }
+            ProxyNodeDomainWhitelist domainWhitelist = proxyDomainWhitelistService.resolve(
+                    body != null ? body.get("domainWhitelist") : null);
             ProxyNode node = relay == null
                     ? vpsSshCommandService.addProxyNodeOnInstance(instanceId, customerId, port, expireTimeStr, nodeType)
                     : vpsSshCommandService.addProxyNodeOnInstance(instanceId, customerId, port, expireTimeStr, nodeType, relay);
+            createdNode = node;
             node.setCreateBy(getUsername());
             if (relay != null) {
                 node.setRemark(relayText);
             } else if (remark != null) {
                 node.setRemark(remark);
             }
-            proxyNodeService.insert(node);
+            if (domainWhitelist != null) {
+                vpsSshCommandService.applyDomainWhitelistToProxyNodeConfig(node, domainWhitelist);
+            }
+            node.setDomainWhitelist(domainWhitelist);
+            node.setDomainPolicyJson(proxyDomainWhitelistService.serialize(domainWhitelist));
+            if (proxyNodeService.insert(node) <= 0) {
+                throw new IllegalStateException("节点数据库保存失败");
+            }
             try {
                 vpsSshCommandService.ensureTrafficRulesForPort(instanceId, node.getPort() != null ? node.getPort() : port);
             } catch (Exception ex) {
@@ -313,6 +329,14 @@ public class VpsInstanceController extends BaseController {
             }
             return success(node);
         } catch (Exception e) {
+            if (createdNode != null) {
+                try {
+                    vpsSshCommandService.removeProxyNodeFromServer(createdNode);
+                } catch (Exception cleanupError) {
+                    log.error("cleanup unsaved proxy node failed: instanceId={}, nodeName={}",
+                            instanceId, createdNode.getNodeName(), cleanupError);
+                }
+            }
             return AjaxResult.error(e.getMessage() != null ? e.getMessage() : "添加节点失败");
         }
     }

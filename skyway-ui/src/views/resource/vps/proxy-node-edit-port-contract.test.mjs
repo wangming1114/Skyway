@@ -32,5 +32,7 @@ for (const surface of editSurfaces) {
     assert.match(source, /port:\s*editNodeForm\.port/)
     assert.match(source, /function syncUpdatedNodeName\(row, updatedNode\)/)
     assert.match(source, /syncUpdatedNodeName\(row, res\?\.data\)/)
+    assert.match(source, /updatedNode\.port != null[\s\S]*row\.port = updatedNode\.port/)
+    assert.match(source, /hasOwnProperty\.call\(updatedNode, 'url'\)[\s\S]*row\.url = updatedNode\.url/)
   })
 }

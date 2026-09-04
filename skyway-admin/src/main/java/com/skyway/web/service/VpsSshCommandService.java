@@ -6,7 +6,9 @@ import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -29,6 +31,7 @@ import com.alibaba.fastjson2.JSONWriter;
 import com.alibaba.fastjson2.JSONObject;
 import com.skyway.common.utils.StringUtils;
 import com.skyway.resource.domain.ProxyNode;
+import com.skyway.resource.domain.ProxyNodeDomainWhitelist;
 import com.skyway.resource.domain.VpsInstance;
 import com.skyway.resource.service.IVpsInstanceService;
 import net.schmizz.sshj.SSHClient;
@@ -47,6 +50,8 @@ public class VpsSshCommandService {
     private static final String TC_MANAGER_SCRIPT_PATH = "/root/tc_manager.sh";
     private static final String TC_PORT_RULES_CONF = "/etc/tc_ports_rules.conf";
     private static final String SOCKS_RELAY_TAG_PREFIX = "SOCKS-";
+    private static final String DOMAIN_EGRESS_TAG_PREFIX = "skyway-domain-egress-";
+    private static final String DOMAIN_BLOCK_TAG_PREFIX = "skyway-domain-block-";
     private static final String RELAY_TAG_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
     private static final Pattern SPEED_LINE = Pattern.compile("^\\s*(\\d{1,5})\\s*\\|\\s*([0-9]+(?:\\.[0-9]+)?)\\s*\\|\\s*([0-9]+(?:\\.[0-9]+)?)\\s*$");
@@ -430,12 +435,16 @@ public class VpsSshCommandService {
         socksOutbound.put("password", relay.getPassword());
         outbounds.set(0, socksOutbound);
 
+        refreshManagedDomainEgress(outbounds, socksOutbound);
+        JSONObject route = root.getJSONObject("route");
+        if (route == null) route = new JSONObject();
+        JSONArray rules = route.getJSONArray("rules");
+        if (rules == null) rules = new JSONArray();
+        removeRelayRouteRules(rules, Collections.singleton(socksTag));
         JSONObject rule = new JSONObject();
         rule.put("inbound", inboundTag);
         rule.put("outbound", socksTag);
-        JSONArray rules = new JSONArray();
-        rules.add(rule);
-        JSONObject route = new JSONObject();
+        rules.add(managedDomainRuleCount(rules, inboundTag), rule);
         route.put("rules", rules);
         root.put("route", route);
         return JSON.toJSONString(root, JSONWriter.Feature.PrettyFormat);
@@ -489,6 +498,7 @@ public class VpsSshCommandService {
         socksOutbound.put("username", relay.getUsername());
         socksOutbound.put("password", relay.getPassword());
         alignSocksRelayRouteInbound(root, existingSocksTag, socksOutbound.getString("tag"));
+        refreshManagedDomainEgress(outbounds, socksOutbound);
         return JSON.toJSONString(root, JSONWriter.Feature.PrettyFormat);
     }
 
@@ -624,27 +634,280 @@ public class VpsSshCommandService {
         }
         JSONObject root = JSON.parseObject(configJson);
         JSONArray outbounds = root.getJSONArray("outbounds");
-        if (outbounds == null || outbounds.isEmpty()) {
-            root.remove("route");
-            return JSON.toJSONString(root, JSONWriter.Feature.PrettyFormat);
-        }
+        if (outbounds == null || outbounds.isEmpty()) return JSON.toJSONString(root, JSONWriter.Feature.PrettyFormat);
 
         int socksIndex = -1;
+        Set<String> socksTags = new LinkedHashSet<>();
         for (int i = 0; i < outbounds.size(); i++) {
             JSONObject outbound = outbounds.getJSONObject(i);
-            if (outbound != null && "socks".equals(outbound.getString("type"))) {
+            if (outbound != null && "socks".equals(outbound.getString("type"))
+                    && !isManagedDomainOutbound(outbound)) {
+                if (StringUtils.isNotEmpty(outbound.getString("tag"))) socksTags.add(outbound.getString("tag"));
                 socksIndex = i;
                 break;
             }
         }
-        if (socksIndex < 0) {
-            socksIndex = 0;
-        }
+        if (socksIndex < 0) return JSON.toJSONString(root, JSONWriter.Feature.PrettyFormat);
         JSONObject direct = new JSONObject();
         direct.put("type", "direct");
         outbounds.set(socksIndex, direct);
-        root.remove("route");
+        refreshManagedDomainEgress(outbounds, direct);
+        JSONObject route = root.getJSONObject("route");
+        JSONArray rules = route != null ? route.getJSONArray("rules") : null;
+        if (rules != null) {
+            removeRelayRouteRules(rules, socksTags);
+            if (rules.isEmpty()) route.remove("rules"); else route.put("rules", rules);
+            if (route.isEmpty()) root.remove("route");
+        }
         return JSON.toJSONString(root, JSONWriter.Feature.PrettyFormat);
+    }
+
+    private static boolean isManagedDomainOutbound(JSONObject outbound) {
+        String tag = outbound != null ? outbound.getString("tag") : null;
+        return tag != null && (tag.startsWith(DOMAIN_EGRESS_TAG_PREFIX) || tag.startsWith(DOMAIN_BLOCK_TAG_PREFIX));
+    }
+
+    private static void refreshManagedDomainEgress(JSONArray outbounds, JSONObject source) {
+        if (outbounds == null || source == null) return;
+        for (int i = 0; i < outbounds.size(); i++) {
+            JSONObject outbound = outbounds.getJSONObject(i);
+            String tag = outbound != null ? outbound.getString("tag") : null;
+            if (tag == null || !tag.startsWith(DOMAIN_EGRESS_TAG_PREFIX)) continue;
+            JSONObject refreshed = JSON.parseObject(source.toJSONString());
+            refreshed.put("tag", tag);
+            outbounds.set(i, refreshed);
+        }
+    }
+
+    private static void removeRelayRouteRules(JSONArray rules, Set<String> socksTags) {
+        if (rules == null || socksTags == null || socksTags.isEmpty()) return;
+        for (int i = rules.size() - 1; i >= 0; i--) {
+            JSONObject rule = rules.getJSONObject(i);
+            if (rule != null && socksTags.contains(rule.getString("outbound"))) rules.remove(i);
+        }
+    }
+
+    private static int managedDomainRuleCount(JSONArray rules, String inboundTag) {
+        int count = 0;
+        while (count < rules.size()) {
+            JSONObject rule = rules.getJSONObject(count);
+            if (rule == null || !matchesInbound(rule.get("inbound"), inboundTag)) break;
+            String outbound = rule.getString("outbound");
+            boolean managed = "sniff".equals(rule.getString("action"))
+                    || "reject".equals(rule.getString("action"))
+                    || (outbound != null && (outbound.startsWith(DOMAIN_EGRESS_TAG_PREFIX)
+                    || outbound.startsWith(DOMAIN_BLOCK_TAG_PREFIX)));
+            if (!managed) break;
+            count++;
+        }
+        return count;
+    }
+
+    /**
+     * Adds or removes Skyway-managed domain allowlist routing while preserving unrelated rules.
+     * An empty domain list means unrestricted routing.
+     */
+    public static String applyDomainWhitelistToSingBoxConfig(String configJson, List<String> domains, boolean modernRules) {
+        if (StringUtils.isEmpty(configJson)) throw new IllegalArgumentException("sing-box 配置不能为空");
+        JSONObject root = JSON.parseObject(configJson);
+        JSONArray inbounds = root.getJSONArray("inbounds");
+        if (inbounds == null || inbounds.isEmpty()) throw new IllegalArgumentException("sing-box 配置缺少 inbounds");
+        JSONObject inbound = inbounds.getJSONObject(0);
+        String inboundTag = inbound != null ? inbound.getString("tag") : null;
+        if (StringUtils.isEmpty(inboundTag)) throw new IllegalArgumentException("sing-box inbound tag 不能为空");
+
+        JSONObject route = root.getJSONObject("route");
+        if (route == null) route = new JSONObject();
+        JSONArray rules = route.getJSONArray("rules");
+        if (rules == null) rules = new JSONArray();
+        boolean hadLegacyPolicy = hasManagedLegacyDomainRule(rules, inboundTag);
+        Set<String> managedOutboundTags = managedDomainOutboundTags(rules, inboundTag);
+        removeManagedDomainRules(rules, inboundTag);
+
+        JSONArray outbounds = root.getJSONArray("outbounds");
+        if (outbounds == null || outbounds.isEmpty()) throw new IllegalArgumentException("sing-box 配置缺少 outbounds");
+        String suffix = Integer.toHexString(inboundTag.hashCode());
+        managedOutboundTags.add(DOMAIN_EGRESS_TAG_PREFIX + suffix);
+        managedOutboundTags.add(DOMAIN_BLOCK_TAG_PREFIX + suffix);
+        removeManagedDomainOutbounds(outbounds, managedOutboundTags);
+
+        LinkedHashSet<String> normalized = new LinkedHashSet<>();
+        if (domains != null) {
+            for (String domain : domains) {
+                if (StringUtils.isNotEmpty(domain) && StringUtils.isNotEmpty(domain.trim())) normalized.add(domain.trim().toLowerCase());
+            }
+        }
+        if (normalized.isEmpty()) {
+            if (hadLegacyPolicy) {
+                inbound.remove("sniff");
+                inbound.remove("sniff_override_destination");
+            }
+            if (rules.isEmpty()) route.remove("rules"); else route.put("rules", rules);
+            if (route.isEmpty()) root.remove("route"); else root.put("route", route);
+            return JSON.toJSONString(root, JSONWriter.Feature.PrettyFormat);
+        }
+
+        String egressTag = createManagedEgress(outbounds, suffix);
+        String blockTag = DOMAIN_BLOCK_TAG_PREFIX + suffix;
+        JSONArray exactDomains = new JSONArray();
+        JSONArray suffixDomains = new JSONArray();
+        for (String domain : normalized) {
+            exactDomains.add(domain);
+            suffixDomains.add("." + domain);
+        }
+
+        JSONArray managed = new JSONArray();
+        if (modernRules) {
+            if (hadLegacyPolicy) {
+                inbound.remove("sniff");
+                inbound.remove("sniff_override_destination");
+            }
+            JSONObject sniff = inboundRule(inboundTag);
+            sniff.put("action", "sniff");
+            sniff.put("sniffer", Arrays.asList("tls", "http", "quic"));
+            managed.add(sniff);
+
+            JSONObject allow = inboundRule(inboundTag);
+            allow.put("domain", exactDomains);
+            allow.put("domain_suffix", suffixDomains);
+            allow.put("action", "route");
+            allow.put("outbound", egressTag);
+            managed.add(allow);
+
+            JSONObject reject = inboundRule(inboundTag);
+            reject.put("action", "reject");
+            reject.put("method", "default");
+            managed.add(reject);
+        } else {
+            inbound.put("sniff", true);
+            inbound.put("sniff_override_destination", true);
+            JSONObject block = new JSONObject();
+            block.put("type", "block");
+            block.put("tag", blockTag);
+            outbounds.add(block);
+
+            JSONObject allow = inboundRule(inboundTag);
+            allow.put("domain", exactDomains);
+            allow.put("domain_suffix", suffixDomains);
+            allow.put("outbound", egressTag);
+            managed.add(allow);
+            JSONObject reject = inboundRule(inboundTag);
+            reject.put("outbound", blockTag);
+            managed.add(reject);
+        }
+        for (int i = managed.size() - 1; i >= 0; i--) rules.add(0, managed.get(i));
+        route.put("rules", rules);
+        root.put("route", route);
+        return JSON.toJSONString(root, JSONWriter.Feature.PrettyFormat);
+    }
+
+    private static JSONObject inboundRule(String inboundTag) {
+        JSONObject rule = new JSONObject();
+        rule.put("inbound", Collections.singletonList(inboundTag));
+        return rule;
+    }
+
+    private static void removeManagedDomainRules(JSONArray rules, String inboundTag) {
+        for (int i = 0; i < rules.size();) {
+            JSONObject rule = rules.getJSONObject(i);
+            if (rule == null || !matchesInbound(rule.get("inbound"), inboundTag)) {
+                i++;
+                continue;
+            }
+            String outbound = rule.getString("outbound");
+            boolean managedBlock = outbound != null && outbound.startsWith(DOMAIN_BLOCK_TAG_PREFIX);
+            boolean managedAllow = outbound != null && outbound.startsWith(DOMAIN_EGRESS_TAG_PREFIX);
+            if (managedAllow) {
+                if (i > 0) {
+                    JSONObject previous = rules.getJSONObject(i - 1);
+                    if (previous != null && "sniff".equals(previous.getString("action"))
+                            && matchesInbound(previous.get("inbound"), inboundTag)) {
+                        rules.remove(i - 1);
+                        i--;
+                    }
+                }
+                rules.remove(i);
+                if (i < rules.size()) {
+                    JSONObject next = rules.getJSONObject(i);
+                    if (next != null && "reject".equals(next.getString("action"))
+                            && matchesInbound(next.get("inbound"), inboundTag)) rules.remove(i);
+                }
+                continue;
+            }
+            if (managedBlock) {
+                rules.remove(i);
+                continue;
+            }
+            i++;
+        }
+    }
+
+    private static boolean hasManagedLegacyDomainRule(JSONArray rules, String inboundTag) {
+        if (rules == null) return false;
+        for (int i = 0; i < rules.size(); i++) {
+            JSONObject rule = rules.getJSONObject(i);
+            if (rule == null || !matchesInbound(rule.get("inbound"), inboundTag)) continue;
+            String outbound = rule.getString("outbound");
+            if (outbound != null && outbound.startsWith(DOMAIN_BLOCK_TAG_PREFIX)) return true;
+        }
+        return false;
+    }
+
+    private static Set<String> managedDomainOutboundTags(JSONArray rules, String inboundTag) {
+        Set<String> tags = new LinkedHashSet<>();
+        if (rules == null) return tags;
+        for (int i = 0; i < rules.size(); i++) {
+            JSONObject rule = rules.getJSONObject(i);
+            if (rule == null || !matchesInbound(rule.get("inbound"), inboundTag)) continue;
+            String outbound = rule.getString("outbound");
+            if (outbound != null && (outbound.startsWith(DOMAIN_EGRESS_TAG_PREFIX)
+                    || outbound.startsWith(DOMAIN_BLOCK_TAG_PREFIX))) tags.add(outbound);
+        }
+        return tags;
+    }
+
+    private static boolean matchesInbound(Object value, String inboundTag) {
+        if (value instanceof String) return inboundTag.equals(value);
+        if (value instanceof JSONArray) return ((JSONArray) value).contains(inboundTag);
+        if (value instanceof List) return ((List<?>) value).contains(inboundTag);
+        return false;
+    }
+
+    private static void removeManagedDomainOutbounds(JSONArray outbounds, Set<String> tags) {
+        for (int i = outbounds.size() - 1; i >= 0; i--) {
+            JSONObject outbound = outbounds.getJSONObject(i);
+            String tag = outbound != null ? outbound.getString("tag") : null;
+            if (tag != null && tags.contains(tag)) {
+                outbounds.remove(i);
+            }
+        }
+    }
+
+    private static String createManagedEgress(JSONArray outbounds, String suffix) {
+        JSONObject direct = null;
+        JSONObject source = null;
+        JSONObject socksFallback = null;
+        for (int i = 0; i < outbounds.size(); i++) {
+            JSONObject outbound = outbounds.getJSONObject(i);
+            if (outbound == null) continue;
+            if ("socks".equals(outbound.getString("type"))) {
+                if (socksFallback == null) socksFallback = outbound;
+                String tag = outbound.getString("tag");
+                if (tag != null && tag.startsWith(SOCKS_RELAY_TAG_PREFIX)) {
+                    source = outbound;
+                    break;
+                }
+            }
+            if (direct == null && "direct".equals(outbound.getString("type"))) direct = outbound;
+        }
+        if (source == null) source = socksFallback;
+        if (source == null) source = direct;
+        if (source == null) throw new IllegalArgumentException("sing-box 配置缺少 direct 或 socks outbound");
+        String tag = DOMAIN_EGRESS_TAG_PREFIX + suffix;
+        JSONObject managed = JSON.parseObject(source.toJSONString());
+        managed.put("tag", tag);
+        outbounds.add(managed);
+        return tag;
     }
 
     private static String randomRelayTag() {
@@ -764,48 +1027,79 @@ public class VpsSshCommandService {
         String oldBaseName = normalizeNodeBaseName(oldNodeName);
         String newBaseName = normalizeNodeBaseName(newNodeName);
         String suffix = disabled ? ".json" + DISABLED_SUFFIX : ".json";
-        String fromPath = CONF_DIR + "/" + oldBaseName + suffix;
         String toPath = CONF_DIR + "/" + newBaseName + suffix;
         String oldInboundTag = oldBaseName + ".json";
         String newInboundTag = newBaseName + ".json";
 
         SSHClient ssh = null;
+        String fromPath = null;
+        String tempPath = null;
+        String backupPath = null;
+        boolean replacementStarted = false;
+        boolean success = false;
         try {
             ssh = createSshClient(instanceId);
+            ProxyNode locator = new ProxyNode();
+            locator.setNodeName(oldBaseName);
+            locator.setPort(oldPort);
+            locator.setStatus(disabled ? "1" : "0");
+            fromPath = resolveProxyNodeConfigPath(ssh, locator);
             String original;
             try (Session readSession = ssh.startSession()) {
-                original = execAndRead(readSession, "cat " + shellQuote(fromPath));
+                original = execAndRead(readSession, "cat -- " + shellQuote(fromPath));
             }
             if (StringUtils.isEmpty(original)) {
                 throw new IOException("读取 sing-box 配置失败: " + fromPath);
             }
             String patched = updateSingBoxListenPortAndInboundName(original, oldInboundTag, newInboundTag, newPort);
-            try (Session writeSession = ssh.startSession()) {
-                writeRemoteTextFile(writeSession, fromPath, patched);
+            String operationToken = Long.toHexString(System.nanoTime());
+            tempPath = fromPath + ".skyway-port-" + operationToken + ".tmp";
+            backupPath = fromPath + ".skyway-port-" + operationToken + ".bak";
+            writeAndValidateCandidate(ssh, tempPath, patched);
+
+            boolean samePath = fromPath.equals(toPath);
+            StringBuilder replace = new StringBuilder("set -e;");
+            if (!samePath) {
+                replace.append(" [ ! -e ").append(shellQuote(toPath)).append(" ];");
             }
-            if (!oldBaseName.equals(newBaseName)) {
-                try (Session mvSession = ssh.startSession()) {
-                    String fromQuoted = shellQuote(fromPath);
-                    String toQuoted = shellQuote(toPath);
-                    String cmd = "sh -c \"if [ ! -f " + fromQuoted + " ]; then echo __SRC_MISSING__; " +
-                            "elif [ -f " + toQuoted + " ]; then echo __DST_EXISTS__; " +
-                            "elif mv " + fromQuoted + " " + toQuoted + "; then echo __OK__; else echo __MV_FAIL__; fi\"";
-                    String out = execAndRead(mvSession, cmd);
-                    String marker = out != null ? out : "";
-                    if (marker.contains("__SRC_MISSING__")) {
-                        throw new IOException("source config file not found: " + fromPath);
-                    }
-                    if (marker.contains("__DST_EXISTS__")) {
-                        throw new IOException("target config file already exists: " + toPath);
-                    }
-                    if (!marker.contains("__OK__")) {
-                        throw new IOException("rename config file failed: " + fromPath + " -> " + toPath);
-                    }
+            replace.append(" mv -- ").append(shellQuote(fromPath)).append(' ').append(shellQuote(backupPath)).append(';')
+                    .append(" mv -- ").append(shellQuote(tempPath)).append(' ').append(shellQuote(toPath)).append(';')
+                    .append(" echo __OK__");
+            replacementStarted = true;
+            try (Session replaceSession = ssh.startSession()) {
+                String out = execAndRead(replaceSession, "sh -c " + quoteSh(replace.toString()) + " 2>&1");
+                if (out == null || !out.contains("__OK__")) {
+                    throw new IOException("替换 sing-box 配置失败: " + (out != null ? out.trim() : "无输出"));
                 }
             }
-            restartSingBox(ssh);
+            if (!disabled) restartSingBoxChecked(ssh);
+            success = true;
+        } catch (IOException | RuntimeException e) {
+            if (ssh != null && replacementStarted && fromPath != null && backupPath != null) {
+                try (Session rollback = ssh.startSession()) {
+                    String command = "if [ -f " + shellQuote(backupPath) + " ]; then rm -f -- "
+                            + shellQuote(toPath) + "; mv -- " + shellQuote(backupPath) + ' '
+                            + shellQuote(fromPath) + "; fi";
+                    execAndRead(rollback, "sh -c " + quoteSh(command) + " 2>&1");
+                } catch (Exception rollbackError) {
+                    log.error("rollback proxy port config failed: instanceId={}, oldPort={}, newPort={}",
+                            instanceId, oldPort, newPort, rollbackError);
+                }
+                if (!disabled) {
+                    try { restartSingBox(ssh); } catch (Exception ignored) {}
+                }
+            }
+            if (e instanceof IOException) throw (IOException) e;
+            throw new IOException(e.getMessage(), e);
         } finally {
             if (ssh != null) {
+                if (tempPath != null) {
+                    try (Session cleanup = ssh.startSession()) {
+                        String command = "rm -f -- " + shellQuote(tempPath)
+                                + (success && backupPath != null ? " " + shellQuote(backupPath) : "");
+                        execAndRead(cleanup, "sh -c " + quoteSh(command) + " 2>&1");
+                    } catch (Exception ignored) {}
+                }
                 try {
                     ssh.close();
                 } catch (IOException e) {
@@ -1635,6 +1929,212 @@ public class VpsSshCommandService {
         } finally {
             if (ssh != null) {
                 try { ssh.close(); } catch (IOException e) { log.debug("SSH close: {}", e.getMessage()); }
+            }
+        }
+    }
+
+    /** Applies a domain policy to an existing active or disabled node config. */
+    public void applyDomainWhitelistToProxyNodeConfig(ProxyNode node, ProxyNodeDomainWhitelist policy) throws IOException {
+        Map<ProxyNode, ProxyNodeDomainWhitelist> updates = new LinkedHashMap<>();
+        updates.put(node, policy);
+        applyDomainWhitelistsToProxyNodeConfigs(updates);
+    }
+
+    /**
+     * Applies multiple policies on one VPS as a transaction: one SSH connection, all candidates
+     * validated before replacement, one service restart, and group rollback on any failure.
+     */
+    public void applyDomainWhitelistsToProxyNodeConfigs(Map<ProxyNode, ProxyNodeDomainWhitelist> updates) throws IOException {
+        if (updates == null || updates.isEmpty()) return;
+        Long instanceId = null;
+        for (ProxyNode node : updates.keySet()) {
+            if (node == null || node.getInstanceId() == null || StringUtils.isEmpty(node.getNodeName())
+                    || node.getPort() == null || node.getPort() < 1 || node.getPort() > 65535) {
+                throw new IllegalArgumentException("节点、实例ID、节点名称或端口无效");
+            }
+            if (instanceId == null) instanceId = node.getInstanceId();
+            if (!instanceId.equals(node.getInstanceId())) throw new IllegalArgumentException("批量节点必须属于同一 VPS");
+        }
+        SSHClient ssh = null;
+        List<DomainConfigCandidate> candidates = new ArrayList<>();
+        boolean success = false;
+        boolean activeChanged = false;
+        boolean replacementStarted = false;
+        try {
+            ssh = createSshClient(instanceId);
+            boolean modern = isModernSingBox(ssh);
+            Set<String> resolvedPaths = new LinkedHashSet<>();
+            String operationToken = Long.toHexString(System.nanoTime());
+            for (Map.Entry<ProxyNode, ProxyNodeDomainWhitelist> entry : updates.entrySet()) {
+                ProxyNode node = entry.getKey();
+                String confPath = resolveProxyNodeConfigPath(ssh, node);
+                if (!resolvedPaths.add(confPath)) throw new IOException("多个节点解析到同一配置文件: " + confPath);
+                String original;
+                try (Session readSession = ssh.startSession()) {
+                    original = execAndRead(readSession, "cat -- " + shellQuote(confPath));
+                }
+                if (StringUtils.isEmpty(original)) throw new IOException("读取 sing-box 配置失败: " + confPath);
+                List<String> domains = entry.getValue() != null ? entry.getValue().getDomains() : Collections.emptyList();
+                String patched = applyDomainWhitelistToSingBoxConfig(original, domains, modern);
+                if (JSON.parseObject(original).equals(JSON.parseObject(patched))) continue;
+                DomainConfigCandidate candidate = new DomainConfigCandidate(node, confPath, operationToken);
+                candidates.add(candidate);
+                try {
+                    writeAndValidateCandidate(ssh, candidate.tempPath, patched);
+                } catch (IOException modernError) {
+                    if (!modern) throw modernError;
+                    String legacy = applyDomainWhitelistToSingBoxConfig(original, domains, false);
+                    try {
+                        writeAndValidateCandidate(ssh, candidate.tempPath, legacy);
+                    } catch (IOException legacyError) {
+                        modernError.addSuppressed(legacyError);
+                        throw modernError;
+                    }
+                }
+                if (!candidate.disabled) activeChanged = true;
+            }
+            if (candidates.isEmpty()) return;
+
+            StringBuilder replace = new StringBuilder("set -e;");
+            for (DomainConfigCandidate candidate : candidates) {
+                replace.append(" cp -- ").append(shellQuote(candidate.confPath)).append(' ').append(shellQuote(candidate.backupPath)).append(';')
+                        .append(" mv -- ").append(shellQuote(candidate.tempPath)).append(' ').append(shellQuote(candidate.confPath)).append(';');
+            }
+            replace.append(" echo __OK__");
+            replacementStarted = true;
+            try (Session replaceSession = ssh.startSession()) {
+                String out = execAndRead(replaceSession, "sh -c " + quoteSh(replace.toString()) + " 2>&1");
+                if (out == null || !out.contains("__OK__")) throw new IOException("替换 sing-box 配置失败: " + out);
+            }
+            if (activeChanged) restartSingBoxChecked(ssh);
+            success = true;
+        } catch (IOException | RuntimeException e) {
+            if (ssh != null && replacementStarted) {
+                try (Session rollback = ssh.startSession()) {
+                    StringBuilder command = new StringBuilder();
+                    for (DomainConfigCandidate candidate : candidates) {
+                        command.append("if [ -f ").append(shellQuote(candidate.backupPath)).append(" ]; then cp -- ")
+                                .append(shellQuote(candidate.backupPath)).append(' ').append(shellQuote(candidate.confPath)).append("; fi;");
+                    }
+                    execAndRead(rollback, "sh -c " + quoteSh(command.toString()) + " 2>&1");
+                } catch (Exception rollbackError) {
+                    log.error("rollback domain whitelist configs failed: instanceId={}", instanceId, rollbackError);
+                }
+                if (activeChanged) {
+                    try { restartSingBox(ssh); } catch (Exception ignored) {}
+                }
+            }
+            if (e instanceof IOException) throw (IOException) e;
+            throw new IOException(e.getMessage(), e);
+        } finally {
+            if (ssh != null) {
+                if (!candidates.isEmpty()) {
+                    try (Session cleanup = ssh.startSession()) {
+                        StringBuilder command = new StringBuilder("rm -f --");
+                        for (DomainConfigCandidate candidate : candidates) command.append(' ').append(shellQuote(candidate.tempPath));
+                        if (success) {
+                            for (DomainConfigCandidate candidate : candidates) command.append(' ').append(shellQuote(candidate.backupPath));
+                        }
+                        execAndRead(cleanup, "sh -c " + quoteSh(command.toString()) + " 2>&1");
+                    } catch (Exception ignored) {}
+                }
+                try { ssh.close(); } catch (IOException e) { log.debug("SSH close: {}", e.getMessage()); }
+            }
+        }
+    }
+
+    private String resolveProxyNodeConfigPath(SSHClient ssh, ProxyNode node) throws IOException {
+        boolean disabled = "1".equals(node.getStatus());
+        String expected = CONF_DIR + "/" + normalizeNodeBaseName(node.getNodeName())
+                + (disabled ? ".json" + DISABLED_SUFFIX : ".json");
+        String credentialId = extractNodeCredentialId(node.getConfigJson());
+        StringBuilder script = new StringBuilder();
+        script.append("if [ -f ").append(shellQuote(expected)).append(" ]; then printf '__CONF__%s\\n' ")
+                .append(shellQuote(expected)).append("; else ")
+                .append("for f in ").append(CONF_DIR).append("/*.json ").append(CONF_DIR).append("/*.json.disabled; do ")
+                .append("[ -f \"$f\" ] || continue; ")
+                .append("if ");
+        if (StringUtils.isNotEmpty(credentialId)) {
+            script.append("grep -Fq -- ").append(shellQuote(credentialId)).append(" \"$f\"");
+        } else {
+            script.append("grep -Eq ").append(shellQuote("\"listen_port\"[[:space:]]*:[[:space:]]*" + node.getPort() + "([^0-9]|$)"))
+                    .append(" \"$f\"");
+        }
+        script.append("; then printf '__CONF__%s\\n' \"$f\"; fi; done; fi");
+        String output;
+        try (Session session = ssh.startSession()) {
+            output = execAndRead(session, "sh -c " + quoteSh(script.toString()) + " 2>&1");
+        }
+        List<String> matches = new ArrayList<>();
+        if (output != null) {
+            for (String line : output.split("\\R")) {
+                if (line.startsWith("__CONF__")) matches.add(line.substring("__CONF__".length()));
+            }
+        }
+        if (matches.isEmpty()) throw new IOException("未找到节点配置文件，节点端口: " + node.getPort());
+        if (matches.size() > 1) throw new IOException("节点端口匹配到多个配置文件: " + node.getPort());
+        return matches.get(0);
+    }
+
+    private static String extractNodeCredentialId(String configJson) {
+        if (StringUtils.isEmpty(configJson)) return null;
+        try {
+            JSONObject config = JSON.parseObject(configJson);
+            String id = config != null ? config.getString("id") : null;
+            return StringUtils.isNotEmpty(id) ? id.trim() : null;
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private static final class DomainConfigCandidate {
+        private final boolean disabled;
+        private final String confPath;
+        private final String tempPath;
+        private final String backupPath;
+
+        private DomainConfigCandidate(ProxyNode node, String confPath, String operationToken) {
+            this.disabled = "1".equals(node.getStatus());
+            this.confPath = confPath;
+            this.tempPath = confPath + ".skyway-domain-" + node.getId() + "-" + operationToken + ".tmp";
+            this.backupPath = confPath + ".skyway-domain-" + node.getId() + "-" + operationToken + ".bak";
+        }
+    }
+
+    private boolean isModernSingBox(SSHClient ssh) {
+        try (Session session = ssh.startSession()) {
+            String output = execAndRead(session, "sing-box version 2>/dev/null || true");
+            Matcher matcher = Pattern.compile("(?i)version\\s+([0-9]+)\\.([0-9]+)").matcher(output != null ? output : "");
+            if (!matcher.find()) return true;
+            int major = Integer.parseInt(matcher.group(1));
+            int minor = Integer.parseInt(matcher.group(2));
+            return major > 1 || (major == 1 && minor >= 11);
+        } catch (Exception ignored) {
+            return true;
+        }
+    }
+
+    private void writeAndValidateCandidate(SSHClient ssh, String tempPath, String content) throws IOException {
+        try (Session writeSession = ssh.startSession()) {
+            writeRemoteTextFile(writeSession, tempPath, content);
+        }
+        try (Session checkSession = ssh.startSession()) {
+            String command = "sing-box check -c " + shellQuote(tempPath) + " 2>&1; rc=$?; echo __RC__$rc";
+            String output = execAndRead(checkSession, "sh -c " + quoteSh(command));
+            if (output == null || !output.contains("__RC__0")) {
+                throw new IOException("sing-box 配置校验失败: " + (output != null ? output.replaceAll("__RC__\\d+", "").trim() : "无输出"));
+            }
+        }
+    }
+
+    private void restartSingBoxChecked(SSHClient ssh) throws IOException {
+        try (Session session = ssh.startSession()) {
+            String command = "printf '5\\n3\\n' | sb >/tmp/skyway-singbox-restart.log 2>&1; rc=$?; "
+                    + "if command -v systemctl >/dev/null 2>&1; then systemctl is-active --quiet sing-box || rc=1; fi; "
+                    + "cat /tmp/skyway-singbox-restart.log; echo __RC__$rc";
+            String output = execAndReadWithTimeout(session, "sh -c " + quoteSh(command), 45);
+            if (output == null || !output.contains("__RC__0")) {
+                throw new IOException("sing-box 重启或状态检查失败: " + (output != null ? output.replaceAll("__RC__\\d+", "").trim() : "无输出"));
             }
         }
     }

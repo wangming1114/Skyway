@@ -165,6 +165,29 @@ export function getProxyNode(id) {
   })
 }
 
+export function getProxyDomainWhitelistPresets() {
+  return request({
+    url: '/resource/vps/proxyNode/domainWhitelist/presets',
+    method: 'get'
+  })
+}
+
+export function updateProxyDomainWhitelist(nodeId, data) {
+  return request({
+    url: '/resource/vps/proxyNode/' + nodeId + '/domainWhitelist',
+    method: 'put',
+    data
+  })
+}
+
+export function batchUpdateProxyDomainWhitelist(data) {
+  return request({
+    url: '/resource/vps/proxyNode/domainWhitelist/batch',
+    method: 'put',
+    data
+  })
+}
+
 /** 节点流量统计（总量 + 近期明细） */
 export function getProxyNodeTraffic(nodeId) {
   return request({

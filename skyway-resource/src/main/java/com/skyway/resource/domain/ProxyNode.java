@@ -7,6 +7,7 @@ import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.NotNull;
 import javax.validation.constraints.Size;
 import com.fasterxml.jackson.annotation.JsonFormat;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import org.apache.commons.lang3.builder.ToStringBuilder;
 import org.apache.commons.lang3.builder.ToStringStyle;
 import com.skyway.common.core.domain.BaseEntity;
@@ -46,6 +47,13 @@ public class ProxyNode extends BaseEntity {
 
     /** 协议配置参数(JSON) */
     private String configJson;
+
+    /** 域名白名单策略持久化 JSON，null 表示不限制。 */
+    @JsonIgnore
+    private String domainPolicyJson;
+
+    /** 解析后的域名白名单策略（接口字段）。 */
+    private ProxyNodeDomainWhitelist domainWhitelist;
 
     /** 有效期(null=永久有效) */
     private Date expireTime;
@@ -147,6 +155,11 @@ public class ProxyNode extends BaseEntity {
         this.configJson = configJson;
     }
 
+    public String getDomainPolicyJson() { return domainPolicyJson; }
+    public void setDomainPolicyJson(String domainPolicyJson) { this.domainPolicyJson = domainPolicyJson; }
+    public ProxyNodeDomainWhitelist getDomainWhitelist() { return domainWhitelist; }
+    public void setDomainWhitelist(ProxyNodeDomainWhitelist domainWhitelist) { this.domainWhitelist = domainWhitelist; }
+
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     public Date getExpireTime() {
         return expireTime;
@@ -208,6 +221,7 @@ public class ProxyNode extends BaseEntity {
                 .append("address", getAddress())
                 .append("port", getPort())
                 .append("url", getUrl())
+                .append("domainWhitelist", getDomainWhitelist())
                 .append("expireTime", getExpireTime())
                 .append("customId", getCustomId())
                 .append("status", getStatus())

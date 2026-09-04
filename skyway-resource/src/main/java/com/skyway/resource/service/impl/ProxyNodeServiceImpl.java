@@ -96,6 +96,11 @@ public class ProxyNodeServiceImpl implements IProxyNodeService {
     }
 
     @Override
+    public int updateDomainPolicy(Long id, String domainPolicyJson, String updateBy) {
+        return proxyNodeMapper.updateDomainPolicy(id, domainPolicyJson, updateBy);
+    }
+
+    @Override
     public int deleteById(Long id) {
         return proxyNodeMapper.deleteById(id);
     }
