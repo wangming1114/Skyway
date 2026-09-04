@@ -149,8 +149,9 @@ public class ProxyNodeControllerEditPortTest {
     }
 
     @Test
-    public void editStatusUpdatesDatabaseNodeNameWithoutTouchingRemoteConfig() throws Exception {
+    public void editStatusDisablesRemoteConfigBeforeUpdatingDatabaseWithoutChangingNodeName() throws Exception {
         ProxyNode existing = existingNode();
+        existing.setNodeName("stale-node-name");
         when(proxyNodeService.getById(10L)).thenReturn(existing);
         when(proxyNodeService.update(any(ProxyNode.class))).thenReturn(1);
         Map<String, Object> body = new HashMap<>();
@@ -160,8 +161,48 @@ public class ProxyNodeControllerEditPortTest {
         AjaxResult result = controller.edit(body);
 
         assertEquals(HttpStatus.SUCCESS, result.get(AjaxResult.CODE_TAG));
-        verify(proxyNodeService).update(any(ProxyNode.class));
-        verifyNoInteractions(vpsSshCommandService);
+        ArgumentCaptor<ProxyNode> rowCaptor = ArgumentCaptor.forClass(ProxyNode.class);
+        InOrder inOrder = inOrder(vpsSshCommandService, proxyNodeService);
+        inOrder.verify(vpsSshCommandService).renameProxyNodeConfig(20L, "stale-node-name", true);
+        inOrder.verify(proxyNodeService).update(rowCaptor.capture());
+        assertEquals("stale-node-name", rowCaptor.getValue().getNodeName());
+        assertEquals("1", rowCaptor.getValue().getStatus());
+    }
+
+    @Test
+    public void editStatusEnablesRemoteConfigBeforeUpdatingDatabase() throws Exception {
+        ProxyNode existing = existingNode();
+        existing.setStatus("1");
+        when(proxyNodeService.getById(10L)).thenReturn(existing);
+        when(proxyNodeService.update(any(ProxyNode.class))).thenReturn(1);
+        Map<String, Object> body = new HashMap<>();
+        body.put("id", 10L);
+        body.put("status", "0");
+
+        AjaxResult result = controller.edit(body);
+
+        assertEquals(HttpStatus.SUCCESS, result.get(AjaxResult.CODE_TAG));
+        InOrder inOrder = inOrder(vpsSshCommandService, proxyNodeService);
+        inOrder.verify(vpsSshCommandService).renameProxyNodeConfig(
+                20L, "VLESS-REALITY-203.0.113.8-10001-5-20260701", false);
+        inOrder.verify(proxyNodeService).update(any(ProxyNode.class));
+    }
+
+    @Test
+    public void editStatusDoesNotUpdateDatabaseWhenRemoteConfigRenameFails() throws Exception {
+        ProxyNode existing = existingNode();
+        when(proxyNodeService.getById(10L)).thenReturn(existing);
+        doThrow(new RuntimeException("mv failed"))
+                .when(vpsSshCommandService).renameProxyNodeConfig(20L, existing.getNodeName(), true);
+        Map<String, Object> body = new HashMap<>();
+        body.put("id", 10L);
+        body.put("status", "1");
+
+        AjaxResult result = controller.edit(body);
+
+        assertEquals(HttpStatus.ERROR, result.get(AjaxResult.CODE_TAG));
+        assertEquals("服务器配置重命名失败: mv failed", result.get(AjaxResult.MSG_TAG));
+        verify(proxyNodeService, never()).update(any(ProxyNode.class));
     }
 
     @Test

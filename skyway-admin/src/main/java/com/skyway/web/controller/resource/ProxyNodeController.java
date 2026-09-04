@@ -304,6 +304,32 @@ public class ProxyNodeController extends BaseController {
             }
         }
 
+        boolean statusOnly = hasStatus
+                && !hasExpireTime
+                && !hasUrl
+                && !hasRemark
+                && !hasRelayText
+                && !hasRelayEnabled
+                && !hasPort
+                && (body == null || !body.containsKey("customerId"));
+        if (statusOnly) {
+            row.setNodeName(existing.getNodeName());
+            if (StringUtils.isNotEmpty(row.getStatus()) && !row.getStatus().equals(existing.getStatus())) {
+                try {
+                    vpsSshCommandService.renameProxyNodeConfig(
+                            existing.getInstanceId(), existing.getNodeName(), "1".equals(row.getStatus()));
+                } catch (Exception e) {
+                    log.warn("rename proxy config failed: instanceId={}, nodeName={}",
+                            existing.getInstanceId(), existing.getNodeName(), e);
+                    return AjaxResult.error("服务器配置重命名失败: "
+                            + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
+                }
+            }
+            row.setUpdateBy(getUsername());
+            int rows = proxyNodeService.update(row);
+            return rows > 0 ? success(row) : toAjax(rows);
+        }
+
         String newBaseName = buildNodeBaseName(existing.getNodeType(), existing.getAddress(), newPort, row.getCustomerId(), newExpireTime);
         row.setNodeName(newBaseName);
 
