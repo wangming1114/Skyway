@@ -302,8 +302,7 @@ public class VpsInstanceController extends BaseController {
                 }
                 relay = VpsSshCommandService.parseSocks5RelayText(relayText);
             }
-            ProxyNodeDomainWhitelist domainWhitelist = proxyDomainWhitelistService.resolve(
-                    body != null ? body.get("domainWhitelist") : null);
+            ProxyNodeDomainWhitelist domainPolicy = proxyDomainWhitelistService.resolveRequest(body);
             ProxyNode node = relay == null
                     ? vpsSshCommandService.addProxyNodeOnInstance(instanceId, customerId, port, expireTimeStr, nodeType)
                     : vpsSshCommandService.addProxyNodeOnInstance(instanceId, customerId, port, expireTimeStr, nodeType, relay);
@@ -314,11 +313,12 @@ public class VpsInstanceController extends BaseController {
             } else if (remark != null) {
                 node.setRemark(remark);
             }
-            if (domainWhitelist != null) {
-                vpsSshCommandService.applyDomainWhitelistToProxyNodeConfig(node, domainWhitelist);
+            if (domainPolicy != null) {
+                vpsSshCommandService.applyDomainWhitelistToProxyNodeConfig(node, domainPolicy);
             }
-            node.setDomainWhitelist(domainWhitelist);
-            node.setDomainPolicyJson(proxyDomainWhitelistService.serialize(domainWhitelist));
+            node.setDomainPolicy(domainPolicy);
+            node.setDomainWhitelist(proxyDomainWhitelistService.isWhitelist(domainPolicy) ? domainPolicy : null);
+            node.setDomainPolicyJson(proxyDomainWhitelistService.serialize(domainPolicy));
             if (proxyNodeService.insert(node) <= 0) {
                 throw new IllegalStateException("节点数据库保存失败");
             }

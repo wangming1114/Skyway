@@ -48,11 +48,14 @@ public class ProxyNode extends BaseEntity {
     /** 协议配置参数(JSON) */
     private String configJson;
 
-    /** 域名白名单策略持久化 JSON，null 表示不限制。 */
+    /** 域名访问策略持久化 JSON，null 表示不限制。 */
     @JsonIgnore
     private String domainPolicyJson;
 
-    /** 解析后的域名白名单策略（接口字段）。 */
+    /** 解析后的统一域名访问策略（接口字段）。 */
+    private ProxyNodeDomainWhitelist domainPolicy;
+
+    /** 兼容旧客户端的白名单字段；黑名单模式下为 null。 */
     private ProxyNodeDomainWhitelist domainWhitelist;
 
     /** 有效期(null=永久有效) */
@@ -157,6 +160,8 @@ public class ProxyNode extends BaseEntity {
 
     public String getDomainPolicyJson() { return domainPolicyJson; }
     public void setDomainPolicyJson(String domainPolicyJson) { this.domainPolicyJson = domainPolicyJson; }
+    public ProxyNodeDomainWhitelist getDomainPolicy() { return domainPolicy; }
+    public void setDomainPolicy(ProxyNodeDomainWhitelist domainPolicy) { this.domainPolicy = domainPolicy; }
     public ProxyNodeDomainWhitelist getDomainWhitelist() { return domainWhitelist; }
     public void setDomainWhitelist(ProxyNodeDomainWhitelist domainWhitelist) { this.domainWhitelist = domainWhitelist; }
 
@@ -221,7 +226,7 @@ public class ProxyNode extends BaseEntity {
                 .append("address", getAddress())
                 .append("port", getPort())
                 .append("url", getUrl())
-                .append("domainWhitelist", getDomainWhitelist())
+                .append("domainPolicy", getDomainPolicy())
                 .append("expireTime", getExpireTime())
                 .append("customId", getCustomId())
                 .append("status", getStatus())

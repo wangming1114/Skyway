@@ -703,11 +703,20 @@ public class VpsSshCommandService {
         return count;
     }
 
+    /** Adds/removes the legacy whitelist policy. */
+    public static String applyDomainWhitelistToSingBoxConfig(String configJson, List<String> domains, boolean modernRules) {
+        return applyDomainPolicyToSingBoxConfig(configJson, domains, "whitelist", modernRules);
+    }
+
     /**
-     * Adds or removes Skyway-managed domain allowlist routing while preserving unrelated rules.
+     * Applies a mutually-exclusive whitelist or blacklist while preserving unrelated rules.
      * An empty domain list means unrestricted routing.
      */
-    public static String applyDomainWhitelistToSingBoxConfig(String configJson, List<String> domains, boolean modernRules) {
+    public static String applyDomainPolicyToSingBoxConfig(String configJson, List<String> domains, String mode,
+                                                           boolean modernRules) {
+        if (!"whitelist".equalsIgnoreCase(mode) && !"blacklist".equalsIgnoreCase(mode)) {
+            throw new IllegalArgumentException("域名策略模式必须为 whitelist 或 blacklist");
+        }
         if (StringUtils.isEmpty(configJson)) throw new IllegalArgumentException("sing-box 配置不能为空");
         JSONObject root = JSON.parseObject(configJson);
         JSONArray inbounds = root.getJSONArray("inbounds");
@@ -722,11 +731,13 @@ public class VpsSshCommandService {
         if (rules == null) rules = new JSONArray();
         boolean hadLegacyPolicy = hasManagedLegacyDomainRule(rules, inboundTag);
         Set<String> managedOutboundTags = managedDomainOutboundTags(rules, inboundTag);
-        removeManagedDomainRules(rules, inboundTag);
 
         JSONArray outbounds = root.getJSONArray("outbounds");
         if (outbounds == null || outbounds.isEmpty()) throw new IllegalArgumentException("sing-box 配置缺少 outbounds");
         String suffix = Integer.toHexString(inboundTag.hashCode());
+        boolean hadManagedMarker = hasOutboundTag(outbounds, DOMAIN_EGRESS_TAG_PREFIX + suffix)
+                || hasOutboundTag(outbounds, DOMAIN_BLOCK_TAG_PREFIX + suffix);
+        removeManagedDomainRules(rules, inboundTag, hadManagedMarker);
         managedOutboundTags.add(DOMAIN_EGRESS_TAG_PREFIX + suffix);
         managedOutboundTags.add(DOMAIN_BLOCK_TAG_PREFIX + suffix);
         removeManagedDomainOutbounds(outbounds, managedOutboundTags);
@@ -747,7 +758,6 @@ public class VpsSshCommandService {
             return JSON.toJSONString(root, JSONWriter.Feature.PrettyFormat);
         }
 
-        String egressTag = createManagedEgress(outbounds, suffix);
         String blockTag = DOMAIN_BLOCK_TAG_PREFIX + suffix;
         JSONArray exactDomains = new JSONArray();
         JSONArray suffixDomains = new JSONArray();
@@ -757,6 +767,7 @@ public class VpsSshCommandService {
         }
 
         JSONArray managed = new JSONArray();
+        boolean blacklist = "blacklist".equalsIgnoreCase(mode);
         if (modernRules) {
             if (hadLegacyPolicy) {
                 inbound.remove("sniff");
@@ -767,17 +778,29 @@ public class VpsSshCommandService {
             sniff.put("sniffer", Arrays.asList("tls", "http", "quic"));
             managed.add(sniff);
 
-            JSONObject allow = inboundRule(inboundTag);
-            allow.put("domain", exactDomains);
-            allow.put("domain_suffix", suffixDomains);
-            allow.put("action", "route");
-            allow.put("outbound", egressTag);
-            managed.add(allow);
+            if (blacklist) {
+                // Keep an unused, namespaced outbound as an ownership marker for safe/idempotent cleanup.
+                createManagedEgress(outbounds, suffix);
+                JSONObject reject = inboundRule(inboundTag);
+                reject.put("domain", exactDomains);
+                reject.put("domain_suffix", suffixDomains);
+                reject.put("action", "reject");
+                reject.put("method", "default");
+                managed.add(reject);
+            } else {
+                String egressTag = createManagedEgress(outbounds, suffix);
+                JSONObject allow = inboundRule(inboundTag);
+                allow.put("domain", exactDomains);
+                allow.put("domain_suffix", suffixDomains);
+                allow.put("action", "route");
+                allow.put("outbound", egressTag);
+                managed.add(allow);
 
-            JSONObject reject = inboundRule(inboundTag);
-            reject.put("action", "reject");
-            reject.put("method", "default");
-            managed.add(reject);
+                JSONObject reject = inboundRule(inboundTag);
+                reject.put("action", "reject");
+                reject.put("method", "default");
+                managed.add(reject);
+            }
         } else {
             inbound.put("sniff", true);
             inbound.put("sniff_override_destination", true);
@@ -786,14 +809,23 @@ public class VpsSshCommandService {
             block.put("tag", blockTag);
             outbounds.add(block);
 
-            JSONObject allow = inboundRule(inboundTag);
-            allow.put("domain", exactDomains);
-            allow.put("domain_suffix", suffixDomains);
-            allow.put("outbound", egressTag);
-            managed.add(allow);
-            JSONObject reject = inboundRule(inboundTag);
-            reject.put("outbound", blockTag);
-            managed.add(reject);
+            if (blacklist) {
+                JSONObject reject = inboundRule(inboundTag);
+                reject.put("domain", exactDomains);
+                reject.put("domain_suffix", suffixDomains);
+                reject.put("outbound", blockTag);
+                managed.add(reject);
+            } else {
+                String egressTag = createManagedEgress(outbounds, suffix);
+                JSONObject allow = inboundRule(inboundTag);
+                allow.put("domain", exactDomains);
+                allow.put("domain_suffix", suffixDomains);
+                allow.put("outbound", egressTag);
+                managed.add(allow);
+                JSONObject reject = inboundRule(inboundTag);
+                reject.put("outbound", blockTag);
+                managed.add(reject);
+            }
         }
         for (int i = managed.size() - 1; i >= 0; i--) rules.add(0, managed.get(i));
         route.put("rules", rules);
@@ -808,6 +840,23 @@ public class VpsSshCommandService {
     }
 
     private static void removeManagedDomainRules(JSONArray rules, String inboundTag) {
+        removeManagedDomainRules(rules, inboundTag, true);
+    }
+
+    private static void removeManagedDomainRules(JSONArray rules, String inboundTag, boolean hadManagedMarker) {
+        // Modern blacklist is the managed sniff + domain-scoped reject pair at the rule prefix.
+        if (hadManagedMarker && rules.size() >= 2) {
+            JSONObject sniff = rules.getJSONObject(0);
+            JSONObject reject = rules.getJSONObject(1);
+            if (sniff != null && reject != null && "sniff".equals(sniff.getString("action"))
+                    && "reject".equals(reject.getString("action"))
+                    && matchesInbound(sniff.get("inbound"), inboundTag)
+                    && matchesInbound(reject.get("inbound"), inboundTag)
+                    && (reject.containsKey("domain") || reject.containsKey("domain_suffix"))) {
+                rules.remove(1);
+                rules.remove(0);
+            }
+        }
         for (int i = 0; i < rules.size();) {
             JSONObject rule = rules.getJSONObject(i);
             if (rule == null || !matchesInbound(rule.get("inbound"), inboundTag)) {
@@ -840,6 +889,15 @@ public class VpsSshCommandService {
             }
             i++;
         }
+    }
+
+    private static boolean hasOutboundTag(JSONArray outbounds, String expectedTag) {
+        if (outbounds == null || expectedTag == null) return false;
+        for (int i = 0; i < outbounds.size(); i++) {
+            JSONObject outbound = outbounds.getJSONObject(i);
+            if (outbound != null && expectedTag.equals(outbound.getString("tag"))) return true;
+        }
+        return false;
     }
 
     private static boolean hasManagedLegacyDomainRule(JSONArray rules, String inboundTag) {
@@ -1960,6 +2018,7 @@ public class VpsSshCommandService {
         boolean success = false;
         boolean activeChanged = false;
         boolean replacementStarted = false;
+        boolean rollbackSucceeded = false;
         try {
             ssh = createSshClient(instanceId);
             boolean modern = isModernSingBox(ssh);
@@ -1975,7 +2034,9 @@ public class VpsSshCommandService {
                 }
                 if (StringUtils.isEmpty(original)) throw new IOException("读取 sing-box 配置失败: " + confPath);
                 List<String> domains = entry.getValue() != null ? entry.getValue().getDomains() : Collections.emptyList();
-                String patched = applyDomainWhitelistToSingBoxConfig(original, domains, modern);
+                String mode = entry.getValue() != null && entry.getValue().getMode() != null
+                        ? entry.getValue().getMode() : "whitelist";
+                String patched = applyDomainPolicyToSingBoxConfig(original, domains, mode, modern);
                 if (JSON.parseObject(original).equals(JSON.parseObject(patched))) continue;
                 DomainConfigCandidate candidate = new DomainConfigCandidate(node, confPath, operationToken);
                 candidates.add(candidate);
@@ -1983,7 +2044,7 @@ public class VpsSshCommandService {
                     writeAndValidateCandidate(ssh, candidate.tempPath, patched);
                 } catch (IOException modernError) {
                     if (!modern) throw modernError;
-                    String legacy = applyDomainWhitelistToSingBoxConfig(original, domains, false);
+                    String legacy = applyDomainPolicyToSingBoxConfig(original, domains, mode, false);
                     try {
                         writeAndValidateCandidate(ssh, candidate.tempPath, legacy);
                     } catch (IOException legacyError) {
@@ -2017,6 +2078,7 @@ public class VpsSshCommandService {
                                 .append(shellQuote(candidate.backupPath)).append(' ').append(shellQuote(candidate.confPath)).append("; fi;");
                     }
                     execAndRead(rollback, "sh -c " + quoteSh(command.toString()) + " 2>&1");
+                    rollbackSucceeded = true;
                 } catch (Exception rollbackError) {
                     log.error("rollback domain whitelist configs failed: instanceId={}", instanceId, rollbackError);
                 }
@@ -2032,7 +2094,7 @@ public class VpsSshCommandService {
                     try (Session cleanup = ssh.startSession()) {
                         StringBuilder command = new StringBuilder("rm -f --");
                         for (DomainConfigCandidate candidate : candidates) command.append(' ').append(shellQuote(candidate.tempPath));
-                        if (success) {
+                        if (success || rollbackSucceeded) {
                             for (DomainConfigCandidate candidate : candidates) command.append(' ').append(shellQuote(candidate.backupPath));
                         }
                         execAndRead(cleanup, "sh -c " + quoteSh(command.toString()) + " 2>&1");
@@ -2129,7 +2191,9 @@ public class VpsSshCommandService {
 
     private void restartSingBoxChecked(SSHClient ssh) throws IOException {
         try (Session session = ssh.startSession()) {
-            String command = "printf '5\\n3\\n' | sb >/tmp/skyway-singbox-restart.log 2>&1; rc=$?; "
+            String command = "if command -v systemctl >/dev/null 2>&1 && systemctl cat sing-box >/dev/null 2>&1; then "
+                    + "systemctl restart sing-box >/tmp/skyway-singbox-restart.log 2>&1; rc=$?; "
+                    + "else printf '5\\n3\\n' | sb >/tmp/skyway-singbox-restart.log 2>&1; rc=$?; fi; "
                     + "if command -v systemctl >/dev/null 2>&1; then systemctl is-active --quiet sing-box || rc=1; fi; "
                     + "cat /tmp/skyway-singbox-restart.log; echo __RC__$rc";
             String output = execAndReadWithTimeout(session, "sh -c " + quoteSh(command), 45);

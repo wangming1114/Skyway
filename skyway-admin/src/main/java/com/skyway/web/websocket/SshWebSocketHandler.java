@@ -553,9 +553,9 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
         String remark = obj.getString("remark");
         String nodeType = obj.getString("nodeType");
         String relayText = obj.getString("relayText");
-        ProxyNodeDomainWhitelist domainWhitelist;
+        ProxyNodeDomainWhitelist domainPolicy;
         try {
-            domainWhitelist = proxyDomainWhitelistService.resolve(obj.get("domainWhitelist"));
+            domainPolicy = proxyDomainWhitelistService.resolveRequest(obj);
         } catch (IllegalArgumentException e) {
             sendExecError(wsSession, reqId, e.getMessage());
             sendExecEnd(wsSession, reqId, -1);
@@ -604,7 +604,7 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
         Long instanceId = (Long) instanceIdObj;
         final String nodeTypeFinal = nodeType;
         final VpsSshCommandService.Socks5RelayConfig relayFinal = relay;
-        final ProxyNodeDomainWhitelist domainWhitelistFinal = domainWhitelist;
+        final ProxyNodeDomainWhitelist domainPolicyFinal = domainPolicy;
 
         executor.execute(() -> {
             SSHClient ssh = null;
@@ -748,12 +748,14 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                 } else if (remark != null && !remark.trim().isEmpty()) {
                     parsed.setRemark(remark.trim());
                 }
-                if (domainWhitelistFinal != null) {
-                    sendExecOutput(wsSession, reqId, "应用域名白名单（" + domainWhitelistFinal.getDomains().size() + " 个域名）...\n", false);
-                    vpsSshCommandService.applyDomainWhitelistToProxyNodeConfig(parsed, domainWhitelistFinal);
+                if (domainPolicyFinal != null) {
+                    String modeLabel = ProxyDomainWhitelistService.MODE_BLACKLIST.equals(domainPolicyFinal.getMode()) ? "黑名单" : "白名单";
+                    sendExecOutput(wsSession, reqId, "应用域名" + modeLabel + "（" + domainPolicyFinal.getDomains().size() + " 个域名）...\n", false);
+                    vpsSshCommandService.applyDomainWhitelistToProxyNodeConfig(parsed, domainPolicyFinal);
                 }
-                parsed.setDomainWhitelist(domainWhitelistFinal);
-                parsed.setDomainPolicyJson(proxyDomainWhitelistService.serialize(domainWhitelistFinal));
+                parsed.setDomainPolicy(domainPolicyFinal);
+                parsed.setDomainWhitelist(proxyDomainWhitelistService.isWhitelist(domainPolicyFinal) ? domainPolicyFinal : null);
+                parsed.setDomainPolicyJson(proxyDomainWhitelistService.serialize(domainPolicyFinal));
                 try {
                     if (proxyNodeService.insert(parsed) <= 0) {
                         throw new IllegalStateException("节点数据库保存失败");
@@ -1209,6 +1211,7 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
         o.put("expireTime", node.getExpireTime() != null ? new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(node.getExpireTime()) : null);
         o.put("status", node.getStatus());
         o.put("remark", node.getRemark());
+        o.put("domainPolicy", node.getDomainPolicy());
         o.put("domainWhitelist", node.getDomainWhitelist());
         return o;
     }

@@ -110,6 +110,26 @@ public class ProxyNodeControllerDomainWhitelistTest {
     }
 
     @Test
+    public void unifiedEndpointStoresBlacklistAndHidesLegacyWhitelistField() throws Exception {
+        ProxyNode node = node(1L, 10L);
+        when(proxyNodeService.getById(1L)).thenReturn(node);
+        when(proxyNodeService.updateDomainPolicy(eq(1L), any(), eq("tester"))).thenReturn(1);
+        Map<String, Object> policy = policyBody("example.com");
+        policy.put("mode", "blacklist");
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("domainPolicy", policy);
+
+        AjaxResult result = controller.updateDomainPolicy(1L, body);
+
+        assertEquals(HttpStatus.SUCCESS, result.get(AjaxResult.CODE_TAG));
+        ProxyNode returned = (ProxyNode) result.get(AjaxResult.DATA_TAG);
+        assertEquals("blacklist", returned.getDomainPolicy().getMode());
+        assertEquals(null, returned.getDomainWhitelist());
+        verify(vpsSshCommandService).applyDomainWhitelistToProxyNodeConfig(eq(node),
+                org.mockito.ArgumentMatchers.argThat(value -> "blacklist".equals(value.getMode())));
+    }
+
+    @Test
     @SuppressWarnings("unchecked")
     public void batchAllowsPartialSuccessAcrossVpsButKeepsEachVpsAtomic() throws Exception {
         ProxyNode first = node(1L, 10L);

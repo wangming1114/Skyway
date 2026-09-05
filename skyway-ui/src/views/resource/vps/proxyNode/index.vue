@@ -2,7 +2,7 @@
   <div class="app-container">
     <div v-if="isMobile" class="mobile-resource-tools">
       <el-button plain icon="Filter" @click="filterOpen = true">筛选</el-button>
-      <el-button type="warning" plain :disabled="selectedIds.length === 0" @click="openBatchDomainWhitelist" v-hasPermi="['resource:vps:edit']">批量白名单</el-button>
+      <el-button type="warning" plain :disabled="selectedIds.length === 0" @click="openBatchDomainWhitelist" v-hasPermi="['resource:vps:edit']">批量域名策略</el-button>
       <el-button type="danger" plain icon="Delete" :disabled="selectedIds.length === 0" @click="handleBatchDelete" v-hasPermi="['resource:vps:remove']">批量删除（{{ selectedIds.length }}）</el-button>
     </div>
     <el-drawer v-if="isMobile" v-model="filterOpen" title="筛选节点" direction="btt" size="auto">
@@ -47,7 +47,7 @@
     </el-form>
 
     <el-row v-if="!isMobile" :gutter="10" class="mb8">
-      <el-button type="warning" plain :disabled="selectedIds.length === 0" @click="openBatchDomainWhitelist" v-hasPermi="['resource:vps:edit']">批量白名单</el-button>
+      <el-button type="warning" plain :disabled="selectedIds.length === 0" @click="openBatchDomainWhitelist" v-hasPermi="['resource:vps:edit']">批量域名策略</el-button>
       <el-button type="danger" plain icon="Delete" :disabled="selectedIds.length === 0" @click="handleBatchDelete" v-hasPermi="['resource:vps:remove']">批量删除</el-button>
       <right-toolbar v-model:showSearch="showSearch" @queryTable="getList" />
     </el-row>
@@ -115,7 +115,7 @@
       </el-table-column>
       <el-table-column label="访问范围" width="145" align="center">
         <template #default="{ row }">
-          <el-tag v-if="row.domainWhitelist?.domains?.length" type="warning" size="small">白名单 {{ row.domainWhitelist.domains.length }} 个</el-tag>
+          <el-tag v-if="row.domainPolicy?.domains?.length" :type="row.domainPolicy.mode === 'blacklist' ? 'danger' : 'warning'" size="small">{{ row.domainPolicy.mode === 'blacklist' ? '黑名单' : '白名单' }} {{ row.domainPolicy.domains.length }} 个</el-tag>
           <el-tag v-else type="info" size="small" effect="plain">不限制</el-tag>
         </template>
       </el-table-column>
@@ -168,7 +168,7 @@
     <div v-else v-loading="loading" class="mobile-card-list proxy-node-mobile-list">
       <article v-for="row in nodeList" :key="row.id" class="mobile-card proxy-node-card">
         <div class="mobile-card__head"><el-checkbox :model-value="isNodeSelected(row.id)" :aria-label="`选择节点 ${row.nodeName || row.id}`" @change="checked => toggleNodeSelection(row.id, checked)" /><span class="mobile-card__title">{{ row.nodeName || '-' }}</span><el-tag size="small" :type="getNodeTypeTagColor(row.nodeType)">{{ row.nodeType || '-' }}</el-tag><el-switch v-model="row.status" active-value="0" inactive-value="1" :disabled="statusLoadingId === row.id" @change="handleStatusChange(row)" v-hasPermi="['resource:vps:edit']" /></div>
-        <div class="mobile-card__meta"><span class="mobile-card__wide">地址：{{ row.address || '-' }}<template v-if="row.port">:{{ row.port }}</template></span><span>VPS：<el-link v-if="row.instanceId" type="primary" :underline="false" @click="goVpsDetail(row.instanceId)">{{ instanceName(row.instanceId) }}</el-link><i v-else>-</i></span><span>客户：<el-link v-if="row.customerId" type="primary" :underline="false" @click="goCustomerDetail(row.customerId)">{{ customerName(row.customerId) }}</el-link><i v-else>-</i></span><span>有效期：{{ row.expireTime ? parseTime(row.expireTime, '{y}-{m}-{d}') : '永久' }}</span><span>访问范围：{{ row.domainWhitelist?.domains?.length ? `白名单 ${row.domainWhitelist.domains.length} 个` : '不限制' }}</span><span>累计流量：{{ trafficMap[row.id] ? nodeTrafficSummaryText(row) : '-' }}</span><span>实时速率：{{ trafficMap[row.id] ? nodeRealtimeSummaryText(row) : '-' }}</span><span>限速：{{ rateLimitLogicText(row) }}</span><span>限速周期：{{ rateLimitDurationText(row) }}</span><span class="mobile-card__wide">备注：{{ row.remark || '-' }}</span></div>
+        <div class="mobile-card__meta"><span class="mobile-card__wide">地址：{{ row.address || '-' }}<template v-if="row.port">:{{ row.port }}</template></span><span>VPS：<el-link v-if="row.instanceId" type="primary" :underline="false" @click="goVpsDetail(row.instanceId)">{{ instanceName(row.instanceId) }}</el-link><i v-else>-</i></span><span>客户：<el-link v-if="row.customerId" type="primary" :underline="false" @click="goCustomerDetail(row.customerId)">{{ customerName(row.customerId) }}</el-link><i v-else>-</i></span><span>有效期：{{ row.expireTime ? parseTime(row.expireTime, '{y}-{m}-{d}') : '永久' }}</span><span>访问范围：{{ domainPolicyText(row) }}</span><span>累计流量：{{ trafficMap[row.id] ? nodeTrafficSummaryText(row) : '-' }}</span><span>实时速率：{{ trafficMap[row.id] ? nodeRealtimeSummaryText(row) : '-' }}</span><span>限速：{{ rateLimitLogicText(row) }}</span><span>限速周期：{{ rateLimitDurationText(row) }}</span><span class="mobile-card__wide">备注：{{ row.remark || '-' }}</span></div>
         <div class="mobile-card__actions"><el-button link type="primary" @click="handleDetail(row)" v-hasPermi="['resource:vps:list', 'resource:vps:query']">详情</el-button><el-button link type="primary" @click="handleShare(row)" v-hasPermi="['resource:vps:list', 'resource:vps:query']">订阅信息</el-button><el-button link type="primary" @click="handleCopyUrl(row)" v-hasPermi="['resource:vps:list', 'resource:vps:query']">复制链接</el-button><el-dropdown trigger="click" @command="(cmd) => handleNodeCommand(cmd, row)" v-hasPermi="['resource:vps:list', 'resource:vps:query', 'resource:vps:edit', 'resource:vps:remove']"><el-button link type="primary" icon="More">更多</el-button><template #dropdown><el-dropdown-menu><el-dropdown-item command="accessLog" v-hasPermi="['resource:vps:list', 'resource:vps:query']">访问日志</el-dropdown-item><el-dropdown-item command="edit" v-hasPermi="['resource:vps:edit']">编辑</el-dropdown-item><el-dropdown-item command="rateLimit" v-hasPermi="['resource:vps:edit']">设置限速</el-dropdown-item><el-dropdown-item command="delete" v-hasPermi="['resource:vps:remove']">删除</el-dropdown-item><el-dropdown-item command="forceDelete" divided v-hasPermi="['resource:vps:remove']">强制删除</el-dropdown-item></el-dropdown-menu></template></el-dropdown></div>
       </article>
       <el-empty v-if="!loading && !nodeList.length" description="暂无节点" />
@@ -358,8 +358,8 @@
             </el-form-item>
           </template>
         </template>
-        <el-form-item label="域名白名单">
-          <DomainWhitelistEditor v-model="editNodeForm.domainWhitelist" />
+        <el-form-item label="域名策略">
+          <DomainWhitelistEditor v-model="editNodeForm.domainPolicy" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -368,8 +368,8 @@
       </template>
     </el-dialog>
 
-    <el-dialog title="批量配置域名白名单" v-model="batchDomainVisible" :width="isMobile ? 'calc(100vw - 20px)' : '680px'" append-to-body destroy-on-close>
-      <p>将应用到已选择的 {{ selectedIds.length }} 个节点；关闭白名单即清除限制。</p>
+    <el-dialog title="批量配置域名策略" v-model="batchDomainVisible" :width="isMobile ? 'calc(100vw - 20px)' : '680px'" append-to-body destroy-on-close>
+      <p>将应用到已选择的 {{ selectedIds.length }} 个节点；选择“不限制”即清除策略。</p>
       <DomainWhitelistEditor v-model="batchDomainPolicy" />
       <el-table v-if="batchDomainResults.length" :data="batchDomainResults" max-height="220" size="small" class="batch-domain-results">
         <el-table-column prop="nodeId" label="节点 ID" width="100" />
@@ -452,8 +452,8 @@ import {
   listProxyNodeRateLimit,
   setProxyNodeRateLimit,
   removeProxyNodeRateLimit,
-  updateProxyDomainWhitelist,
-  batchUpdateProxyDomainWhitelist
+  updateProxyDomainPolicy,
+  batchUpdateProxyDomainPolicy
 } from '@/api/resource/vps'
 import { listCustomer } from '@/api/member/customer'
 import { parseTime } from '@/utils/skyway'
@@ -557,7 +557,7 @@ const editNodeForm = reactive({
   relayPort: '',
   relayUsername: '',
   relayPassword: '',
-  domainWhitelist: null
+  domainPolicy: null
 })
 const editOriginalDomainPolicy = ref(null)
 const canEditRelay = computed(() => editNodeRow.value?.nodeType === 'VLESS-REALITY')
@@ -985,13 +985,20 @@ function removeRelayFromConfigJson(configJson) {
 function cloneDomainPolicy(policy) {
   if (!policy) return null
   return {
+    mode: policy.mode || 'whitelist',
     presetKeys: Array.isArray(policy.presetKeys) ? [...policy.presetKeys] : [],
     customDomains: Array.isArray(policy.customDomains) ? [...policy.customDomains] : []
   }
 }
 
 function domainPolicyValid(policy) {
-  return !policy || (policy.presetKeys?.length || policy.customDomains?.length)
+  return !policy || (['whitelist', 'blacklist'].includes(policy.mode) && (policy.presetKeys?.length || policy.customDomains?.length))
+}
+
+function domainPolicyText(row) {
+  const policy = row?.domainPolicy
+  if (!policy?.domains?.length) return '不限制'
+  return `${policy.mode === 'blacklist' ? '黑名单' : '白名单'} ${policy.domains.length} 个`
 }
 
 function domainPolicyChanged(left, right) {
@@ -1004,8 +1011,8 @@ function openNodeEdit(row) {
   editNodeForm.port = row.port
   editNodeForm.url = row.url || ''
   editNodePermanent.value = !row.expireTime
-  editNodeForm.domainWhitelist = cloneDomainPolicy(row.domainWhitelist)
-  editOriginalDomainPolicy.value = cloneDomainPolicy(row.domainWhitelist)
+  editNodeForm.domainPolicy = cloneDomainPolicy(row.domainPolicy || row.domainWhitelist)
+  editOriginalDomainPolicy.value = cloneDomainPolicy(row.domainPolicy || row.domainWhitelist)
   resetEditRelayForm()
   if (row.nodeType === 'VLESS-REALITY') {
     const relayText = relayTextFromRow(row)
@@ -1127,8 +1134,8 @@ function syncUpdatedNodeName(row, updatedNode) {
 
 function submitNodeEdit() {
   if (!editNodeRow.value?.id) return
-  if (!domainPolicyValid(editNodeForm.domainWhitelist)) {
-    proxy.$modal.msgWarning('启用域名白名单后请至少选择一个分组或填写一个自定义域名')
+  if (!domainPolicyValid(editNodeForm.domainPolicy)) {
+    proxy.$modal.msgWarning('启用域名策略后请至少选择一个分组或填写一个自定义域名')
     return
   }
   const payload = {
@@ -1149,7 +1156,7 @@ function submitNodeEdit() {
     payload.relayEnabled = false
   }
   editNodeSaving.value = true
-  const whitelistChanged = domainPolicyChanged(editOriginalDomainPolicy.value, editNodeForm.domainWhitelist)
+  const policyChanged = domainPolicyChanged(editOriginalDomainPolicy.value, editNodeForm.domainPolicy)
   updateProxyNode(payload).then(async res => {
     const row = editNodeRow.value
     row.expireTime = payload.expireTime
@@ -1163,9 +1170,10 @@ function submitNodeEdit() {
       row.remark = ''
       row.configJson = removeRelayFromConfigJson(row.configJson)
     }
-    if (whitelistChanged) {
-      const whitelistRes = await updateProxyDomainWhitelist(row.id, editNodeForm.domainWhitelist || {})
-      row.domainWhitelist = whitelistRes?.data?.domainWhitelist || null
+    if (policyChanged) {
+      const policyRes = await updateProxyDomainPolicy(row.id, { domainPolicy: editNodeForm.domainPolicy })
+      row.domainPolicy = policyRes?.data?.domainPolicy || null
+      row.domainWhitelist = policyRes?.data?.domainWhitelist || null
     }
     if (detailData.value?.id === row.id) {
       detailData.value.expireTime = row.expireTime
@@ -1174,6 +1182,7 @@ function submitNodeEdit() {
       detailData.value.nodeName = row.nodeName
       detailData.value.remark = row.remark
       detailData.value.configJson = row.configJson
+      detailData.value.domainPolicy = row.domainPolicy
       detailData.value.domainWhitelist = row.domainWhitelist
     }
     proxy.$modal.msgSuccess('节点已更新')
@@ -1245,15 +1254,15 @@ function openBatchDomainWhitelist() {
 function submitBatchDomainWhitelist() {
   if (!selectedIds.value.length || !domainPolicyValid(batchDomainPolicy.value)) return
   batchDomainSaving.value = true
-  batchUpdateProxyDomainWhitelist({
+  batchUpdateProxyDomainPolicy({
     nodeIds: [...selectedIds.value],
-    domainWhitelist: batchDomainPolicy.value
+    domainPolicy: batchDomainPolicy.value
   }).then(res => {
     const success = Number(res?.data?.successCount || 0)
     const failed = Number(res?.data?.failedCount || 0)
     batchDomainResults.value = Array.isArray(res?.data?.results) ? res.data.results : []
-    if (failed) proxy.$modal.msgWarning(`白名单应用完成：成功 ${success} 个，失败 ${failed} 个`)
-    else proxy.$modal.msgSuccess(`白名单已应用到 ${success} 个节点`)
+    if (failed) proxy.$modal.msgWarning(`域名策略应用完成：成功 ${success} 个，失败 ${failed} 个`)
+    else proxy.$modal.msgSuccess(`域名策略已应用到 ${success} 个节点`)
     getList()
   }).catch(() => {}).finally(() => { batchDomainSaving.value = false })
 }

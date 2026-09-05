@@ -172,6 +172,13 @@ export function getProxyDomainWhitelistPresets() {
   })
 }
 
+export function getProxyDomainPolicyPresets() {
+  return request({
+    url: '/resource/vps/proxyNode/domainPolicy/presets',
+    method: 'get'
+  })
+}
+
 export function updateProxyDomainWhitelist(nodeId, data) {
   return request({
     url: '/resource/vps/proxyNode/' + nodeId + '/domainWhitelist',
@@ -183,6 +190,22 @@ export function updateProxyDomainWhitelist(nodeId, data) {
 export function batchUpdateProxyDomainWhitelist(data) {
   return request({
     url: '/resource/vps/proxyNode/domainWhitelist/batch',
+    method: 'put',
+    data
+  })
+}
+
+export function updateProxyDomainPolicy(nodeId, data) {
+  return request({
+    url: '/resource/vps/proxyNode/' + nodeId + '/domainPolicy',
+    method: 'put',
+    data
+  })
+}
+
+export function batchUpdateProxyDomainPolicy(data) {
+  return request({
+    url: '/resource/vps/proxyNode/domainPolicy/batch',
     method: 'put',
     data
   })

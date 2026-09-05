@@ -184,6 +184,39 @@ public class VpsDomainWhitelistConfigTest {
                 .anyMatch(rule -> "skyway-domain-egress-other".equals(rule.getString("outbound"))));
     }
 
+    @Test
+    public void modernBlacklistRejectsOnlyMatchingDomains() {
+        JSONObject root = parse(VpsSshCommandService.applyDomainPolicyToSingBoxConfig(
+                BASE, Collections.singletonList("example.com"), "blacklist", true));
+        JSONArray rules = root.getJSONObject("route").getJSONArray("rules");
+
+        assertEquals("sniff", rules.getJSONObject(0).getString("action"));
+        assertEquals("reject", rules.getJSONObject(1).getString("action"));
+        assertTrue(rules.getJSONObject(1).getJSONArray("domain").contains("example.com"));
+        assertTrue(rules.getJSONObject(1).getJSONArray("domain_suffix").contains(".example.com"));
+        assertEquals("other-node", rules.getJSONObject(2).getString("inbound"));
+        assertEquals("direct", findOutbound(root, "skyway-domain-egress-").getString("type"));
+        assertNull(findOutbound(root, "skyway-domain-block-"));
+    }
+
+    @Test
+    public void legacyBlacklistUsesDomainScopedBlockAndModeSwitchIsIdempotent() {
+        String black = VpsSshCommandService.applyDomainPolicyToSingBoxConfig(
+                BASE, Collections.singletonList("example.com"), "blacklist", false);
+        JSONObject legacy = parse(black);
+        assertEquals("block", findOutbound(legacy, "skyway-domain-block-").getString("type"));
+        assertTrue(legacy.getJSONObject("route").getJSONArray("rules").getJSONObject(0)
+                .getJSONArray("domain").contains("example.com"));
+
+        String white = VpsSshCommandService.applyDomainPolicyToSingBoxConfig(
+                black, Collections.singletonList("openai.com"), "whitelist", true);
+        String blackAgain = VpsSshCommandService.applyDomainPolicyToSingBoxConfig(
+                white, Collections.singletonList("example.com"), "blacklist", true);
+        String repeated = VpsSshCommandService.applyDomainPolicyToSingBoxConfig(
+                blackAgain, Collections.singletonList("example.com"), "blacklist", true);
+        assertEquals(parse(blackAgain), parse(repeated));
+    }
+
     private JSONObject parse(String json) {
         return JSON.parseObject(json);
     }

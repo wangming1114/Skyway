@@ -16,9 +16,11 @@ import com.skyway.common.utils.StringUtils;
 import com.skyway.resource.domain.ProxyNode;
 import com.skyway.resource.domain.ProxyNodeDomainWhitelist;
 
-/** Resolves built-in domain presets and validates persisted node whitelist snapshots. */
+/** Resolves built-in domain presets and validates persisted node domain-policy snapshots. */
 @Service
 public class ProxyDomainWhitelistService {
+    public static final String MODE_WHITELIST = "whitelist";
+    public static final String MODE_BLACKLIST = "blacklist";
     public static final int PRESET_VERSION = 1;
     public static final int MAX_CUSTOM_DOMAINS = 200;
     public static final int MAX_RESOLVED_DOMAINS = 500;
@@ -59,7 +61,7 @@ public class ProxyDomainWhitelistService {
         return new ArrayList<>(PRESETS.values());
     }
 
-    /** Accepts a request map/JSONObject or a deserialized policy and returns an immutable snapshot. */
+    /** Accepts a request map/JSONObject or a deserialized policy and returns a normalized snapshot. */
     public ProxyNodeDomainWhitelist resolve(Object raw) {
         if (raw == null) return null;
         ProxyNodeDomainWhitelist request;
@@ -68,8 +70,9 @@ public class ProxyDomainWhitelistService {
                     ? (ProxyNodeDomainWhitelist) raw
                     : JSON.parseObject(JSON.toJSONString(raw), ProxyNodeDomainWhitelist.class);
         } catch (Exception e) {
-            throw new IllegalArgumentException("域名白名单格式错误");
+            throw new IllegalArgumentException("域名策略格式错误");
         }
+        String mode = normalizeMode(request.getMode());
         List<String> keys = request.getPresetKeys() != null ? request.getPresetKeys() : Collections.emptyList();
         List<String> custom = request.getCustomDomains() != null ? request.getCustomDomains() : Collections.emptyList();
         if (keys.isEmpty() && custom.isEmpty()) return null;
@@ -82,7 +85,7 @@ public class ProxyDomainWhitelistService {
         for (String rawKey : keys) {
             String key = rawKey != null ? rawKey.trim().toLowerCase() : "";
             Preset preset = PRESETS.get(key);
-            if (preset == null) throw new IllegalArgumentException("未知的白名单分组: " + rawKey);
+            if (preset == null) throw new IllegalArgumentException("未知的域名策略分组: " + rawKey);
             normalizedKeys.add(key);
             resolved.addAll(preset.getDomains());
         }
@@ -95,14 +98,43 @@ public class ProxyDomainWhitelistService {
         }
         if (resolved.isEmpty()) return null;
         if (resolved.size() > MAX_RESOLVED_DOMAINS) {
-            throw new IllegalArgumentException("白名单展开后最多 " + MAX_RESOLVED_DOMAINS + " 个域名");
+            throw new IllegalArgumentException("域名策略展开后最多 " + MAX_RESOLVED_DOMAINS + " 个域名");
         }
         ProxyNodeDomainWhitelist policy = new ProxyNodeDomainWhitelist();
+        policy.setMode(mode);
         policy.setPresetVersion(PRESET_VERSION);
         policy.setPresetKeys(new ArrayList<>(normalizedKeys));
         policy.setCustomDomains(new ArrayList<>(normalizedCustom));
         policy.setDomains(new ArrayList<>(resolved));
         return policy;
+    }
+
+    /** Compatibility parser for the old whitelist-only fields and endpoints. */
+    public ProxyNodeDomainWhitelist resolveLegacyWhitelist(Object raw) {
+        ProxyNodeDomainWhitelist policy = resolve(raw);
+        if (policy != null) policy.setMode(MODE_WHITELIST);
+        return policy;
+    }
+
+    /** Resolves create/update envelopes and rejects ambiguous old/new fields. */
+    public ProxyNodeDomainWhitelist resolveRequest(Map<String, ?> body) {
+        if (body == null) return null;
+        boolean hasPolicy = body.containsKey("domainPolicy");
+        boolean hasWhitelist = body.containsKey("domainWhitelist");
+        if (hasPolicy && hasWhitelist) {
+            throw new IllegalArgumentException("domainPolicy 与 domainWhitelist 不能同时提交");
+        }
+        if (hasPolicy) return resolve(body.get("domainPolicy"));
+        if (hasWhitelist) return resolveLegacyWhitelist(body.get("domainWhitelist"));
+        return resolve(body);
+    }
+
+    private String normalizeMode(String rawMode) {
+        String mode = rawMode == null ? MODE_WHITELIST : rawMode.trim().toLowerCase();
+        if (!MODE_WHITELIST.equals(mode) && !MODE_BLACKLIST.equals(mode)) {
+            throw new IllegalArgumentException("域名策略模式必须为 whitelist 或 blacklist");
+        }
+        return mode;
     }
 
     public String serialize(ProxyNodeDomainWhitelist policy) {
@@ -113,14 +145,24 @@ public class ProxyDomainWhitelistService {
         if (StringUtils.isEmpty(json)) return null;
         try {
             ProxyNodeDomainWhitelist policy = JSON.parseObject(json, ProxyNodeDomainWhitelist.class);
-            return policy != null && policy.getDomains() != null && !policy.getDomains().isEmpty() ? policy : null;
+            if (policy == null || policy.getDomains() == null || policy.getDomains().isEmpty()) return null;
+            policy.setMode(normalizeMode(policy.getMode()));
+            return policy;
         } catch (Exception ignored) {
             return null;
         }
     }
 
     public void hydrate(ProxyNode node) {
-        if (node != null) node.setDomainWhitelist(parseStored(node.getDomainPolicyJson()));
+        if (node != null) {
+            ProxyNodeDomainWhitelist policy = parseStored(node.getDomainPolicyJson());
+            node.setDomainPolicy(policy);
+            node.setDomainWhitelist(isWhitelist(policy) ? policy : null);
+        }
+    }
+
+    public boolean isWhitelist(ProxyNodeDomainWhitelist policy) {
+        return policy != null && MODE_WHITELIST.equals(normalizeMode(policy.getMode()));
     }
 
     public void hydrate(List<ProxyNode> nodes) {

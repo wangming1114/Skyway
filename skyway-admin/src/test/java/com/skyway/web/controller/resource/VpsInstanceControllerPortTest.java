@@ -5,6 +5,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.anyMap;
 
 import java.util.Collections;
 import java.util.HashMap;
@@ -119,7 +120,9 @@ public class VpsInstanceControllerPortTest {
         Map<String, Object> rawPolicy = new HashMap<>();
         rawPolicy.put("customDomains", Collections.singletonList("example.com"));
         when(vpsPortAvailabilityService.resolveAutoPortForCreate(7L, 10000)).thenReturn(10005);
-        when(proxyDomainWhitelistService.resolve(rawPolicy)).thenReturn(policy);
+        policy.setMode("whitelist");
+        when(proxyDomainWhitelistService.resolveRequest(anyMap())).thenReturn(policy);
+        when(proxyDomainWhitelistService.isWhitelist(policy)).thenReturn(true);
         when(proxyDomainWhitelistService.serialize(policy)).thenReturn("{\"domains\":[\"example.com\"]}");
         when(vpsSshCommandService.addProxyNodeOnInstance(7L, 9L, 10005, null, "VLESS-REALITY"))
                 .thenReturn(created);

@@ -94,17 +94,39 @@ public class ProxyNodeController extends BaseController {
         return success(proxyDomainWhitelistService.listPresets());
     }
 
+    @PreAuthorize("@ss.hasPermi('resource:vps:query') or @ss.hasPermi('resource:vps:list')")
+    @GetMapping("/domainPolicy/presets")
+    public AjaxResult domainPolicyPresets() {
+        return success(proxyDomainWhitelistService.listPresets());
+    }
+
     @PreAuthorize("@ss.hasPermi('resource:vps:edit')")
     @Log(title = "代理节点域名白名单", businessType = BusinessType.UPDATE)
     @PutMapping("/{id}/domainWhitelist")
     public AjaxResult updateDomainWhitelist(@PathVariable Long id, @RequestBody(required = false) Map<String, Object> body) {
+        Object raw = body != null && body.containsKey("domainWhitelist") ? body.get("domainWhitelist") : body;
+        return updateDomainPolicyInternal(id, raw, true);
+    }
+
+    @PreAuthorize("@ss.hasPermi('resource:vps:edit')")
+    @Log(title = "代理节点域名策略", businessType = BusinessType.UPDATE)
+    @PutMapping("/{id}/domainPolicy")
+    public AjaxResult updateDomainPolicy(@PathVariable Long id, @RequestBody(required = false) Map<String, Object> body) {
+        return updateDomainPolicyInternal(id, body, false);
+    }
+
+    private AjaxResult updateDomainPolicyInternal(Long id, Object raw, boolean legacyWhitelist) {
         ProxyNode node = proxyNodeService.getById(id);
         if (node == null) return AjaxResult.error("节点不存在");
         ProxyNodeDomainWhitelist policy;
         try {
-            Object policyBody = body != null && body.containsKey("domainWhitelist")
-                    ? body.get("domainWhitelist") : body;
-            policy = proxyDomainWhitelistService.resolve(policyBody);
+            if (!legacyWhitelist && raw instanceof Map) {
+                @SuppressWarnings("unchecked") Map<String, Object> envelope = (Map<String, Object>) raw;
+                policy = proxyDomainWhitelistService.resolveRequest(envelope);
+            } else {
+                policy = legacyWhitelist ? proxyDomainWhitelistService.resolveLegacyWhitelist(raw)
+                        : proxyDomainWhitelistService.resolve(raw);
+            }
         } catch (IllegalArgumentException e) {
             return AjaxResult.error(e.getMessage());
         }
@@ -115,18 +137,19 @@ public class ProxyNodeController extends BaseController {
             try {
                 if (proxyNodeService.updateDomainPolicy(id, json, getUsername()) <= 0) {
                     vpsSshCommandService.applyDomainWhitelistToProxyNodeConfig(node, previous);
-                    return AjaxResult.error("白名单保存失败，远端配置已恢复");
+                    return AjaxResult.error("域名策略保存失败，远端配置已恢复");
                 }
             } catch (Exception dbError) {
                 try { vpsSshCommandService.applyDomainWhitelistToProxyNodeConfig(node, previous); } catch (Exception ignoredRollback) {}
                 throw dbError;
             }
             node.setDomainPolicyJson(json);
-            node.setDomainWhitelist(policy);
+            node.setDomainPolicy(policy);
+            node.setDomainWhitelist(proxyDomainWhitelistService.isWhitelist(policy) ? policy : null);
             return success(node);
         } catch (Exception e) {
-            log.warn("apply domain whitelist failed: nodeId={}", id, e);
-            return AjaxResult.error("白名单应用失败: " + (e.getMessage() != null ? e.getMessage() : "服务器操作异常"));
+            log.warn("apply domain policy failed: nodeId={}", id, e);
+            return AjaxResult.error("域名策略应用失败: " + (e.getMessage() != null ? e.getMessage() : "服务器操作异常"));
         }
     }
 
@@ -134,14 +157,29 @@ public class ProxyNodeController extends BaseController {
     @Log(title = "批量配置代理节点域名白名单", businessType = BusinessType.UPDATE)
     @PutMapping("/domainWhitelist/batch")
     public AjaxResult batchUpdateDomainWhitelist(@RequestBody Map<String, Object> body) {
+        return batchUpdateDomainPolicyInternal(body, true);
+    }
+
+    @PreAuthorize("@ss.hasPermi('resource:vps:edit')")
+    @Log(title = "批量配置代理节点域名策略", businessType = BusinessType.UPDATE)
+    @PutMapping("/domainPolicy/batch")
+    public AjaxResult batchUpdateDomainPolicy(@RequestBody Map<String, Object> body) {
+        return batchUpdateDomainPolicyInternal(body, false);
+    }
+
+    private AjaxResult batchUpdateDomainPolicyInternal(Map<String, Object> body, boolean legacyWhitelist) {
         List<Long> nodeIds = parseLongList(body != null ? body.get("nodeIds") : null);
         if (nodeIds.isEmpty()) return AjaxResult.error("请选择代理节点");
         if (nodeIds.size() > 100) return AjaxResult.error("单次最多配置 100 个节点");
         ProxyNodeDomainWhitelist policy;
         try {
-            Object policyBody = body != null && body.containsKey("domainWhitelist")
-                    ? body.get("domainWhitelist") : body;
-            policy = proxyDomainWhitelistService.resolve(policyBody);
+            if (legacyWhitelist) {
+                Object policyBody = body != null && body.containsKey("domainWhitelist")
+                        ? body.get("domainWhitelist") : body;
+                policy = proxyDomainWhitelistService.resolveLegacyWhitelist(policyBody);
+            } else {
+                policy = proxyDomainWhitelistService.resolveRequest(body);
+            }
         } catch (IllegalArgumentException e) {
             return AjaxResult.error(e.getMessage());
         }

@@ -1,10 +1,15 @@
 <template>
   <div class="domain-whitelist-editor">
     <div class="domain-whitelist-switch">
-      <el-switch v-model="enabled" active-text="仅允许白名单域名" inactive-text="不限制" @change="emitValue" />
-      <span class="domain-whitelist-warning">启用后，未命中域名、直接 IP 和无法识别域名的连接都会中断。</span>
+      <el-radio-group v-model="mode" @change="onModeChange">
+        <el-radio-button value="">不限制</el-radio-button>
+        <el-radio-button value="whitelist">白名单</el-radio-button>
+        <el-radio-button value="blacklist">黑名单</el-radio-button>
+      </el-radio-group>
+      <span v-if="mode === 'whitelist'" class="domain-whitelist-warning">仅允许命中域名；直接 IP、无法识别域名和其他连接都会中断。</span>
+      <span v-else-if="mode === 'blacklist'" class="domain-whitelist-warning">命中域名及其子域会被阻断；其他域名和直接 IP 正常放行。</span>
     </div>
-    <template v-if="enabled">
+    <template v-if="mode">
       <div class="domain-whitelist-toolbar">
         <span>预置分组（可多选）</span>
         <el-button link type="primary" size="small" :disabled="loading || !!loadError" @click="selectAllPresets">全部常用</el-button>
@@ -21,11 +26,11 @@
         v-model="customText"
         type="textarea"
         :rows="4"
-        placeholder="追加自定义域名，每行一个；example.com 会同时允许其所有子域"
+        :placeholder="`追加自定义域名，每行一个；example.com 会同时${mode === 'whitelist' ? '允许' : '阻断'}其所有子域`"
         @input="emitValue"
       />
       <div :class="['domain-whitelist-summary', { invalid: !valid }]">
-        {{ valid ? `最终允许 ${resolvedDomains.length} 个域名` : '请至少选择一个分组或填写一个自定义域名' }}
+        {{ valid ? `最终${mode === 'whitelist' ? '允许' : '阻断'} ${resolvedDomains.length} 个域名` : '请至少选择一个分组或填写一个自定义域名' }}
       </div>
       <el-collapse v-if="resolvedDomains.length" class="domain-whitelist-preview">
         <el-collapse-item title="查看最终域名快照">
@@ -38,14 +43,14 @@
 
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
-import { getProxyDomainWhitelistPresets } from '@/api/resource/vps'
+import { getProxyDomainPolicyPresets } from '@/api/resource/vps'
 
 const props = defineProps({ modelValue: { type: Object, default: null } })
 const emit = defineEmits(['update:modelValue'])
 const presets = ref([])
 const loading = ref(false)
 const loadError = ref('')
-const enabled = ref(false)
+const mode = ref('')
 const presetKeys = ref([])
 const customText = ref('')
 let syncing = false
@@ -68,11 +73,11 @@ const resolvedDomains = computed(() => {
   previewCustomDomains.value.forEach(domain => values.add(domain))
   return Array.from(values)
 })
-const valid = computed(() => !enabled.value || resolvedDomains.value.length > 0)
+const valid = computed(() => !mode.value || resolvedDomains.value.length > 0)
 
 function syncFromModel(value) {
   syncing = true
-  enabled.value = !!value
+  mode.value = value ? (value.mode || 'whitelist') : ''
   presetKeys.value = Array.isArray(value?.presetKeys) ? [...value.presetKeys] : []
   customText.value = Array.isArray(value?.customDomains) ? value.customDomains.join('\n') : ''
   syncing = false
@@ -80,7 +85,13 @@ function syncFromModel(value) {
 
 function emitValue() {
   if (syncing) return
-  emit('update:modelValue', enabled.value ? { presetKeys: [...presetKeys.value], customDomains: customDomains.value } : null)
+  emit('update:modelValue', mode.value ? { mode: mode.value, presetKeys: [...presetKeys.value], customDomains: customDomains.value } : null)
+}
+
+function onModeChange() {
+  presetKeys.value = []
+  customText.value = ''
+  emitValue()
 }
 
 function selectAllPresets() {
@@ -92,12 +103,12 @@ function clearPresets() {
   emitValue()
 }
 function validate() { return valid.value }
-function getValue() { return enabled.value ? { presetKeys: [...presetKeys.value], customDomains: customDomains.value } : null }
+function getValue() { return mode.value ? { mode: mode.value, presetKeys: [...presetKeys.value], customDomains: customDomains.value } : null }
 
 watch(() => props.modelValue, value => syncFromModel(value), { immediate: true, deep: true })
 onMounted(() => {
   loading.value = true
-  getProxyDomainWhitelistPresets().then(res => {
+  getProxyDomainPolicyPresets().then(res => {
     presets.value = res.data || []
     loadError.value = ''
   }).catch(() => {

@@ -86,6 +86,26 @@ public class ProxyDomainWhitelistServiceTest {
         assertEquals(policy.getPresetVersion(), restored.getPresetVersion());
     }
 
+    @Test
+    public void supportsBlacklistAndTreatsLegacyJsonAsWhitelist() {
+        Map<String, Object> blacklist = request(Collections.emptyList(), Collections.singletonList("example.com"));
+        blacklist.put("mode", "blacklist");
+        ProxyNodeDomainWhitelist resolved = service.resolve(blacklist);
+        assertEquals("blacklist", resolved.getMode());
+
+        ProxyNodeDomainWhitelist legacy = service.parseStored(
+                "{\"presetVersion\":1,\"presetKeys\":[],\"customDomains\":[\"old.example\"],\"domains\":[\"old.example\"]}");
+        assertEquals("whitelist", legacy.getMode());
+    }
+
+    @Test
+    public void rejectsConflictingNewAndLegacyRequestFields() {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("domainPolicy", request(Collections.emptyList(), Collections.singletonList("one.example")));
+        body.put("domainWhitelist", request(Collections.emptyList(), Collections.singletonList("two.example")));
+        assertThrows(IllegalArgumentException.class, () -> service.resolveRequest(body));
+    }
+
     private void assertInvalid(Map<String, Object> request) {
         assertThrows(IllegalArgumentException.class, () -> service.resolve(request));
     }

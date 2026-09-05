@@ -554,7 +554,7 @@ CREATE TABLE `res_proxy_node` (
   `port` int(11) NOT NULL COMMENT '端口',
   `url` varchar(2000) DEFAULT NULL COMMENT '完整分享链接',
   `config_json` text COMMENT '协议配置参数(JSON)',
-  `domain_policy_json` text COMMENT '域名白名单策略JSON(null=不限制)',
+  `domain_policy_json` text COMMENT '域名访问策略JSON(null=不限制，mode=whitelist/blacklist)',
   `expire_time` datetime DEFAULT NULL COMMENT '有效期(null=永久有效)',
   `status` char(1) DEFAULT '0' COMMENT '状态(0=正常 1=停用)',
   `remark` varchar(500) DEFAULT NULL COMMENT '备注',
