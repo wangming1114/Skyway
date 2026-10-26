@@ -217,6 +217,9 @@
             </div>
           </div>
         </el-form-item>
+        <el-form-item v-if="canConfigureRelay" label="SNI" prop="sni" required>
+          <el-input v-model="addForm.sni" placeholder="如 www.bing.com，不含协议或端口" maxlength="253" />
+        </el-form-item>
         <template v-if="canConfigureRelay">
           <el-form-item label="启用中转">
             <el-switch v-model="addForm.enableRelay" active-text="SOCKS5" />
@@ -590,6 +593,9 @@
         <el-form-item label="端口">
           <el-input-number v-model="editNodeForm.port" :min="1" :max="65535" controls-position="right" style="width: 100%" />
         </el-form-item>
+        <el-form-item v-if="canEditRelay" label="SNI" required>
+          <el-input v-model="editNodeForm.sni" placeholder="如 www.bing.com，不含协议或端口" maxlength="253" />
+        </el-form-item>
         <el-form-item label="订阅链接">
           <el-input v-model="editNodeForm.url" type="textarea" :rows="4" maxlength="2000" show-word-limit placeholder="支持手动编辑" />
         </el-form-item>
@@ -724,6 +730,7 @@ import {
 } from '@/api/resource/vps'
 import { listCustomer } from '@/api/member/customer'
 import { parseTime } from '@/utils/skyway'
+import { DEFAULT_REALITY_SNI, isValidRealitySni, readRealitySni } from '@/utils/realitySni'
 import { buildClashSubscribeUrl, parseVlessUrl, safeProxyShareFilename } from '@/utils/proxyShare'
 import { getDefaultNodeExpireTime, parseSocks5RelayLines, parseSocks5RelayText } from '@/utils/proxyNodeBatch'
 import { DocumentCopy, Loading, Edit, Delete } from '@element-plus/icons-vue'
@@ -986,6 +993,7 @@ const addForm = reactive({
   customerId: undefined,
   instanceId: undefined,
   nodeType: 'VLESS-REALITY',
+  sni: DEFAULT_REALITY_SNI,
   port: undefined,
   enableRelay: false,
   relayText: '',
@@ -1007,6 +1015,13 @@ const addFormRules = {
   instanceId: [{ required: true, message: '请选择服务器', trigger: 'change' }],
   nodeType: [{ required: true, message: '请选择协议类型', trigger: 'change' }],
   port: [{ required: true, message: '请输入端口', trigger: 'blur' }],
+  sni: [{
+    validator: (rule, value, callback) => {
+      callback(!canConfigureRelay.value || isValidRealitySni(value)
+        ? undefined : new Error('请输入有效的 SNI 域名，不含协议、路径或端口'))
+    },
+    trigger: ['blur', 'change']
+  }],
   relayText: [{
     validator: (rule, value, callback) => {
       if (!addForm.enableRelay || !canConfigureRelay.value) {
@@ -1062,6 +1077,7 @@ const editNodeForm = reactive({
   expireTime: null,
   port: undefined,
   url: '',
+  sni: '',
   originalRelay: false,
   enableRelay: false,
   relayText: '',
@@ -1192,6 +1208,7 @@ function removeRelayFromConfigJson(configJson) {
 }
 
 function addRelayPayload(payload) {
+  if (canConfigureRelay.value) payload.sni = addForm.sni.trim()
   if (!addForm.enableRelay || !canConfigureRelay.value) return payload
   return {
     ...payload,
@@ -1227,6 +1244,7 @@ function handleAdd() {
   addForm.customerId = props.fixedCustomer ? props.customerId : undefined
   addForm.instanceId = props.instanceId || undefined
   addForm.nodeType = 'VLESS-REALITY'
+  addForm.sni = DEFAULT_REALITY_SNI
   addForm.port = undefined
   addPortAuto.value = false
   addPortWarning.value = ''
@@ -1710,6 +1728,7 @@ function openNodeEdit(row) {
   editNodeForm.expireTime = row.expireTime || null
   editNodeForm.port = row.port
   editNodeForm.url = row.url || ''
+  editNodeForm.sni = readRealitySni(row)
   editNodePermanent.value = !row.expireTime
   editNodeForm.domainPolicy = cloneDomainPolicy(row.domainPolicy || row.domainWhitelist)
   editOriginalDomainPolicy.value = cloneDomainPolicy(row.domainPolicy || row.domainWhitelist)
@@ -1731,15 +1750,26 @@ function syncUpdatedNodeName(row, updatedNode) {
   if (updatedNode.nodeName != null) row.nodeName = updatedNode.nodeName
   if (updatedNode.port != null) row.port = updatedNode.port
   if (Object.prototype.hasOwnProperty.call(updatedNode, 'url')) row.url = updatedNode.url || ''
+  if (updatedNode.configJson != null) row.configJson = updatedNode.configJson
+  if (shareData.value?.id === row.id) {
+    const previousUrl = shareData.value.url
+    shareData.value = { ...shareData.value, ...updatedNode }
+    if (shareVisible.value && shareData.value.url !== previousUrl) refreshShareQrCode()
+  }
   if (detailData.value?.id === row.id) {
     detailData.value.nodeName = row.nodeName
     detailData.value.port = row.port
     detailData.value.url = row.url
+    detailData.value.configJson = row.configJson
   }
 }
 
 function submitNodeEdit() {
   if (!editNodeRow.value?.id) return
+  if (canEditRelay.value && !isValidRealitySni(editNodeForm.sni)) {
+    proxy.$modal.msgWarning('请输入有效的 SNI 域名，不含协议、路径或端口')
+    return
+  }
   if (!domainPolicyValid(editNodeForm.domainPolicy)) {
     proxy.$modal.msgWarning('启用域名策略后请至少选择一个分组或填写一个自定义域名')
     return
@@ -1750,6 +1780,7 @@ function submitNodeEdit() {
     port: editNodeForm.port,
     url: (editNodeForm.url || '').trim()
   }
+  if (canEditRelay.value) payload.sni = editNodeForm.sni.trim()
   if (editNodeForm.enableRelay && canEditRelay.value) {
     const relayText = (editNodeForm.relayText || '').trim()
     const parsedRelay = parseSocks5RelayText(relayText)
@@ -2036,15 +2067,16 @@ function downloadQrCode() {
 
 function refreshShareQrCode() {
   shareQrDataUrl.value = ''
-  if (!shareVlessUrl.value) return
-  QRCode.toDataURL(shareVlessUrl.value, {
+  const shareUrl = shareVlessUrl.value
+  if (!shareUrl) return
+  QRCode.toDataURL(shareUrl, {
     width: 220,
     margin: 1,
     errorCorrectionLevel: 'M'
   }).then(url => {
-    if (shareVlessUrl.value) shareQrDataUrl.value = url
+    if (shareVlessUrl.value === shareUrl) shareQrDataUrl.value = url
   }).catch(() => {
-    proxy.$modal.msgWarning('二维码生成失败，请直接复制 VLESS 链接')
+    if (shareVlessUrl.value === shareUrl) proxy.$modal.msgWarning('二维码生成失败，请直接复制 VLESS 链接')
   })
 }
 

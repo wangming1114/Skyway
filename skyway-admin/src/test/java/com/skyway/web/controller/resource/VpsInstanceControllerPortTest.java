@@ -164,4 +164,51 @@ public class VpsInstanceControllerPortTest {
         verify(vpsSshCommandService).removeProxyNodeFromServer(created);
         verify(vpsSshCommandService, never()).ensureTrafficRulesForPort(7L, 10005);
     }
+    @Test
+    public void httpCreationAppliesSniAndSavesItBeforeGeneratingShareLink() throws Exception {
+        ProxyNode created = new ProxyNode();
+        created.setConfigJson("{\"id\":\"keep-id\",\"sni\":\"old.example\"}");
+        when(vpsSshCommandService.addProxyNodeOnInstance(7L, 9L, 10000, null, "VLESS-REALITY")).thenReturn(created);
+        when(proxyNodeService.insert(created)).thenReturn(1);
+        Map<String, Object> body = new HashMap<>();
+        body.put("customerId", 9L);
+        body.put("port", 10000);
+        body.put("sni", " www.bing.com ");
+        AjaxResult result = controller.addProxyNode(7L, body);
+        assertEquals(HttpStatus.SUCCESS, result.get(AjaxResult.CODE_TAG));
+        InOrder order = inOrder(vpsSshCommandService, proxyNodeService);
+        order.verify(vpsSshCommandService).applyRealitySniToProxyNodeConfig(created, "www.bing.com");
+        order.verify(proxyNodeService).insert(created);
+        assertEquals("www.bing.com", com.alibaba.fastjson2.JSON.parseObject(created.getConfigJson()).getString("sni"));
+        assertEquals("keep-id", com.alibaba.fastjson2.JSON.parseObject(created.getConfigJson()).getString("id"));
+    }
+
+    @Test
+    public void httpCreationRejectsInvalidOrUnsupportedSniBeforeConnecting() {
+        for (String nodeType : new String[]{"VLESS-REALITY", "VMess-TCP"}) {
+            Map<String, Object> body = new HashMap<>();
+            body.put("customerId", 9L);
+            body.put("port", 10000);
+            body.put("nodeType", nodeType);
+            body.put("sni", "VLESS-REALITY".equals(nodeType) ? "" : "www.bing.com");
+            assertEquals(HttpStatus.ERROR, controller.addProxyNode(7L, body).get(AjaxResult.CODE_TAG));
+        }
+        org.mockito.Mockito.verifyNoInteractions(vpsSshCommandService, vpsPortAvailabilityService);
+    }
+
+    @Test
+    public void httpCreationCleansUpWhenSniRestartFails() throws Exception {
+        ProxyNode created = new ProxyNode();
+        when(vpsSshCommandService.addProxyNodeOnInstance(7L, 9L, 10000, null, "VLESS-REALITY")).thenReturn(created);
+        org.mockito.Mockito.doThrow(new java.io.IOException("restart failed")).when(vpsSshCommandService)
+                .applyRealitySniToProxyNodeConfig(created, "www.bing.com");
+        Map<String, Object> body = new HashMap<>();
+        body.put("customerId", 9L);
+        body.put("port", 10000);
+        body.put("sni", "www.bing.com");
+        assertEquals(HttpStatus.ERROR, controller.addProxyNode(7L, body).get(AjaxResult.CODE_TAG));
+        verify(vpsSshCommandService).removeProxyNodeFromServer(created);
+        verify(proxyNodeService, never()).insert(org.mockito.ArgumentMatchers.any());
+    }
+
 }

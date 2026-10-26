@@ -33,6 +33,7 @@ import com.skyway.resource.service.IProxyNodeTrafficService;
 import com.skyway.resource.service.IVpsInstanceService;
 import com.skyway.web.service.VpsSshCommandService;
 import com.skyway.web.service.VpsInstanceOperationCoordinator;
+import com.skyway.web.service.RealitySniSupport;
 import com.skyway.web.service.ProxyDomainWhitelistService;
 import com.skyway.web.service.VpsPortAvailabilityService;
 import net.schmizz.sshj.SSHClient;
@@ -570,6 +571,14 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
             sendExecEnd(wsSession, reqId, -1);
             return;
         }
+        final String sni;
+        try {
+            sni = RealitySniSupport.requestedSni(obj, nodeType);
+        } catch (IllegalArgumentException e) {
+            sendExecError(wsSession, reqId, e.getMessage());
+            sendExecEnd(wsSession, reqId, -1);
+            return;
+        }
         VpsSshCommandService.Socks5RelayConfig relay = null;
         if (relayText != null && !relayText.trim().isEmpty()) {
             if (!"VLESS-REALITY".equals(nodeType)) {
@@ -747,6 +756,11 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                     parsed.setRemark(relayText.trim());
                 } else if (remark != null && !remark.trim().isEmpty()) {
                     parsed.setRemark(remark.trim());
+                }
+                if (sni != null) {
+                    sendExecOutput(wsSession, reqId, "应用 SNI 配置并重启 sing-box...\n", false);
+                    vpsSshCommandService.applyRealitySniToProxyNodeConfig(parsed, sni);
+                    parsed.setConfigJson(RealitySniSupport.withSni(parsed.getConfigJson(), sni));
                 }
                 if (domainPolicyFinal != null) {
                     String modeLabel = ProxyDomainWhitelistService.MODE_BLACKLIST.equals(domainPolicyFinal.getMode()) ? "黑名单" : "白名单";
@@ -1020,7 +1034,7 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
     }
 
     /** 为 add/remove 节点等操作创建独立的 SSH 连接，用毕由调用方关闭，不依赖 session 长连接 */
-    private SSHClient createSshClient(Long instanceId) throws Exception {
+    SSHClient createSshClient(Long instanceId) throws Exception {
         VpsInstance inst = vpsInstanceService.getById(instanceId);
         if (inst == null || StringUtils.isEmpty(inst.getIp()) || inst.getSshPort() == null
                 || StringUtils.isEmpty(inst.getSshUsername())) {
@@ -1208,6 +1222,7 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
         o.put("address", node.getAddress());
         o.put("port", node.getPort());
         o.put("url", node.getUrl());
+        o.put("configJson", node.getConfigJson());
         o.put("expireTime", node.getExpireTime() != null ? new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(node.getExpireTime()) : null);
         o.put("status", node.getStatus());
         o.put("remark", node.getRemark());

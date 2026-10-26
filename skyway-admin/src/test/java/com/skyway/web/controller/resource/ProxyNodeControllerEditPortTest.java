@@ -54,6 +54,8 @@ public class ProxyNodeControllerEditPortTest {
 
     @BeforeEach
     public void setUpSecurity() {
+        ReflectionTestUtils.setField(controller, "vpsInstanceOperationCoordinator",
+                new com.skyway.web.service.VpsInstanceOperationCoordinator());
         SysUser user = new SysUser();
         user.setUserName("tester");
         LoginUser loginUser = new LoginUser();
@@ -444,6 +446,171 @@ public class ProxyNodeControllerEditPortTest {
         verify(proxyNodeTrafficService, never()).deleteByNodeId(any());
         verify(proxyNodeService, never()).deleteById(any());
         verify(proxyNodeRateLimitService, never()).markRemoved(any(), any(), any());
+    }
+
+    @Test
+    public void editSniRegeneratesShareUrlAndPreservesRelayMetadata() throws Exception {
+        ProxyNode existing = existingSniNode();
+        com.skyway.resource.mapper.ProxyNodeMapper mapper = org.mockito.Mockito.mock(com.skyway.resource.mapper.ProxyNodeMapper.class);
+        com.skyway.resource.service.impl.ProxyNodeServiceImpl realService = new com.skyway.resource.service.impl.ProxyNodeServiceImpl();
+        ReflectionTestUtils.setField(realService, "proxyNodeMapper", mapper);
+        ReflectionTestUtils.setField(controller, "proxyNodeService", realService);
+        when(mapper.selectById(10L)).thenReturn(existing);
+        when(mapper.update(any(ProxyNode.class))).thenReturn(1);
+        Map<String, Object> body = sniRequest(" www.bing.com ");
+        body.put("url", existing.getUrl());
+
+        AjaxResult result = controller.edit(body);
+
+        assertEquals(HttpStatus.SUCCESS, result.get(AjaxResult.CODE_TAG));
+        ProxyNode saved = (ProxyNode) result.get(AjaxResult.DATA_TAG);
+        org.junit.jupiter.api.Assertions.assertTrue(saved.getUrl().contains("sni=www.bing.com"));
+        org.junit.jupiter.api.Assertions.assertFalse(saved.getUrl().contains("old.example"));
+        com.alibaba.fastjson2.JSONObject config = com.alibaba.fastjson2.JSON.parseObject(saved.getConfigJson());
+        assertEquals("www.bing.com", config.getString("sni"));
+        assertEquals("socks", config.getJSONObject("relay").getString("type"));
+        verify(vpsSshCommandService).applyRealitySniToProxyNodeConfig(saved, "www.bing.com");
+    }
+
+    @Test
+    public void invalidSniIsRejectedBeforeAnyRemoteMutation() {
+        when(proxyNodeService.getById(10L)).thenReturn(existingSniNode());
+        AjaxResult result = controller.edit(sniRequest("https://www.bing.com"));
+        assertEquals(HttpStatus.ERROR, result.get(AjaxResult.CODE_TAG));
+        org.mockito.Mockito.verifyNoInteractions(vpsSshCommandService);
+        verify(proxyNodeService, never()).update(any());
+    }
+
+    @Test
+    public void failedSniUpdateRollsBackPortRelayAndStatusWithoutSaving() throws Exception {
+        ProxyNode existing = existingSniNode();
+        when(proxyNodeService.getById(10L)).thenReturn(existing);
+        doThrow(new java.io.IOException("restart failed"))
+                .when(vpsSshCommandService).applyRealitySniToProxyNodeConfig(any(), org.mockito.ArgumentMatchers.eq("www.bing.com"));
+        Map<String, Object> body = sniRequest("www.bing.com");
+        body.put("port", 10088);
+        body.put("relayText", "relay.example:1080:user:password");
+        body.put("status", "1");
+        AjaxResult result = controller.edit(body);
+        assertEquals(HttpStatus.ERROR, result.get(AjaxResult.CODE_TAG));
+        verify(proxyNodeService, never()).update(any());
+        InOrder order = inOrder(vpsSshCommandService);
+        order.verify(vpsSshCommandService).applySocks5RelayToProxyNodeConfig(org.mockito.ArgumentMatchers.eq(existing), any());
+        order.verify(vpsSshCommandService).updateProxyNodeConfigPortAndName(20L, existing.getNodeName(),
+                "VLESS-REALITY-203.0.113.8-10088-5-permanent", false, 10001, 10088);
+        order.verify(vpsSshCommandService).renameProxyNodeConfig(20L, "VLESS-REALITY-203.0.113.8-10088-5-permanent", true);
+        order.verify(vpsSshCommandService).applyRealitySniToProxyNodeConfig(any(), org.mockito.ArgumentMatchers.eq("www.bing.com"));
+        order.verify(vpsSshCommandService).renameProxyNodeConfig(20L, "VLESS-REALITY-203.0.113.8-10088-5-permanent", false);
+        order.verify(vpsSshCommandService).updateProxyNodeConfigPortAndName(20L, "VLESS-REALITY-203.0.113.8-10088-5-permanent",
+                existing.getNodeName(), false, 10088, 10001);
+        order.verify(vpsSshCommandService).applySocks5RelayToProxyNodeConfig(org.mockito.ArgumentMatchers.eq(existing), any());
+    }
+
+    @Test
+    public void databaseFailureRestoresExactSniSnapshotBeforeIdentityRollback() throws Exception {
+        ProxyNode existing = existingSniNode();
+        when(proxyNodeService.getById(10L)).thenReturn(existing);
+        when(vpsSshCommandService.applyRealitySniToProxyNodeConfig(any(), org.mockito.ArgumentMatchers.eq("www.bing.com")))
+                .thenReturn("remote snapshot with different handshake");
+        Map<String, Object> body = sniRequest("www.bing.com");
+        body.put("status", "1");
+        AjaxResult result = controller.edit(body);
+        assertEquals(HttpStatus.ERROR, result.get(AjaxResult.CODE_TAG));
+        InOrder order = inOrder(vpsSshCommandService, proxyNodeService);
+        order.verify(vpsSshCommandService).applyRealitySniToProxyNodeConfig(any(), org.mockito.ArgumentMatchers.eq("www.bing.com"));
+        order.verify(proxyNodeService).update(any());
+        order.verify(vpsSshCommandService).restoreRealitySniConfig(any(), org.mockito.ArgumentMatchers.eq("remote snapshot with different handshake"));
+        order.verify(vpsSshCommandService).renameProxyNodeConfig(20L, existing.getNodeName(), false);
+    }
+
+    @Test
+    public void databaseExceptionAlsoRestoresSniSnapshot() throws Exception {
+        ProxyNode existing = existingSniNode();
+        when(proxyNodeService.getById(10L)).thenReturn(existing);
+        when(vpsSshCommandService.applyRealitySniToProxyNodeConfig(any(), org.mockito.ArgumentMatchers.eq("www.bing.com"))).thenReturn("snapshot");
+        when(proxyNodeService.update(any())).thenThrow(new IllegalStateException("database failed"));
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class, () -> controller.edit(sniRequest("www.bing.com")));
+        verify(vpsSshCommandService).restoreRealitySniConfig(any(), org.mockito.ArgumentMatchers.eq("snapshot"));
+    }
+
+    @Test
+    public void unchangedSniPreservesManuallyEditedShareUrl() throws Exception {
+        ProxyNode existing = existingSniNode();
+        when(proxyNodeService.getById(10L)).thenReturn(existing);
+        when(proxyNodeService.update(any())).thenReturn(1);
+        Map<String, Object> body = sniRequest("old.example");
+        body.put("url", "custom share URL");
+        AjaxResult result = controller.edit(body);
+        assertEquals("custom share URL", ((ProxyNode) result.get(AjaxResult.DATA_TAG)).getUrl());
+        org.mockito.Mockito.verifyNoInteractions(vpsSshCommandService);
+    }
+
+    @Test
+    public void unchangedUrlFallbackSniDoesNotRequireSshOrRewriteLegacyMetadata() throws Exception {
+        ProxyNode existing = existingSniNode();
+        com.alibaba.fastjson2.JSONObject config = com.alibaba.fastjson2.JSON.parseObject(existing.getConfigJson());
+        config.remove("sni");
+        existing.setConfigJson(config.toJSONString());
+        when(proxyNodeService.getById(10L)).thenReturn(existing);
+        when(proxyNodeService.update(any())).thenReturn(1);
+        Map<String, Object> body = sniRequest("old.example");
+        body.put("remark", "new remark");
+        AjaxResult result = controller.edit(body);
+        assertEquals(HttpStatus.SUCCESS, result.get(AjaxResult.CODE_TAG));
+        ProxyNode saved = (ProxyNode) result.get(AjaxResult.DATA_TAG);
+        assertEquals(existing.getConfigJson(), saved.getConfigJson());
+        assertEquals("new remark", saved.getRemark());
+        org.mockito.Mockito.verifyNoInteractions(vpsSshCommandService);
+    }
+
+    @Test
+    public void unchangedSniKeepsStatusOnlyShortcutAndLegacyNodeName() throws Exception {
+        ProxyNode existing = existingSniNode();
+        existing.setNodeName("legacy-custom-name");
+        when(proxyNodeService.getById(10L)).thenReturn(existing);
+        when(proxyNodeService.update(any())).thenReturn(1);
+        Map<String, Object> body = sniRequest("old.example");
+        body.put("status", "1");
+        AjaxResult result = controller.edit(body);
+        assertEquals(HttpStatus.SUCCESS, result.get(AjaxResult.CODE_TAG));
+        assertEquals("legacy-custom-name", ((ProxyNode) result.get(AjaxResult.DATA_TAG)).getNodeName());
+        verify(vpsSshCommandService).renameProxyNodeConfig(20L, "legacy-custom-name", true);
+        verify(vpsSshCommandService, never()).applyRealitySniToProxyNodeConfig(any(), any());
+        org.mockito.Mockito.verifyNoMoreInteractions(vpsSshCommandService);
+    }
+
+    @Test
+    public void vmessEditWithoutSniPreservesConfigAndDoesNotConnectSsh() {
+        ProxyNode existing = existingSniNode();
+        existing.setNodeType("VMess-TCP");
+        existing.setNodeName("VMess-TCP-203.0.113.8-10001-5-permanent");
+        existing.setConfigJson("{\"id\":\"keep-id\",\"aid\":0,\"network\":\"tcp\"}");
+        when(proxyNodeService.getById(10L)).thenReturn(existing);
+        when(proxyNodeService.update(any())).thenReturn(1);
+        Map<String, Object> body = new HashMap<>();
+        body.put("id", 10L);
+        body.put("url", "custom vmess link");
+        AjaxResult result = controller.edit(body);
+        assertEquals(HttpStatus.SUCCESS, result.get(AjaxResult.CODE_TAG));
+        ProxyNode saved = (ProxyNode) result.get(AjaxResult.DATA_TAG);
+        assertEquals("custom vmess link", saved.getUrl());
+        assertEquals(existing.getConfigJson(), saved.getConfigJson());
+        org.mockito.Mockito.verifyNoInteractions(vpsSshCommandService);
+    }
+
+    private Map<String, Object> sniRequest(String sni) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("id", 10L);
+        body.put("sni", sni);
+        return body;
+    }
+
+    private ProxyNode existingSniNode() {
+        ProxyNode node = existingNode();
+        node.setNodeName("VLESS-REALITY-203.0.113.8-10001-5-permanent");
+        node.setConfigJson("{\"id\":\"user-id\",\"sni\":\"old.example\",\"relay\":{\"type\":\"socks\",\"server\":\"old-relay.example\",\"serverPort\":1080,\"username\":\"old\",\"password\":\"old\"}}");
+        node.setUrl("vless://user-id@203.0.113.8:10001?sni=old.example#node");
+        return node;
     }
 
     private ProxyNode existingNode() {

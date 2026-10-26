@@ -1186,7 +1186,7 @@ public class VpsSshCommandService {
         return "'" + s.replace("'", "'\"'\"'") + "'";
     }
 
-    private SSHClient createSshClient(Long instanceId) throws IOException {
+    SSHClient createSshClient(Long instanceId) throws IOException {
         VpsInstance inst = vpsInstanceService.getById(instanceId);
         if (inst == null || StringUtils.isEmpty(inst.getIp()) || inst.getSshPort() == null
                 || StringUtils.isEmpty(inst.getSshUsername())) {
@@ -1987,6 +1987,91 @@ public class VpsSshCommandService {
         } finally {
             if (ssh != null) {
                 try { ssh.close(); } catch (IOException e) { log.debug("SSH close: {}", e.getMessage()); }
+            }
+        }
+    }
+
+    /** Returns the exact remote snapshot for DB-failure rollback, or null for an unchanged config. */
+    public String applyRealitySniToProxyNodeConfig(ProxyNode node, String sni) throws IOException {
+        sni = RealitySniSupport.validate(sni);
+        assertRealityNode(node);
+        try (SSHClient ssh = createSshClient(node.getInstanceId())) {
+            String path = resolveProxyNodeConfigPath(ssh, node);
+            String original;
+            try (Session read = ssh.startSession()) {
+                original = execAndRead(read, "cat -- " + shellQuote(path));
+            }
+            if (StringUtils.isEmpty(original)) throw new IOException("读取 sing-box 配置失败");
+            String patched = RealitySniSupport.patchInbound(original, node, sni);
+            if (JSON.parseObject(original).equals(JSON.parseObject(patched))) return null;
+            replaceRealityConfig(ssh, path, original, patched, "1".equals(node.getStatus()));
+            return original;
+        }
+    }
+
+    public void restoreRealitySniConfig(ProxyNode node, String original) throws IOException {
+        if (original == null) return;
+        assertRealityNode(node);
+        try (SSHClient ssh = createSshClient(node.getInstanceId())) {
+            String path = resolveProxyNodeConfigPath(ssh, node);
+            String current;
+            try (Session read = ssh.startSession()) {
+                current = execAndRead(read, "cat -- " + shellQuote(path));
+            }
+            if (StringUtils.isEmpty(current)) throw new IOException("读取 sing-box 配置失败");
+            replaceRealityConfig(ssh, path, current, original, "1".equals(node.getStatus()));
+        }
+    }
+
+    private static void assertRealityNode(ProxyNode node) {
+        if (node == null || node.getInstanceId() == null || StringUtils.isEmpty(node.getNodeName())
+                || node.getPort() == null || !"VLESS-REALITY".equals(node.getNodeType())) {
+            throw new IllegalArgumentException("VLESS-REALITY 节点信息无效");
+        }
+    }
+
+    private void replaceRealityConfig(SSHClient ssh, String path, String original, String patched,
+            boolean disabled) throws IOException {
+        String token = Long.toHexString(System.nanoTime());
+        String temp = path + ".skyway-sni-" + token + ".tmp";
+        String backup = path + ".skyway-sni-" + token + ".bak";
+        boolean replacementStarted = false;
+        boolean canDeleteBackup = false;
+        try {
+            writeAndValidateCandidate(ssh, temp, patched);
+            replacementStarted = true;
+            try (Session replace = ssh.startSession()) {
+                String command = "set -e; cp -- " + shellQuote(path) + " " + shellQuote(backup)
+                        + "; mv -- " + shellQuote(temp) + " " + shellQuote(path) + "; echo __OK__";
+                String out = execAndRead(replace, "sh -c " + quoteSh(command) + " 2>&1");
+                if (out == null || !out.contains("__OK__")) throw new IOException("替换 SNI 配置失败");
+            }
+            if (!disabled) restartSingBoxChecked(ssh);
+            canDeleteBackup = true;
+        } catch (IOException | RuntimeException e) {
+            if (replacementStarted) {
+                try {
+                    // Restore the in-memory snapshot even if the backup copy itself failed.
+                    writeAndValidateCandidate(ssh, temp, original);
+                    try (Session restore = ssh.startSession()) {
+                        String out = execAndRead(restore, "sh -c " + quoteSh("set -e; mv -- "
+                                + shellQuote(temp) + " " + shellQuote(path) + "; echo __OK__") + " 2>&1");
+                        if (out == null || !out.contains("__OK__")) throw new IOException("恢复 SNI 配置失败");
+                    }
+                    if (!disabled) restartSingBoxChecked(ssh);
+                    canDeleteBackup = true;
+                } catch (Exception rollbackError) {
+                    e.addSuppressed(rollbackError);
+                    log.error("restore SNI config failed: path={}, backup={}", path, backup, rollbackError);
+                }
+            }
+            throw new IOException("SNI 配置更新失败: " + e.getMessage(), e);
+        } finally {
+            try (Session cleanup = ssh.startSession()) {
+                execAndRead(cleanup, "rm -f -- " + shellQuote(temp)
+                        + (canDeleteBackup ? " " + shellQuote(backup) : ""));
+            } catch (IOException cleanupError) {
+                log.warn("cleanup SNI temporary files failed: {}", path, cleanupError);
             }
         }
     }

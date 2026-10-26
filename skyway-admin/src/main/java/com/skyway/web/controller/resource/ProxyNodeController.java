@@ -38,6 +38,7 @@ import com.skyway.resource.service.IProxyNodeTrafficService;
 import com.skyway.web.service.VpsSshCommandService;
 import com.skyway.web.service.VpsSshCommandService.PortRateLimitRemoteResult;
 import com.skyway.web.service.ProxyDomainWhitelistService;
+import com.skyway.web.service.RealitySniSupport;
 import com.skyway.web.service.VpsInstanceOperationCoordinator;
 
 /**
@@ -387,8 +388,26 @@ public class ProxyNodeController extends BaseController {
             return AjaxResult.error("节点不存在");
         }
 
+        try (VpsInstanceOperationCoordinator.LockHandle ignored = vpsInstanceOperationCoordinator.lock(existing.getInstanceId())) {
+            // Re-read after waiting so edits use the latest name, port, status and SNI.
+            existing = proxyNodeService.getById(id);
+            if (existing == null) return AjaxResult.error("节点不存在");
+            return editLocked(body, existing);
+        }
+    }
+
+    private AjaxResult editLocked(Map<String, Object> body, ProxyNode existing) {
+        String sni;
+        boolean sniChanged;
+        try {
+            sni = RealitySniSupport.requestedSni(body, existing.getNodeType());
+            sniChanged = sni != null && !sni.equals(RealitySniSupport.readSni(existing));
+            if (sniChanged) RealitySniSupport.withSni(existing.getConfigJson(), sni);
+        } catch (IllegalArgumentException e) {
+            return AjaxResult.error(e.getMessage());
+        }
         ProxyNode row = new ProxyNode();
-        row.setId(id);
+        row.setId(existing.getId());
         fillRequiredFromExisting(row, existing);
 
         boolean hasExpireTime = body != null && body.containsKey("expireTime");
@@ -488,6 +507,7 @@ public class ProxyNodeController extends BaseController {
         }
 
         boolean statusOnly = hasStatus
+                && !sniChanged
                 && !hasExpireTime
                 && !hasUrl
                 && !hasRemark
@@ -581,17 +601,41 @@ public class ProxyNodeController extends BaseController {
             }
         }
 
+        String sniSnapshot = null;
+        if (sniChanged) {
+            try {
+                sniSnapshot = vpsSshCommandService.applyRealitySniToProxyNodeConfig(row, sni);
+                row.setConfigJson(RealitySniSupport.withSni(row.getConfigJson(), sni));
+                row.setUrl(null);
+            } catch (Exception e) {
+                rollbackRemoteSni(row, sniSnapshot);
+                rollbackEditedNode(existing, row, effectiveNodeName, newPort, nameChanged, portChanged,
+                        relayChanged, username);
+                return AjaxResult.error("SNI 配置更新失败: " + e.getMessage());
+            }
+        }
         row.setUpdateBy(username);
         try {
             int rows = proxyNodeService.update(row);
             if (rows > 0) return success(row);
+            rollbackRemoteSni(row, sniSnapshot);
             rollbackEditedNode(existing, row, effectiveNodeName, newPort, nameChanged, portChanged,
                     relayChanged, username);
             return toAjax(rows);
         } catch (RuntimeException e) {
+            rollbackRemoteSni(row, sniSnapshot);
             rollbackEditedNode(existing, row, effectiveNodeName, newPort, nameChanged, portChanged,
                     relayChanged, username);
             throw e;
+        }
+    }
+
+    private void rollbackRemoteSni(ProxyNode node, String snapshot) {
+        if (snapshot == null) return;
+        try {
+            vpsSshCommandService.restoreRealitySniConfig(node, snapshot);
+        } catch (Exception e) {
+            log.error("rollback SNI config failed: nodeId={}", node.getId(), e);
         }
     }
 

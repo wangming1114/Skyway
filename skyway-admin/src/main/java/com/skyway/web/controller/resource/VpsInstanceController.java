@@ -29,6 +29,7 @@ import com.skyway.resource.service.IProxyNodeService;
 import com.skyway.resource.service.IProxyNodeTrafficService;
 import com.skyway.resource.service.IVpsInstanceService;
 import com.skyway.web.service.VpsSshCommandService;
+import com.skyway.web.service.RealitySniSupport;
 import com.skyway.web.service.VpsInstanceOperationCoordinator;
 import com.skyway.web.service.VpsPortAvailabilityService;
 import com.skyway.web.service.VpsPortAvailabilityService.PortRecommendation;
@@ -262,6 +263,12 @@ public class VpsInstanceController extends BaseController {
         if (!"VLESS-REALITY".equals(nodeType) && !"VMess-TCP".equals(nodeType)) {
             return AjaxResult.error("不支持的协议类型: " + nodeType);
         }
+        String sni;
+        try {
+            sni = RealitySniSupport.requestedSni(body, nodeType);
+        } catch (IllegalArgumentException e) {
+            return AjaxResult.error(e.getMessage());
+        }
         log.debug("addProxyNode instanceId={} customerId={} port={} nodeType={}", instanceId, body.get("customerId"), body.get("port"), nodeType);
         String expireTimeStr = body != null && body.get("expireTime") != null ? body.get("expireTime").toString() : null;
         String remark = body != null && body.get("remark") != null ? body.get("remark").toString().trim() : null;
@@ -307,6 +314,10 @@ public class VpsInstanceController extends BaseController {
                     ? vpsSshCommandService.addProxyNodeOnInstance(instanceId, customerId, port, expireTimeStr, nodeType)
                     : vpsSshCommandService.addProxyNodeOnInstance(instanceId, customerId, port, expireTimeStr, nodeType, relay);
             createdNode = node;
+            if (sni != null) {
+                vpsSshCommandService.applyRealitySniToProxyNodeConfig(node, sni);
+                node.setConfigJson(RealitySniSupport.withSni(node.getConfigJson(), sni));
+            }
             node.setCreateBy(getUsername());
             if (relay != null) {
                 node.setRemark(relayText);
