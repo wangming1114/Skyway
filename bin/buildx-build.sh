@@ -22,7 +22,9 @@ if [ -f "${DOCKER_DIR}/.registry.env" ]; then
 fi
 
 echo "Buildx build and push: skyway-admin -> ${IMAGE}"
+# 关闭 provenance attestation，避免推送时出现 unknown manifest class 错误。
 docker buildx build --platform linux/amd64 \
+  --provenance=false \
   -t "${IMAGE}" \
   --push \
   -f "${DOCKER_DIR}/Dockerfile.skyway" .
