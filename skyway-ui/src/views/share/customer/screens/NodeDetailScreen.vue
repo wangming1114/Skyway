@@ -47,7 +47,7 @@
       <div class="onboarding-steps">
         <article class="onboarding-step">
           <i>1</i>
-          <div><strong>先选导入方式</strong><small>电脑优先使用 Clash 订阅或 VLESS 链接，手机优先扫码。</small></div>
+          <div><strong>先选导入方式</strong><small>电脑优先使用 Clash 订阅或原始链接，手机优先扫码。</small></div>
         </article>
         <article class="onboarding-step">
           <i>2</i>
@@ -62,20 +62,20 @@
 
     <div class="node-detail-layout">
       <section class="share-panel method-card node-method-card">
-        <h2><ClientIcon type="v2ray" size="lg" />方式一：使用 VLESS 原始链接</h2>
+        <h2><ClientIcon type="v2ray" size="lg" />方式一：使用 {{ node?.shareProtocol || '节点' }} 原始链接</h2>
         <div class="badge-row"><img :src="tagWindows" alt="Windows" /><span>适合 v2rayN、v2rayNG、Shadowrocket 等客户端</span></div>
         <div class="method-body">
           <StepList :steps="desktopV2raySteps" />
           <div class="node-link-box">
             <div class="node-link-head">
-              <strong>当前节点 VLESS</strong>
-              <button type="button" class="share-primary small" :disabled="!node?.vlessUrl" @click="$emit('copy-vless', node)">复制 VLESS</button>
+              <strong>当前节点 {{ node?.shareProtocol || '原始链接' }}</strong>
+              <button type="button" class="share-primary small" :disabled="!node?.shareUrl" @click="$emit('copy-vless', node)">复制链接</button>
             </div>
-            <textarea readonly :value="node?.vlessUrl || '当前节点暂无 VLESS 原始链接'"></textarea>
+            <textarea readonly :value="node?.shareUrl || '当前节点暂无原始链接'"></textarea>
           </div>
         </div>
         <div class="method-actions node-method-actions">
-          <button type="button" class="share-primary node-action-btn" :disabled="!node?.vlessUrl" @click="$emit('copy-vless', node)"><img :src="iconCopy" alt="" />复制 VLESS</button>
+          <button type="button" class="share-primary node-action-btn" :disabled="!node?.shareUrl" @click="$emit('copy-vless', node)"><img :src="iconCopy" alt="" />复制链接</button>
           <button type="button" class="share-outline node-action-btn" @click="$emit('open-guide', 'v2rayN')">查看 v2rayN 教程<img :src="iconExternalLink" alt="" /></button>
           <span><i>i</i>导入后建议先进行延迟测试，再设置系统代理。</span>
         </div>
@@ -108,7 +108,7 @@
           <ClientIcon type="shadowrocket" />
           <div>
             <h2>手机端扫码导入</h2>
-            <p>二维码内容为当前节点的 VLESS 原始链接，可用于 Shadowrocket、v2rayNG 等客户端。</p>
+            <p>二维码内容为当前节点原始链接，请使用支持该协议的客户端扫码导入。</p>
           </div>
         </div>
         <div class="node-qr-layout">
@@ -116,13 +116,13 @@
             <strong>当前节点二维码</strong>
             <small>{{ node?.name || '订阅节点' }}</small>
             <div class="dialog-actions node-secondary-actions">
-              <button type="button" class="share-outline small" :disabled="!node?.vlessUrl" @click="$emit('copy-vless', node)">复制链接</button>
+              <button type="button" class="share-outline small" :disabled="!node?.shareUrl" @click="$emit('copy-vless', node)">复制链接</button>
               <button type="button" class="share-outline small" :disabled="!qrUrl" @click="$emit('download-qr')">下载二维码</button>
             </div>
           </div>
           <div class="dialog-qr">
             <img v-if="qrUrl" :src="qrUrl" alt="订阅二维码" />
-            <span v-else>{{ node?.vlessUrl ? '生成中...' : '暂无二维码' }}</span>
+            <span v-else>{{ node?.shareUrl ? '生成中...' : '暂无二维码' }}</span>
           </div>
         </div>
       </section>

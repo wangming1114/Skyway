@@ -178,6 +178,9 @@ public class ProxyNodeDomainPolicyLiveIntegrationTest {
                     INSTANCE_ID, editedName, node.getNodeName(), true, port + 2, port);
             JSONObject restoredAfterEdit = JSON.parseObject(originalNodeConfig.toJSONString());
             restoredAfterEdit.getJSONArray("inbounds").getJSONObject(0).put("tag", node.getNodeName() + ".json");
+            // The node-scoped fallback must follow the renamed inbound, too.
+            restoredAfterEdit.getJSONObject("route").getJSONArray("rules").getJSONObject(0)
+                    .put("inbound", Collections.singletonList(node.getNodeName() + ".json"));
             assertEquals(restoredAfterEdit, JSON.parseObject(run(ssh, "cat -- " + shellQuote(disabledPath))));
             inboundTag = node.getNodeName() + ".json";
             editedPath = null;

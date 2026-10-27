@@ -37,6 +37,25 @@ import com.skyway.web.service.VpsSshCommandService;
 
 @ExtendWith(MockitoExtension.class)
 public class VpsInstanceControllerPortTest {
+    @Test
+    void hysteria2HttpCreationDoesNotApplySniAndInitializesUdpCounters() throws Exception {
+        ProxyNode created = new ProxyNode();
+        created.setPort(32332);
+        created.setNodeType("Hysteria2");
+        when(vpsSshCommandService.addProxyNodeOnInstance(7L, 9L, 32332, null, "Hysteria2")).thenReturn(created);
+        when(proxyNodeService.insert(created)).thenReturn(1);
+        Map<String, Object> body = new HashMap<>();
+        body.put("customerId", 9L);
+        body.put("port", 32332);
+        body.put("nodeType", "Hysteria2");
+        body.put("sni", "ignored invalid leftover");
+        AjaxResult result = controller.addProxyNode(7L, body);
+        assertEquals(HttpStatus.SUCCESS, result.get(AjaxResult.CODE_TAG));
+        verify(vpsSshCommandService).ensureTrafficRulesForPort(7L, 32332, "Hysteria2");
+        verify(vpsSshCommandService, never()).applyRealitySniToProxyNodeConfig(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+    }
+
 
     @Mock
     private IProxyNodeService proxyNodeService;

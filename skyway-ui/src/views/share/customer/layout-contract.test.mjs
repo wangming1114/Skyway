@@ -163,7 +163,7 @@ test('node detail shows first-use onboarding for what the detail page is for', (
   assert.match(detail, /新手使用引导/)
   assert.match(detail, /这个页面用于复制当前节点链接、扫码导入手机端，并按设备打开对应教程。/)
   assert.match(detail, /class="onboarding-steps"/)
-  assert.match(detail, /<strong>先选导入方式<\/strong>[\s\S]*电脑优先使用 Clash 订阅或 VLESS 链接/)
+  assert.match(detail, /<strong>先选导入方式<\/strong>[\s\S]*电脑优先使用 Clash 订阅或原始链接/)
   assert.match(detail, /<strong>复制链接或扫码<\/strong>[\s\S]*桌面端点击复制，手机端使用下方二维码/)
   assert.match(detail, /<strong>打开客户端完成导入<\/strong>[\s\S]*导入后先测试延迟，再启用系统代理/)
   assert.match(cssBlock(style, '.node-onboarding-panel'), /margin:\s*0 0 14px/)

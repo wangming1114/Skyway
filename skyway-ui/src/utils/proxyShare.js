@@ -1,6 +1,28 @@
 export const DEFAULT_SUBCONVERTER_URL = 'https://api.wcc.best/sub'
 export const DEFAULT_CLASH_CONFIG_URL = 'https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/config/ACL4SSR_Online.ini'
 export const DEFAULT_QR_SERVICE_URL = 'https://api.qrserver.com/v1/create-qr-code/'
+export const HYSTERIA2_SUBCONVERTER_URL = 'https://sub-server.v2rayssr.com/sub'
+export const HYSTERIA2_CLASH_CONFIG_URL = 'https://raw.githubusercontent.com/Aethersailor/Custom_OpenClash_Rules/main/cfg/Custom_Clash.ini'
+
+export function supportsSocks5Relay(nodeType) {
+  return nodeType === 'VLESS-REALITY' || nodeType === 'Hysteria2'
+}
+
+export function parseProxyShareUrl(value) {
+  const raw = String(value || '').trim()
+  if (/^vless:\/\//i.test(raw)) return { ...parseVlessUrl(raw), protocol: 'VLESS' }
+  const parsed = new URL(raw)
+  if (!['hysteria2:', 'hy2:'].includes(parsed.protocol)) throw new Error('不支持的节点链接')
+  return {
+    raw,
+    protocol: 'Hysteria2',
+    password: decodeURIComponent(parsed.username + (parsed.password ? ':' + parsed.password : '')),
+    host: parsed.hostname.replace(/^\[|\]$/g, ''),
+    port: parsed.port || '443',
+    name: parsed.hash ? decodeURIComponent(parsed.hash.slice(1)) : '',
+    params: Object.fromEntries(parsed.searchParams)
+  }
+}
 
 export function parseVlessUrl(vlessUrl) {
   const raw = String(vlessUrl || '').trim()
@@ -22,6 +44,15 @@ export function parseVlessUrl(vlessUrl) {
 }
 
 export function buildClashSubscribeUrl(vlessUrl, options = {}) {
+  if (/^(?:hysteria2|hy2):\/\//i.test(String(vlessUrl || '').trim())) {
+    const params = {
+      target: 'clash', url: String(vlessUrl).trim(),
+      config: options.configUrl || HYSTERIA2_CLASH_CONFIG_URL,
+      insert: 'false', emoji: 'true', tfo: 'false', scv: 'true', fdn: 'false',
+      expand: 'false', sort: 'false', append_type: 'false', new_name: 'true'
+    }
+    return `${options.baseUrl || HYSTERIA2_SUBCONVERTER_URL}?${Object.entries(params).map(([key, value]) => `${key}=${encodeURIComponent(value)}`).join('&')}`
+  }
   const baseUrl = options.baseUrl || DEFAULT_SUBCONVERTER_URL
   const configUrl = options.configUrl || DEFAULT_CLASH_CONFIG_URL
   return `${baseUrl}?target=clash&url=${encodeURIComponent(String(vlessUrl || '').trim())}&insert=false&config=${encodeURIComponent(configUrl)}`
@@ -59,6 +90,7 @@ export function normalizeShareNode(node = {}, now = new Date()) {
   const protocol = node.nodeType || inferProtocol(node, parsedUrl)
   const rawUrl = String(node.url || '').trim()
   const isVless = rawUrl.toLowerCase().startsWith('vless://')
+  const isHysteria2 = /^(?:hysteria2|hy2):\/\//i.test(rawUrl)
   const isClash = /clash/i.test(protocol) || /^https?:\/\//i.test(rawUrl)
 
   return {
@@ -75,7 +107,9 @@ export function normalizeShareNode(node = {}, now = new Date()) {
     isExpired,
     isExpiringSoon: remainingDays !== null && remainingDays >= 0 && remainingDays <= 7,
     vlessUrl: isVless ? rawUrl : '',
-    clashUrl: isVless ? buildClashSubscribeUrl(rawUrl) : (isClash ? rawUrl : '')
+    shareUrl: isVless || isHysteria2 ? rawUrl : '',
+    shareProtocol: isHysteria2 ? 'Hysteria2' : 'VLESS',
+    clashUrl: isVless || isHysteria2 ? buildClashSubscribeUrl(rawUrl) : (isClash ? rawUrl : '')
   }
 }
 
@@ -114,7 +148,7 @@ export function buildShareNodeSummary(nodes = []) {
 function tryParseShareUrl(url) {
   if (!url) return null
   try {
-    return parseVlessUrl(url)
+    return parseProxyShareUrl(url)
   } catch {
     return null
   }
@@ -131,6 +165,7 @@ function tryParseGenericUrl(url) {
 
 function inferProtocol(node, parsedUrl) {
   if (parsedUrl) {
+    if (parsedUrl.protocol === 'Hysteria2') return 'Hysteria2'
     const security = parsedUrl.params?.security
     const network = parsedUrl.params?.type
     if (security === 'reality') return 'VLESS-REALITY'

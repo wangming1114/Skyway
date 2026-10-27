@@ -217,7 +217,7 @@
             </div>
           </div>
         </el-form-item>
-        <el-form-item v-if="canConfigureRelay" label="SNI" prop="sni" required>
+        <el-form-item v-if="canConfigureSni" label="SNI" prop="sni" required>
           <el-input v-model="addForm.sni" placeholder="如 www.bing.com，不含协议或端口" maxlength="253" />
         </el-form-item>
         <template v-if="canConfigureRelay">
@@ -328,12 +328,12 @@
               v-model="batchForm.relayPaste"
               type="textarea"
               :rows="4"
-              :disabled="batchCommonLocked || batchForm.nodeType !== 'VLESS-REALITY'"
+              :disabled="batchCommonLocked || !supportsSocks5Relay(batchForm.nodeType)"
               placeholder="每行一个：host:port:username:password；粘贴后点击“解析并添加”"
             />
-            <el-button :disabled="batchCommonLocked || batchForm.nodeType !== 'VLESS-REALITY'" @click="appendRelayRows">解析并添加</el-button>
+            <el-button :disabled="batchCommonLocked || !supportsSocks5Relay(batchForm.nodeType)" @click="appendRelayRows">解析并添加</el-button>
           </div>
-          <div v-if="batchForm.nodeType !== 'VLESS-REALITY'" class="batch-field-tip">当前协议不支持 SOCKS5 中转，请保持各行 S5 为空。</div>
+          <div v-if="!supportsSocks5Relay(batchForm.nodeType)" class="batch-field-tip">当前协议不支持 SOCKS5 中转，请保持各行 S5 为空。</div>
         </el-form-item>
       </el-form>
 
@@ -376,7 +376,7 @@
             <el-input
               v-model="row.relayText"
               clearable
-              :disabled="batchRunning || row.status === 'success' || batchForm.nodeType !== 'VLESS-REALITY'"
+              :disabled="batchRunning || row.status === 'success' || !supportsSocks5Relay(batchForm.nodeType)"
               placeholder="host:port:username:password"
               @input="validateBatchRelayRow(row)"
             />
@@ -408,7 +408,7 @@
             <el-input-number v-if="!row.autoPort" v-model="row.port" :min="1" :max="65535" controls-position="right" size="small" :disabled="batchRunning || row.status === 'success'" @change="onBatchManualPortChange(row)" />
             <span v-else class="batch-auto-port">{{ row.port ? `本次 ${row.port}` : '执行时推荐端口' }}</span>
           </div>
-          <el-input v-model="row.relayText" clearable :disabled="batchRunning || row.status === 'success' || batchForm.nodeType !== 'VLESS-REALITY'" placeholder="S5 中转：host:port:username:password" @input="validateBatchRelayRow(row)" />
+          <el-input v-model="row.relayText" clearable :disabled="batchRunning || row.status === 'success' || !supportsSocks5Relay(batchForm.nodeType)" placeholder="S5 中转：host:port:username:password" @input="validateBatchRelayRow(row)" />
           <div v-if="row.validationError" class="batch-row-error">{{ row.validationError }}</div>
           <div v-if="row.message" :class="['batch-mobile-message', { 'batch-row-error': row.status === 'failed' }]">{{ row.message }}</div>
           <el-button link type="danger" :disabled="batchRunning || row.status === 'success'" @click="removeBatchRow(row)">删除此项</el-button>
@@ -463,13 +463,19 @@
         </el-descriptions-item>
         <template v-if="detailConfig">
           <el-descriptions-item label="协议">{{ detailConfig.protocol || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="用户ID">{{ detailConfig.id || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="流控">{{ detailConfig.flow || '-' }}</el-descriptions-item>
+          <el-descriptions-item v-if="detailData.nodeType !== 'Hysteria2'" label="用户ID">{{ detailConfig.id || '-' }}</el-descriptions-item>
+          <el-descriptions-item v-if="detailData.nodeType !== 'Hysteria2'" label="流控">{{ detailConfig.flow || '-' }}</el-descriptions-item>
           <el-descriptions-item label="传输协议">{{ detailConfig.network || '-' }}</el-descriptions-item>
           <el-descriptions-item label="安全层">{{ detailConfig.security || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="SNI">{{ detailConfig.sni || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="指纹">{{ detailConfig.fingerprint || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="公钥" :span="2">{{ detailConfig.publicKey || '-' }}</el-descriptions-item>
+          <el-descriptions-item v-if="detailData.nodeType !== 'Hysteria2'" label="SNI">{{ detailConfig.sni || '-' }}</el-descriptions-item>
+          <el-descriptions-item v-if="detailData.nodeType !== 'Hysteria2'" label="指纹">{{ detailConfig.fingerprint || '-' }}</el-descriptions-item>
+          <el-descriptions-item v-if="detailData.nodeType !== 'Hysteria2'" label="公钥" :span="2">{{ detailConfig.publicKey || '-' }}</el-descriptions-item>
+          <template v-if="detailData.nodeType === 'Hysteria2'">
+            <el-descriptions-item label="密码"><el-input :model-value="detailConfig.password" type="password" show-password readonly /></el-descriptions-item>
+            <el-descriptions-item label="ALPN">{{ Array.isArray(detailConfig.alpn) ? detailConfig.alpn.join(', ') : detailConfig.alpn }}</el-descriptions-item>
+            <el-descriptions-item label="跳过证书验证">{{ detailConfig.insecure ? '是' : '否' }}</el-descriptions-item>
+            <el-descriptions-item label="证书 SHA-256" :span="2">{{ detailConfig.pinSHA256 || '-' }}</el-descriptions-item>
+          </template>
           <template v-if="detailConfig.relay">
             <el-descriptions-item label="中转类型">{{ detailConfig.relay.type || '-' }}</el-descriptions-item>
             <el-descriptions-item label="中转地址">{{ detailConfig.relay.server || '-' }}</el-descriptions-item>
@@ -513,7 +519,7 @@
         <div class="proxy-share-header">
           <div>
             <div class="proxy-share-title">{{ shareData.nodeName || shareParsed?.name || '代理节点' }}</div>
-            <div class="proxy-share-subtitle">{{ shareParsed ? `${shareParsed.host}:${shareParsed.port}` : 'VLESS 订阅信息' }}</div>
+            <div class="proxy-share-subtitle">{{ shareParsed ? `${shareParsed.host}:${shareParsed.port}` : '节点订阅信息' }}</div>
           </div>
           <el-tag v-if="shareData.nodeType" size="small" :type="getNodeTypeTagColor(shareData.nodeType)">{{ shareData.nodeType }}</el-tag>
         </div>
@@ -521,11 +527,11 @@
         <section class="proxy-share-section">
           <div class="proxy-share-section-head">
             <div>
-              <div class="proxy-share-section-title">VLESS 原始链接</div>
-              <div class="proxy-share-section-desc">适用于 v2rayN、v2rayNG 等支持 VLESS-REALITY 的客户端。</div>
+              <div class="proxy-share-section-title">{{ shareProtocolLabel }} 原始链接</div>
+              <div class="proxy-share-section-desc">请使用支持 {{ shareProtocolLabel }} 的客户端导入。</div>
             </div>
             <el-button type="primary" size="small" @click="copyToClipboard(shareVlessUrl)">
-              <el-icon><DocumentCopy /></el-icon> 复制 VLESS
+              <el-icon><DocumentCopy /></el-icon> 复制 {{ shareProtocolLabel }}
             </el-button>
           </div>
           <el-input :model-value="shareVlessUrl" readonly type="textarea" :rows="3" />
@@ -534,7 +540,7 @@
         <section class="proxy-share-section proxy-share-grid">
           <div>
             <div class="proxy-share-section-title">小火箭二维码</div>
-            <div class="proxy-share-section-desc">二维码内容为原始 VLESS 链接，小火箭可直接扫码导入。</div>
+            <div class="proxy-share-section-desc">二维码内容为当前节点原始链接，可使用支持该协议的客户端扫码导入。</div>
             <div class="proxy-share-actions">
               <el-button size="small" @click="copyToClipboard(shareVlessUrl)">复制链接</el-button>
               <el-button size="small" @click="downloadQrCode">下载二维码</el-button>
@@ -550,7 +556,7 @@
           <div class="proxy-share-section-head">
             <div>
               <div class="proxy-share-section-title">Clash Verge 订阅</div>
-              <div class="proxy-share-section-desc">使用 ACL4SSR 基础配置，通过 api.wcc.best 转换为 Clash 订阅。</div>
+              <div class="proxy-share-section-desc">{{ shareProtocolLabel === 'Hysteria2' ? '适用于 Clash Verge Rev 等使用 Mihomo 内核的客户端。' : '使用 ACL4SSR 基础配置，通过 api.wcc.best 转换为 Clash 订阅。' }}</div>
             </div>
             <div class="proxy-share-actions">
               <el-button type="primary" size="small" @click="copyToClipboard(shareClashUrl)">
@@ -593,7 +599,7 @@
         <el-form-item label="端口">
           <el-input-number v-model="editNodeForm.port" :min="1" :max="65535" controls-position="right" style="width: 100%" />
         </el-form-item>
-        <el-form-item v-if="canEditRelay" label="SNI" required>
+        <el-form-item v-if="canEditSni" label="SNI" required>
           <el-input v-model="editNodeForm.sni" placeholder="如 www.bing.com，不含协议或端口" maxlength="253" />
         </el-form-item>
         <el-form-item label="订阅链接">
@@ -706,6 +712,7 @@
 </template>
 
 <script setup>
+import { supportsSocks5Relay, parseProxyShareUrl } from '@/utils/proxyShare'
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import QRCode from 'qrcode'
 import useAppStore from '@/store/modules/app'
@@ -731,7 +738,7 @@ import {
 import { listCustomer } from '@/api/member/customer'
 import { parseTime } from '@/utils/skyway'
 import { DEFAULT_REALITY_SNI, isValidRealitySni, readRealitySni } from '@/utils/realitySni'
-import { buildClashSubscribeUrl, parseVlessUrl, safeProxyShareFilename } from '@/utils/proxyShare'
+import { buildClashSubscribeUrl, safeProxyShareFilename } from '@/utils/proxyShare'
 import { getDefaultNodeExpireTime, parseSocks5RelayLines, parseSocks5RelayText } from '@/utils/proxyNodeBatch'
 import { DocumentCopy, Loading, Edit, Delete } from '@element-plus/icons-vue'
 import AccessLogDialog from './AccessLogDialog.vue'
@@ -761,7 +768,8 @@ const emit = defineEmits(['register-handler'])
 
 const nodeTypeOptions = [
   { value: 'VLESS-REALITY', label: 'VLESS-REALITY' },
-  { value: 'VMess-TCP', label: 'VMess-TCP' }
+  { value: 'VMess-TCP', label: 'VMess-TCP' },
+  { value: 'Hysteria2', label: 'Hysteria2' }
 ]
 
 const allNodeTypesForAdd = [
@@ -782,7 +790,7 @@ const allNodeTypesForAdd = [
   { value: 'Trojan-WS-TLS', label: 'Trojan-WS-TLS', enabled: false },
   { value: 'Trojan-HTTPUpgrade-TLS', label: 'Trojan-HTTPUpgrade-TLS', enabled: false },
   { value: 'TUIC', label: 'TUIC', enabled: false },
-  { value: 'Hysteria2', label: 'Hysteria2', enabled: false },
+  { value: 'Hysteria2', label: 'Hysteria2', enabled: true },
   { value: 'Shadowsocks', label: 'Shadowsocks', enabled: false },
   { value: 'Socks', label: 'Socks', enabled: false },
 ]
@@ -1009,7 +1017,8 @@ const addFormPermanent = ref(true)
 const addPortAuto = ref(false)
 const addPortWarning = ref('')
 let addPortRecommendationVersion = 0
-const canConfigureRelay = computed(() => addForm.nodeType === 'VLESS-REALITY')
+const canConfigureRelay = computed(() => supportsSocks5Relay(addForm.nodeType))
+const canConfigureSni = computed(() => addForm.nodeType === 'VLESS-REALITY')
 const addFormRules = {
   customerId: [{ required: true, message: '请选择归属客户', trigger: 'change' }],
   instanceId: [{ required: true, message: '请选择服务器', trigger: 'change' }],
@@ -1017,7 +1026,7 @@ const addFormRules = {
   port: [{ required: true, message: '请输入端口', trigger: 'blur' }],
   sni: [{
     validator: (rule, value, callback) => {
-      callback(!canConfigureRelay.value || isValidRealitySni(value)
+      callback(!canConfigureSni.value || isValidRealitySni(value)
         ? undefined : new Error('请输入有效的 SNI 域名，不含协议、路径或端口'))
     },
     trigger: ['blur', 'change']
@@ -1092,7 +1101,8 @@ const batchDomainVisible = ref(false)
 const batchDomainSaving = ref(false)
 const batchDomainPolicy = ref(null)
 const batchDomainResults = ref([])
-const canEditRelay = computed(() => editNodeRow.value?.nodeType === 'VLESS-REALITY')
+const canEditRelay = computed(() => supportsSocks5Relay(editNodeRow.value?.nodeType))
+const canEditSni = computed(() => editNodeRow.value?.nodeType === 'VLESS-REALITY')
 const rateLimitVisible = ref(false)
 const rateLimitSaving = ref(false)
 const rateLimitFormRef = ref(null)
@@ -1208,7 +1218,7 @@ function removeRelayFromConfigJson(configJson) {
 }
 
 function addRelayPayload(payload) {
-  if (canConfigureRelay.value) payload.sni = addForm.sni.trim()
+  if (canConfigureSni.value) payload.sni = addForm.sni.trim()
   if (!addForm.enableRelay || !canConfigureRelay.value) return payload
   return {
     ...payload,
@@ -1399,7 +1409,7 @@ function validateBatchTargets(targetRows) {
     }
     const relayText = (row.relayText || '').trim()
     if (relayText) {
-      if (batchForm.nodeType !== 'VLESS-REALITY') {
+      if (!supportsSocks5Relay(batchForm.nodeType)) {
         row.validationError = '当前协议不支持 SOCKS5 中转，请清空该行 S5'
         valid = false
       } else {
@@ -1718,7 +1728,7 @@ watch(() => props.wsConnected, (connected) => {
 })
 
 watch(() => addForm.nodeType, (nodeType) => {
-  if (nodeType !== 'VLESS-REALITY') {
+  if (!supportsSocks5Relay(nodeType)) {
     resetRelayForm()
   }
 })
@@ -1733,7 +1743,7 @@ function openNodeEdit(row) {
   editNodeForm.domainPolicy = cloneDomainPolicy(row.domainPolicy || row.domainWhitelist)
   editOriginalDomainPolicy.value = cloneDomainPolicy(row.domainPolicy || row.domainWhitelist)
   resetEditRelayForm()
-  if (row.nodeType === 'VLESS-REALITY') {
+  if (supportsSocks5Relay(row.nodeType)) {
     const relayText = relayTextFromRow(row)
     if (relayText) {
       editNodeForm.originalRelay = true
@@ -1766,7 +1776,7 @@ function syncUpdatedNodeName(row, updatedNode) {
 
 function submitNodeEdit() {
   if (!editNodeRow.value?.id) return
-  if (canEditRelay.value && !isValidRealitySni(editNodeForm.sni)) {
+  if (canEditSni.value && !isValidRealitySni(editNodeForm.sni)) {
     proxy.$modal.msgWarning('请输入有效的 SNI 域名，不含协议、路径或端口')
     return
   }
@@ -1780,7 +1790,7 @@ function submitNodeEdit() {
     port: editNodeForm.port,
     url: (editNodeForm.url || '').trim()
   }
-  if (canEditRelay.value) payload.sni = editNodeForm.sni.trim()
+  if (canEditSni.value) payload.sni = editNodeForm.sni.trim()
   if (editNodeForm.enableRelay && canEditRelay.value) {
     const relayText = (editNodeForm.relayText || '').trim()
     const parsedRelay = parseSocks5RelayText(relayText)
@@ -2026,9 +2036,10 @@ const shareData = ref(null)
 const shareVlessUrl = computed(() => (shareData.value?.url || '').trim())
 const shareParsed = computed(() => {
   if (!shareVlessUrl.value) return null
-  try { return parseVlessUrl(shareVlessUrl.value) } catch { return null }
+  try { return parseProxyShareUrl(shareVlessUrl.value) } catch { return null }
 })
 const shareClashUrl = computed(() => shareVlessUrl.value ? buildClashSubscribeUrl(shareVlessUrl.value) : '')
+const shareProtocolLabel = computed(() => shareData.value?.nodeType === 'Hysteria2' ? 'Hysteria2' : shareData.value?.nodeType === 'VMess-TCP' ? 'VMess' : 'VLESS')
 const shareQrDataUrl = ref('')
 const shareBaseName = computed(() => shareData.value?.nodeName || shareParsed.value?.name || 'proxy-share')
 
@@ -2045,9 +2056,9 @@ function handleShare(row) {
     return
   }
   try {
-    parseVlessUrl(row.url)
+    parseProxyShareUrl(row.url)
   } catch (e) {
-    proxy.$modal.msgWarning(e.message || '仅支持 VLESS 分享链接')
+    proxy.$modal.msgWarning(e.message || '不支持的节点分享链接')
     return
   }
   shareData.value = { ...row }
@@ -2076,7 +2087,7 @@ function refreshShareQrCode() {
   }).then(url => {
     if (shareVlessUrl.value === shareUrl) shareQrDataUrl.value = url
   }).catch(() => {
-    if (shareVlessUrl.value === shareUrl) proxy.$modal.msgWarning('二维码生成失败，请直接复制 VLESS 链接')
+    if (shareVlessUrl.value === shareUrl) proxy.$modal.msgWarning('二维码生成失败，请直接复制原始链接')
   })
 }
 

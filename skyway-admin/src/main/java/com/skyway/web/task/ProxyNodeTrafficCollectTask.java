@@ -49,7 +49,11 @@ public class ProxyNodeTrafficCollectTask {
             for (ProxyNode node : nodesOnInstance) {
                 if (node.getPort() == null || node.getPort() <= 0) continue;
                 try {
-                    vpsSshCommandService.ensureTrafficRulesForPort(instanceId, node.getPort());
+                    if ("Hysteria2".equals(node.getNodeType())) {
+                        vpsSshCommandService.ensureTrafficRulesForPort(instanceId, node.getPort(), "Hysteria2");
+                    } else {
+                        vpsSshCommandService.ensureTrafficRulesForPort(instanceId, node.getPort());
+                    }
                 } catch (Exception ex) {
                     log.warn("ensureTrafficRulesForPort instanceId={} port={} failed: {}", instanceId, node.getPort(), ex.getMessage());
                 }

@@ -13,6 +13,8 @@ import org.springframework.stereotype.Service;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import com.skyway.resource.domain.ProxyNode;
+import com.skyway.resource.domain.Hysteria2Support;
+import com.skyway.resource.domain.ProxyNodeProtocol;
 import com.skyway.resource.mapper.ProxyNodeMapper;
 import com.skyway.resource.service.IProxyNodeService;
 
@@ -126,6 +128,9 @@ public class ProxyNodeServiceImpl implements IProxyNodeService {
 
             if ("VLESS-REALITY".equals(nodeType)) {
                 return buildVlessRealityUrl(node, cfg);
+            }
+            if (ProxyNodeProtocol.HYSTERIA2.equals(nodeType)) {
+                return Hysteria2Support.buildShareUrl(node, cfg);
             }
             if ("VMess-TCP".equals(nodeType)) {
                 return buildVmessTcpUrl(node, cfg);

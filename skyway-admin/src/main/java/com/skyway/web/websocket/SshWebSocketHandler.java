@@ -24,6 +24,8 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import com.skyway.common.utils.StringUtils;
 import com.skyway.resource.domain.ProxyNode;
+import com.skyway.resource.domain.ProxyNodeProtocol;
+import com.skyway.resource.domain.Hysteria2Support;
 import com.skyway.resource.domain.ProxyNodeDomainWhitelist;
 import com.skyway.resource.domain.ProxyNodeRateLimit;
 import com.skyway.resource.domain.VpsInstance;
@@ -543,7 +545,7 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
     }
 
     /**
-     * 添加节点：根据 nodeType 分支执行 sb 对应菜单，重命名配置，解析输出并入库。支持 VLESS-REALITY、VMess-TCP。
+     * 添加节点：根据 nodeType 分支执行 sb 对应菜单，重命名配置，解析输出并入库。支持 VLESS-REALITY、VMess-TCP、Hysteria2。
      */
     private void handleAddProxyNode(WebSocketSession wsSession, JSONObject obj) {
         Object reqId = obj.get("reqId");
@@ -566,14 +568,14 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
         if (nodeType == null || nodeType.isEmpty()) {
             nodeType = "VLESS-REALITY";
         }
-        if (!"VLESS-REALITY".equals(nodeType) && !"VMess-TCP".equals(nodeType)) {
+        if (!ProxyNodeProtocol.isSupported(nodeType)) {
             sendExecError(wsSession, reqId, "不支持的协议类型: " + nodeType);
             sendExecEnd(wsSession, reqId, -1);
             return;
         }
         final String sni;
         try {
-            sni = RealitySniSupport.requestedSni(obj, nodeType);
+            sni = ProxyNodeProtocol.HYSTERIA2.equals(nodeType) ? null : RealitySniSupport.requestedSni(obj, nodeType);
         } catch (IllegalArgumentException e) {
             sendExecError(wsSession, reqId, e.getMessage());
             sendExecEnd(wsSession, reqId, -1);
@@ -581,8 +583,8 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
         }
         VpsSshCommandService.Socks5RelayConfig relay = null;
         if (relayText != null && !relayText.trim().isEmpty()) {
-            if (!"VLESS-REALITY".equals(nodeType)) {
-                sendExecError(wsSession, reqId, "当前仅 VLESS-REALITY 支持 SOCKS5 中转");
+            if (!ProxyNodeProtocol.supportsRelay(nodeType)) {
+                sendExecError(wsSession, reqId, "当前仅 VLESS-REALITY 和 Hysteria2 支持 SOCKS5 中转");
                 sendExecEnd(wsSession, reqId, -1);
                 return;
             }
@@ -624,6 +626,9 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
             int port = requestedPort != null ? requestedPort : 0;
             ProxyNode createdNode = null;
             boolean databaseSaved = false;
+            boolean creationCleaned = false;
+            String pendingConfigName = null;
+            String targetConfigName = null;
             try {
                 operationLock = vpsInstanceOperationCoordinator.lock(instanceId);
                 if (autoPort) {
@@ -646,18 +651,10 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                 }
                 vpsSshCommandService.assertRemotePortAvailable(ssh, port);
 
-                String runCmd;
-                String oldJsonName;
-                String typeLabel;
-                if ("VMess-TCP".equals(nodeTypeFinal)) {
-                    typeLabel = "VMess-TCP";
-                    oldJsonName = "VMess-TCP-" + port + ".json";
-                    runCmd = "printf '1\\n5\\n" + port + "\\n' | sb";
-                } else {
-                    typeLabel = "VLESS-REALITY";
-                    oldJsonName = "VLESS-REALITY-" + port + ".json";
-                    runCmd = "printf '1\\n18\\n" + port + "\\n' | sb";
-                }
+                String typeLabel = nodeTypeFinal;
+                String oldJsonName = nodeTypeFinal + "-" + port + ".json";
+                String runCmd = ProxyNodeProtocol.createCommand(nodeTypeFinal, port);
+                pendingConfigName = oldJsonName;
 
                 String hint = "正在执行: 添加配置 -> " + typeLabel + " -> 端口 " + port + "\n";
                 sendExecOutput(wsSession, reqId, hint, false);
@@ -697,6 +694,7 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                 Integer exitStatus = cmd.getExitStatus();
                 if (exitStatus == null) exitStatus = -1;
                 int exitCode = exitStatus;
+                if (exitCode != 0) throw new IOException("sb 执行失败，退出码: " + exitCode);
 
                 String output = fullOutput.toString();
                 output = stripAnsi(output);
@@ -708,7 +706,9 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                 }
 
                 ProxyNode parsed;
-                if ("VMess-TCP".equals(nodeTypeFinal)) {
+                if (ProxyNodeProtocol.HYSTERIA2.equals(nodeTypeFinal)) {
+                    parsed = Hysteria2Support.parseSbOutput(output, port);
+                } else if ("VMess-TCP".equals(nodeTypeFinal)) {
                     parsed = parseSbVmessTcpOutput(output, port);
                 } else {
                     parsed = parseSbVlessRealityOutput(output, port);
@@ -723,8 +723,10 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                 String customPart = customerIdStr;
                 String targetBaseName = buildNodeBaseName(typeLabel, parsed.getAddress(), port, customPart, expireDate);
                 String newJsonName = targetBaseName + ".json";
+                targetConfigName = newJsonName;
                 String confDir = "/etc/sing-box/conf";
-                String mvCmd = "mv " + confDir + "/" + oldJsonName + " " + confDir + "/" + newJsonName + " 2>&1";
+                String mvCmd = "mv -- " + quoteSh(confDir + "/" + oldJsonName) + " "
+                        + quoteSh(confDir + "/" + newJsonName) + " 2>&1 && echo __MOVED__";
 
                 sendExecOutput(wsSession, reqId, "重命名配置: " + oldJsonName + " -> " + newJsonName + "\n", false);
                 String mvOut;
@@ -732,7 +734,7 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                     mvOut = execAndRead(mvSession, mvCmd);
                 }
                 if (mvOut != null) sendExecOutput(wsSession, reqId, mvOut, false);
-                if (mvOut != null && mvOut.toLowerCase().contains("no such file")) {
+                if (mvOut == null || !mvOut.contains("__MOVED__")) {
                     sendExecError(wsSession, reqId, "重命名失败: 未找到 " + oldJsonName);
                     sendExecEnd(wsSession, reqId, -1);
                     return;
@@ -744,9 +746,9 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                 parsed.setExpireTime(expireDate);
                 parsed.setStatus("0");
                 createdNode = parsed;
+                vpsSshCommandService.initializeProxyNodeRouting(ssh, confDir + "/" + newJsonName, relayFinal);
                 if (relayFinal != null) {
                     sendExecOutput(wsSession, reqId, "应用 SOCKS5 中转配置并重启 sing-box...\n", false);
-                    vpsSshCommandService.applySocks5RelayToRemoteConfig(ssh, confDir + "/" + newJsonName, relayFinal);
                     JSONObject config = JSON.parseObject(parsed.getConfigJson());
                     config.put("relay", relayFinal.toConfigJson());
                     parsed.setConfigJson(config.toJSONString());
@@ -776,7 +778,11 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                     }
                     databaseSaved = true;
                     try {
-                        vpsSshCommandService.ensureTrafficRulesForPort(instanceId, parsed.getPort() != null ? parsed.getPort() : port);
+                        if ("Hysteria2".equals(parsed.getNodeType())) {
+                            vpsSshCommandService.ensureTrafficRulesForPort(instanceId, parsed.getPort() != null ? parsed.getPort() : port, "Hysteria2");
+                        } else {
+                            vpsSshCommandService.ensureTrafficRulesForPort(instanceId, parsed.getPort() != null ? parsed.getPort() : port);
+                        }
                     } catch (Exception ex) {
                         log.warn("ensureTrafficRulesForPort instanceId={}, port={} failed: {}", instanceId, port, ex.getMessage());
                     }
@@ -794,6 +800,7 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                     if (!databaseSaved) {
                         try {
                             vpsSshCommandService.removeProxyNodeFromServer(parsed);
+                            creationCleaned = true;
                         } catch (Exception cleanupError) {
                             log.error("cleanup unsaved websocket proxy node failed: instanceId={}, nodeName={}",
                                     instanceId, parsed.getNodeName(), cleanupError);
@@ -807,6 +814,7 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
                 if (createdNode != null && !databaseSaved) {
                     try {
                         vpsSshCommandService.removeProxyNodeFromServer(createdNode);
+                        creationCleaned = true;
                     } catch (Exception cleanupError) {
                         log.error("cleanup failed websocket proxy node failed: instanceId={}, nodeName={}",
                                 instanceId, createdNode.getNodeName(), cleanupError);
@@ -817,6 +825,13 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
             } finally {
                 if (cmd != null) try { cmd.close(); } catch (IOException ignored) {}
                 if (newSession != null) try { newSession.close(); } catch (IOException ignored) {}
+                if (!databaseSaved && !creationCleaned && ssh != null && pendingConfigName != null) {
+                    try {
+                        vpsSshCommandService.cleanupProxyNodeCreation(ssh, pendingConfigName, targetConfigName);
+                    } catch (Exception cleanupError) {
+                        log.error("cleanup incomplete websocket node failed: instanceId={}, port={}", instanceId, port, cleanupError);
+                    }
+                }
                 if (ssh != null) try { ssh.close(); } catch (IOException ignored) {}
                 if (operationLock != null) operationLock.close();
             }

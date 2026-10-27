@@ -30,6 +30,7 @@ import com.skyway.common.core.page.TableDataInfo;
 import com.skyway.common.enums.BusinessType;
 import com.skyway.common.utils.StringUtils;
 import com.skyway.resource.domain.ProxyNode;
+import com.skyway.resource.domain.ProxyNodeProtocol;
 import com.skyway.resource.domain.ProxyNodeRateLimit;
 import com.skyway.resource.domain.ProxyNodeDomainWhitelist;
 import com.skyway.resource.service.IProxyNodeService;
@@ -367,7 +368,11 @@ public class ProxyNodeController extends BaseController {
         int rows = proxyNodeService.insert(row);
         if (rows > 0 && row.getInstanceId() != null && row.getPort() != null && row.getPort() > 0) {
             try {
-                vpsSshCommandService.ensureTrafficRulesForPort(row.getInstanceId(), row.getPort());
+                if ("Hysteria2".equals(row.getNodeType())) {
+                    vpsSshCommandService.ensureTrafficRulesForPort(row.getInstanceId(), row.getPort(), "Hysteria2");
+                } else {
+                    vpsSshCommandService.ensureTrafficRulesForPort(row.getInstanceId(), row.getPort());
+                }
             } catch (Exception e) {
                 log.warn("ensureTrafficRulesForPort instanceId={}, port={} failed: {}", row.getInstanceId(), row.getPort(), e.getMessage());
             }
@@ -400,7 +405,7 @@ public class ProxyNodeController extends BaseController {
         String sni;
         boolean sniChanged;
         try {
-            sni = RealitySniSupport.requestedSni(body, existing.getNodeType());
+            sni = ProxyNodeProtocol.HYSTERIA2.equals(existing.getNodeType()) ? null : RealitySniSupport.requestedSni(body, existing.getNodeType());
             sniChanged = sni != null && !sni.equals(RealitySniSupport.readSni(existing));
             if (sniChanged) RealitySniSupport.withSni(existing.getConfigJson(), sni);
         } catch (IllegalArgumentException e) {
@@ -459,8 +464,8 @@ public class ProxyNodeController extends BaseController {
         }
 
         if (hasRelayEnabled && !parseBoolean(body.get("relayEnabled"))) {
-            if (!"VLESS-REALITY".equals(existing.getNodeType())) {
-                return AjaxResult.error("当前仅 VLESS-REALITY 支持 SOCKS5 中转");
+            if (!ProxyNodeProtocol.supportsRelay(existing.getNodeType())) {
+                return AjaxResult.error("当前仅 VLESS-REALITY 和 Hysteria2 支持 SOCKS5 中转");
             }
             try {
                 vpsSshCommandService.removeSocks5RelayFromProxyNodeConfig(existing);
@@ -475,8 +480,8 @@ public class ProxyNodeController extends BaseController {
         } else if (hasRelayText) {
             Object relayObj = body.get("relayText");
             String relayText = relayObj == null ? "" : String.valueOf(relayObj).trim();
-            if (!"VLESS-REALITY".equals(existing.getNodeType())) {
-                return AjaxResult.error("当前仅 VLESS-REALITY 支持 SOCKS5 中转");
+            if (!ProxyNodeProtocol.supportsRelay(existing.getNodeType())) {
+                return AjaxResult.error("当前仅 VLESS-REALITY 和 Hysteria2 支持 SOCKS5 中转");
             }
             if (StringUtils.isEmpty(relayText)) {
                 return AjaxResult.error("请输入 SOCKS5 中转配置");
@@ -565,7 +570,7 @@ public class ProxyNodeController extends BaseController {
                         + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
             }
             effectiveNodeName = nameChanged ? newBaseName : oldBaseName;
-            if (portChanged) {
+            if (portChanged || (nameChanged && ProxyNodeProtocol.HYSTERIA2.equals(existing.getNodeType()))) {
                 // The existing share URL still contains the old port and must not be returned as valid.
                 row.setUrl(null);
             }
@@ -654,6 +659,7 @@ public class ProxyNodeController extends BaseController {
             ProxyNode changed = new ProxyNode();
             changed.setId(existing.getId());
             changed.setInstanceId(existing.getInstanceId());
+            changed.setNodeType(existing.getNodeType());
             changed.setPort(newPort);
             migratePortRules(changed, existing.getPort(), username);
         }
@@ -729,7 +735,11 @@ public class ProxyNodeController extends BaseController {
                 activeLimit.setUpdateBy(username);
                 proxyNodeRateLimitService.saveActive(activeLimit);
             }
-            vpsSshCommandService.ensureTrafficRulesForPort(instanceId, newPort);
+            if ("Hysteria2".equals(existing.getNodeType())) {
+                vpsSshCommandService.ensureTrafficRulesForPort(instanceId, newPort, "Hysteria2");
+            } else {
+                vpsSshCommandService.ensureTrafficRulesForPort(instanceId, newPort);
+            }
             return success();
         } catch (Exception e) {
             log.warn("migrate proxy node port rules failed: nodeId={}, instanceId={}, oldPort={}, newPort={}",
@@ -739,7 +749,13 @@ public class ProxyNodeController extends BaseController {
                 try { vpsSshCommandService.removePortRateLimit(instanceId, newPort); } catch (Exception ignored) {}
             }
             if (oldTrafficRemoved) {
-                try { vpsSshCommandService.ensureTrafficRulesForPort(instanceId, oldPort); } catch (Exception ignored) {}
+                try {
+                    if (ProxyNodeProtocol.HYSTERIA2.equals(existing.getNodeType())) {
+                        vpsSshCommandService.ensureTrafficRulesForPort(instanceId, oldPort, "Hysteria2");
+                    } else {
+                        vpsSshCommandService.ensureTrafficRulesForPort(instanceId, oldPort);
+                    }
+                } catch (Exception ignored) {}
             }
             if (activeLimit != null && activeLimitRemoved) {
                 try {

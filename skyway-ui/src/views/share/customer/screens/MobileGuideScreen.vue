@@ -22,7 +22,7 @@
     <div class="mobile-method-grid">
       <section class="share-panel mobile-method android-method">
         <h2><ClientIcon type="android" />Android · v2rayNG 导入 <i>Android</i></h2>
-        <p>适合直接导入 VLESS 原始链接</p>
+        <p>适合直接导入 节点原始链接</p>
         <div class="round-step-grid green">
           <div v-for="(step, index) in androidSteps" :key="step.title"><span>{{ index + 1 }}</span><strong>{{ step.title }}</strong><small>{{ step.desc }}</small></div>
         </div>

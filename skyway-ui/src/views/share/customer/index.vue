@@ -131,7 +131,7 @@ const filteredNodes = computed(() => {
 })
 
 const summary = computed(() => buildShareNodeSummary(normalizedNodes.value))
-const primaryNode = computed(() => normalizedNodes.value.find(node => node.vlessUrl) || normalizedNodes.value[0] || null)
+const primaryNode = computed(() => normalizedNodes.value.find(node => node.shareUrl) || normalizedNodes.value[0] || null)
 
 function unlockAndShow() {
   unlockFormRef.value?.validate(valid => {
@@ -213,11 +213,11 @@ function copyPrimaryClash() {
 }
 
 function copyNodeVless(node) {
-  if (!node?.vlessUrl) {
-    proxy.$modal.msgWarning('暂无 VLESS 链接')
+  if (!node?.shareUrl) {
+    proxy.$modal.msgWarning('暂无原始链接')
     return
   }
-  copyToClipboard(node.vlessUrl)
+  copyToClipboard(node.shareUrl)
 }
 
 function copyNodeClash(node) {
@@ -230,8 +230,8 @@ function copyNodeClash(node) {
 
 function refreshDetailQrCode() {
   detailQrUrl.value = ''
-  if (!selectedNode.value?.vlessUrl) return
-  QRCode.toDataURL(selectedNode.value.vlessUrl, { width: 220, margin: 1, errorCorrectionLevel: 'M' }).then(url => {
+  if (!selectedNode.value?.shareUrl) return
+  QRCode.toDataURL(selectedNode.value.shareUrl, { width: 220, margin: 1, errorCorrectionLevel: 'M' }).then(url => {
     detailQrUrl.value = url
   }).catch(() => {
     proxy.$modal.msgWarning('二维码生成失败，请直接复制链接')

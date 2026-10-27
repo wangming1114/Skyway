@@ -6,7 +6,7 @@ export const clientLinks = {
 }
 
 export const desktopV2raySteps = [
-  '复制 VLESS 链接',
+  '复制节点原始链接',
   '打开 v2rayN 客户端',
   '在“服务器”菜单选择“从剪贴板导入批量链接”',
   '启用节点并测试延迟'
@@ -20,7 +20,7 @@ export const desktopClashSteps = [
 ]
 
 export const androidSteps = [
-  { title: '复制 VLESS 链接', desc: '在订阅详情页点击「复制 VLESS」' },
+  { title: '复制节点原始链接', desc: '在订阅详情页点击「复制原始链接」' },
   { title: '打开 v2rayNG', desc: '安装并打开 v2rayNG 客户端' },
   { title: '点击右上角 +', desc: '选择「从剪贴板导入」自动读取链接' },
   { title: '选中节点并连接', desc: '选择导入的节点，点击连接即可' }
@@ -35,7 +35,7 @@ export const iosSteps = [
 
 export const overviewTips = [
   { icon: 'time', title: '订阅到期后将无法使用', desc: '订阅到期后将无法连接，请及时续费或联系管理员更新订阅。' },
-  { icon: 'shield', title: '不同协议请使用对应客户端', desc: '请根据订阅协议类型（VLESS / Clash 等）选择对应的客户端使用。' },
+  { icon: 'shield', title: '不同协议请使用对应客户端', desc: '请根据订阅协议类型（VLESS / Hysteria2 / Clash 等）选择对应的客户端使用。' },
   { icon: 'switch', title: '手机端与桌面端导入方式不同', desc: '手机端通常使用二维码或链接导入，桌面端多为链接或订阅地址导入。' },
   { icon: 'service', title: '如无法导入请联系管理员', desc: '遇到导入问题或使用异常，请联系管理员协助处理。' }
 ]

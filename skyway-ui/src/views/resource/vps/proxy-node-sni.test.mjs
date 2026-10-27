@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import vm from 'node:vm'
 import { parse, babelParse } from '@vue/compiler-sfc'
+import { parseProxyShareUrl } from '../../../utils/proxyShare.js'
 import { DEFAULT_REALITY_SNI, isValidRealitySni, readRealitySni } from '../../../utils/realitySni.js'
 
 function loadFormFunctions(path, names, bindings) {
@@ -26,10 +27,10 @@ for (const path of ['./components/ProxyNodePanel.vue', './proxyNode/index.vue'])
     let qrRefreshes = 0
     const row = { id: 1, nodeType: 'VLESS-REALITY', port: 443, configJson: '{"sni":"old.example"}', url: 'vless://id@server:443?sni=url.example' }
     const state = {
-      readRealitySni, isValidRealitySni,
+      readRealitySni, isValidRealitySni, supportsSocks5Relay: type => ['VLESS-REALITY', 'Hysteria2'].includes(type),
       editNodeRow: { value: null }, editNodeForm: {}, editNodePermanent: {},
       editOriginalDomainPolicy: {}, editNodeVisible: {}, editNodeSaving: {},
-      detailData: { value: { ...row } }, shareData: { value: { ...row } }, canEditRelay: { value: true },
+      detailData: { value: { ...row } }, shareData: { value: { ...row } }, canEditRelay: { value: true }, canEditSni: { value: true },
       shareVisible: { value: true }, refreshShareQrCode() { qrRefreshes++ },
       cloneDomainPolicy: () => null, resetEditRelayForm() { state.editNodeForm.enableRelay = false },
       relayTextFromRow: () => '', domainPolicyValid: () => true, domainPolicyChanged: () => false,
@@ -88,7 +89,7 @@ for (const path of ['./components/ProxyNodePanel.vue', './proxyNode/index.vue'])
     const form = loadFormFunctions(path, ['submitNodeEdit', 'syncUpdatedNodeName'], {
       editNodeRow: { value: { id: 1 } }, editNodeForm: {}, editNodePermanent: {},
       editOriginalDomainPolicy: {}, editNodeVisible: {}, editNodeSaving: {},
-      canEditRelay: { value: false }, detailData: {}, shareData: {},
+      canEditRelay: { value: false }, canEditSni: { value: false }, detailData: {}, shareData: {},
       domainPolicyValid: () => true, domainPolicyChanged: () => false,
       updateProxyNode(payload) { sent = payload; return Promise.resolve({}) },
       proxy: { $modal: { msgSuccess() {} } }, getList() {}
@@ -100,10 +101,56 @@ for (const path of ['./components/ProxyNodePanel.vue', './proxyNode/index.vue'])
 }
 
 test('single creation includes trimmed SNI independently of SOCKS relay', () => {
-  const state = { addForm: { sni: ` ${DEFAULT_REALITY_SNI} `, enableRelay: false }, canConfigureRelay: { value: true } }
+  const state = { addForm: { sni: ` ${DEFAULT_REALITY_SNI} `, enableRelay: false }, canConfigureSni: { value: true } }
   const form = loadFormFunctions('./components/ProxyNodePanel.vue', ['addRelayPayload'], state)
   assert.equal(form.addRelayPayload({ type: 'add_proxy_node' }).sni, 'www.bing.com')
   assert.equal(form.addRelayPayload({ customerId: 1 }).sni, 'www.bing.com')
-  state.canConfigureRelay.value = false
+  state.canConfigureSni.value = false
   assert.equal(Object.hasOwn(form.addRelayPayload({ customerId: 1 }), 'sni'), false)
 })
+
+for (const path of ['./components/ProxyNodePanel.vue', './proxyNode/index.vue']) {
+  test(`${path} Hysteria2 editing supports relay without validating or submitting SNI`, async () => {
+    let sent
+    const form = loadFormFunctions(path, ['submitNodeEdit', 'syncUpdatedNodeName'], {
+      editNodeRow: { value: { id: 1, nodeType: 'Hysteria2', port: 32332 } },
+      editNodeForm: { port: 32332, sni: 'invalid SNI', enableRelay: false }, editNodePermanent: { value: true },
+      editOriginalDomainPolicy: {}, editNodeVisible: {}, editNodeSaving: {},
+      canEditRelay: { value: true }, canEditSni: { value: false }, detailData: {}, shareData: {},
+      domainPolicyValid: () => true, domainPolicyChanged: () => false,
+      updateProxyNode(payload) { sent = payload; return Promise.resolve({}) },
+      proxy: { $modal: { msgSuccess() {} } }, getList() {}
+    })
+    form.submitNodeEdit()
+    await new Promise(resolve => setImmediate(resolve))
+    assert.equal(sent.port, 32332)
+    assert.equal(Object.hasOwn(sent, 'sni'), false)
+  })
+}
+
+test('Hysteria2 creation sends SOCKS relay without a leftover REALITY SNI', () => {
+  const form = loadFormFunctions('./components/ProxyNodePanel.vue', ['addRelayPayload'], {
+    addForm: { sni: 'old.example', enableRelay: true, relayText: ' host:1080:user:password ' },
+    canConfigureSni: { value: false }, canConfigureRelay: { value: true }
+  })
+  const payload = form.addRelayPayload({ nodeType: 'Hysteria2' })
+  assert.equal(payload.relayText, 'host:1080:user:password')
+  assert.equal(Object.hasOwn(payload, 'sni'), false)
+})
+
+for (const path of ['./components/ProxyNodePanel.vue', './proxyNode/index.vue']) {
+  test(`${path} opens Hysteria2 sharing and generates its QR`, () => {
+    let refreshed = 0
+    const state = {
+      parseProxyShareUrl, shareData: {}, shareVisible: {},
+      refreshShareQrCode() { refreshed++ },
+      proxy: { $modal: { msgWarning(message) { throw new Error(message) } } }
+    }
+    const form = loadFormFunctions(path, ['handleShare'], state)
+    const row = { nodeType: 'Hysteria2', url: 'hysteria2://pw@203.0.113.8:32332?alpn=h3&insecure=1' }
+    form.handleShare(row)
+    assert.equal(state.shareData.value.url, row.url)
+    assert.equal(state.shareVisible.value, true)
+    assert.equal(refreshed, 1)
+  })
+}

@@ -27,6 +27,30 @@ import org.springframework.web.socket.WebSocketSession;
 
 public class SshWebSocketSniTest {
     @Test
+    void hysteria2CreatesWithoutSniAndCollectsUdpTraffic() throws Exception {
+        Fixture f = new Fixture();
+        f.sbOutput = "hysteria2://test-password@203.0.113.8:20031?alpn=h3&insecure=1&pinSHA256="
+                + String.join("", Collections.nCopies(32, "AB")) + "#node\n";
+        f.run("{\"type\":\"add_proxy_node\",\"customerId\":9,\"port\":20031,\"nodeType\":\"Hysteria2\"}");
+        JSONObject created = f.messages.stream().filter(m -> "node_created".equals(m.getString("type"))).findFirst().get().getJSONObject("node");
+        assertEquals("Hysteria2", created.getString("nodeType"));
+        assertTrue(created.getString("url").startsWith("hysteria2://"));
+        assertFalse(created.getString("configJson").contains("sni"));
+        assertTrue(f.commands.stream().anyMatch(command -> command.contains("sb add hy2 20031")));
+        verify(f.remote, never()).applyRealitySniToProxyNodeConfig(any(), any());
+        verify(f.remote).ensureTrafficRulesForPort(7L, 20031, "Hysteria2");
+    }
+
+    @Test
+    void hysteria2ParseFailureCleansUpIncompleteSbConfig() throws Exception {
+        Fixture f = new Fixture();
+        f.sbOutput = "incomplete sb output";
+        f.run("{\"type\":\"add_proxy_node\",\"customerId\":9,\"port\":20031,\"nodeType\":\"Hysteria2\"}");
+        verify(f.mapper, never()).insert(any());
+        verify(f.remote, timeout(1000)).cleanupProxyNodeCreation(any(), eq("Hysteria2-20031.json"), isNull());
+    }
+
+    @Test
     void websocketCreateAppliesSniBeforeSavingAndReturnsUpdatedLinkAndConfig() throws Exception {
         Fixture f = new Fixture();
         f.run("{\"type\":\"add_proxy_node\",\"reqId\":1,\"customerId\":9,\"port\":20031,\"sni\":\" www.bing.com \"}");
@@ -76,6 +100,9 @@ public class SshWebSocketSniTest {
         final WebSocketSession ws = mock(WebSocketSession.class);
         final List<JSONObject> messages = new CopyOnWriteArrayList<>();
         final CountDownLatch done = new CountDownLatch(1);
+        final List<String> commands = new CopyOnWriteArrayList<>();
+        String sbOutput = "地址 (address) = 203.0.113.8\n用户ID (id) = user-id\n"
+                + "SNI (serverName) = old.example\nvless://user-id@203.0.113.8:20031?sni=old.example#node\n";
 
         Fixture() throws Exception {
             ProxyNodeServiceImpl service = new ProxyNodeServiceImpl();
@@ -101,9 +128,9 @@ public class SshWebSocketSniTest {
             when(ssh.startSession()).thenReturn(session);
             when(session.exec(anyString())).thenAnswer(invocation -> {
                 String command = invocation.getArgument(0);
+                commands.add(command);
                 String output = command.contains("command -v sb") ? "/usr/bin/sb"
-                        : command.startsWith("mv ") ? "" : "地址 (address) = 203.0.113.8\n用户ID (id) = user-id\n"
-                        + "SNI (serverName) = old.example\nvless://user-id@203.0.113.8:20031?sni=old.example#node\n";
+                        : command.startsWith("mv ") ? "__MOVED__" : sbOutput;
                 Command cmd = mock(Command.class);
                 when(cmd.getInputStream()).thenReturn(new ByteArrayInputStream(output.getBytes(StandardCharsets.UTF_8)));
                 when(cmd.getErrorStream()).thenReturn(new ByteArrayInputStream(new byte[0]));

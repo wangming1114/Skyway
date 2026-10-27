@@ -19,20 +19,20 @@
 
     <div class="desktop-feature-bar">
       <article><span class="summary-icon recommend"></span><div><strong>推荐方式</strong><b>v2rayN / Clash Verge Rev</b><small>两种主流方式，按需选择使用</small></div></article>
-      <article><span class="summary-icon protocol"></span><div><strong>支持协议</strong><b>VLESS / Clash</b><small>多种协议灵活兼容</small></div></article>
+      <article><span class="summary-icon protocol"></span><div><strong>支持协议</strong><b>VLESS / Hysteria2 / Clash</b><small>多种协议灵活兼容</small></div></article>
       <article><span class="summary-icon platform teal"></span><div><strong>适用系统</strong><b>Windows / macOS</b><small>覆盖主流桌面操作系统</small></div></article>
     </div>
 
     <div class="desktop-method-grid">
       <section class="share-panel method-card">
         <h2><ClientIcon type="v2ray" size="lg" />方式一：导入到 v2rayN</h2>
-        <div class="badge-row"><img :src="tagWindows" alt="Windows" /><span>适合使用 VLESS 原始链接进行快速导入</span></div>
+        <div class="badge-row"><img :src="tagWindows" alt="Windows" /><span>适合使用 节点原始链接进行快速导入</span></div>
         <div class="method-body">
           <StepList :steps="desktopV2raySteps" />
           <img class="client-shot" :src="shotV2rayn" alt="v2rayN 导入示意" />
         </div>
         <div class="method-actions">
-          <button type="button" class="share-primary" @click="$emit('copy-vless')"><img :src="iconCopy" alt="" />复制 VLESS</button>
+          <button type="button" class="share-primary" @click="$emit('copy-vless')"><img :src="iconCopy" alt="" />复制原始链接</button>
           <button type="button" class="share-outline" @click="$emit('open-guide', 'v2rayN')">查看原始链接<img :src="iconExternalLink" alt="" /></button>
           <span><i>i</i>导入后建议先进行延迟测试，再设置系统代理。</span>
         </div>

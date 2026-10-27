@@ -22,6 +22,7 @@ import com.skyway.common.core.page.TableDataInfo;
 import com.skyway.common.enums.BusinessType;
 import com.skyway.common.utils.poi.ExcelUtil;
 import com.skyway.resource.domain.ProxyNode;
+import com.skyway.resource.domain.ProxyNodeProtocol;
 import com.skyway.resource.domain.ProxyNodeRateLimit;
 import com.skyway.resource.domain.VpsInstance;
 import com.skyway.resource.service.IProxyNodeRateLimitService;
@@ -260,12 +261,12 @@ public class VpsInstanceController extends BaseController {
         Object portObj = body.get("port");
         String nodeType = body != null && body.get("nodeType") != null ? body.get("nodeType").toString().trim() : null;
         if (nodeType == null || nodeType.isEmpty()) nodeType = "VLESS-REALITY";
-        if (!"VLESS-REALITY".equals(nodeType) && !"VMess-TCP".equals(nodeType)) {
+        if (!ProxyNodeProtocol.isSupported(nodeType)) {
             return AjaxResult.error("不支持的协议类型: " + nodeType);
         }
         String sni;
         try {
-            sni = RealitySniSupport.requestedSni(body, nodeType);
+            sni = ProxyNodeProtocol.HYSTERIA2.equals(nodeType) ? null : RealitySniSupport.requestedSni(body, nodeType);
         } catch (IllegalArgumentException e) {
             return AjaxResult.error(e.getMessage());
         }
@@ -304,8 +305,8 @@ public class VpsInstanceController extends BaseController {
             String relayText = body != null && body.get("relayText") != null ? body.get("relayText").toString().trim() : null;
             VpsSshCommandService.Socks5RelayConfig relay = null;
             if (relayText != null && !relayText.isEmpty()) {
-                if (!"VLESS-REALITY".equals(nodeType)) {
-                    return AjaxResult.error("当前仅 VLESS-REALITY 支持 SOCKS5 中转");
+                if (!ProxyNodeProtocol.supportsRelay(nodeType)) {
+                    return AjaxResult.error("当前仅 VLESS-REALITY 和 Hysteria2 支持 SOCKS5 中转");
                 }
                 relay = VpsSshCommandService.parseSocks5RelayText(relayText);
             }
@@ -334,7 +335,11 @@ public class VpsInstanceController extends BaseController {
                 throw new IllegalStateException("节点数据库保存失败");
             }
             try {
-                vpsSshCommandService.ensureTrafficRulesForPort(instanceId, node.getPort() != null ? node.getPort() : port);
+                if ("Hysteria2".equals(node.getNodeType())) {
+                    vpsSshCommandService.ensureTrafficRulesForPort(instanceId, node.getPort() != null ? node.getPort() : port, "Hysteria2");
+                } else {
+                    vpsSshCommandService.ensureTrafficRulesForPort(instanceId, node.getPort() != null ? node.getPort() : port);
+                }
             } catch (Exception ex) {
                 log.warn("ensureTrafficRulesForPort instanceId={}, port={} failed: {}", instanceId, port, ex.getMessage());
             }

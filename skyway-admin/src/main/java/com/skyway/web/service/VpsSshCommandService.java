@@ -31,6 +31,8 @@ import com.alibaba.fastjson2.JSONWriter;
 import com.alibaba.fastjson2.JSONObject;
 import com.skyway.common.utils.StringUtils;
 import com.skyway.resource.domain.ProxyNode;
+import com.skyway.resource.domain.ProxyNodeProtocol;
+import com.skyway.resource.domain.Hysteria2Support;
 import com.skyway.resource.domain.ProxyNodeDomainWhitelist;
 import com.skyway.resource.domain.VpsInstance;
 import com.skyway.resource.service.IVpsInstanceService;
@@ -50,6 +52,7 @@ public class VpsSshCommandService {
     private static final String TC_MANAGER_SCRIPT_PATH = "/root/tc_manager.sh";
     private static final String TC_PORT_RULES_CONF = "/etc/tc_ports_rules.conf";
     private static final String SOCKS_RELAY_TAG_PREFIX = "SOCKS-";
+    private static final String NODE_DIRECT_TAG_PREFIX = "skyway-node-direct-";
     private static final String DOMAIN_EGRESS_TAG_PREFIX = "skyway-domain-egress-";
     private static final String DOMAIN_BLOCK_TAG_PREFIX = "skyway-domain-block-";
     private static final String RELAY_TAG_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -184,6 +187,8 @@ public class VpsSshCommandService {
             + "  esac\n"
             + "done\n";
     private static final String SINGBOX_SPEED_SCRIPT = "#!/bin/bash\n"
+            + "# SKYWAY_SPEED_VERSION=2\n"
+            + "export PATH=/usr/sbin:/sbin:$PATH\n"
             + "\n"
             + "# 捕获 Ctrl+C 信号，优雅退出并恢复光标\n"
             + "trap 'tput cnorm; echo -e \"\\n🛑 监控已停止。\"; exit 0' SIGINT\n"
@@ -219,6 +224,41 @@ public class VpsSshCommandService {
             + "    }'\n"
             + "}\n"
             + "\n"
+            + "\n"
+            + "# UDP sockets do not expose TCP byte counters in ss. Read the managed firewall counters.\n"
+            + "get_udp_data() {\n"
+            + "    if command -v iptables >/dev/null 2>&1; then\n"
+            + "        for direction in IN OUT; do\n"
+            + "            iptables -L \"NODE_TRAFFIC_$direction\" -v -n -x 2>/dev/null | awk -v direction=\"$direction\" '\n"
+            + "            / udp / && $1 ~ /^[0-9]+$/ {\n"
+            + "                for (i=1;i<=NF;i++) if ($i ~ /^[ds]pt:/) {\n"
+            + "                    port=$i; sub(/^[ds]pt:/,\"\",port); if (port==\"\") port=$(i+1)\n"
+            + "                    if ($2+0 > bytes[port]+0) bytes[port]=$2+0\n"
+            + "                    seen[port]=1\n"
+            + "                }\n"
+            + "            }\n"
+            + "            END {for (port in seen) print direction \":\" port, bytes[port]+0}'\n"
+            + "        done\n"
+            + "    else\n"
+            + "        nft list table inet node_traffic 2>/dev/null | awk '\n"
+            + "        /udp (dport|sport)/ {\n"
+            + "            port=\"\"; value=0; direction=\"\"\n"
+            + "            for(i=1;i<=NF;i++) {\n"
+            + "                if($i==\"dport\") {port=$(i+1); direction=\"IN\"}\n"
+            + "                if($i==\"sport\") {port=$(i+1); direction=\"OUT\"}\n"
+            + "                if($i==\"bytes\") value=$(i+1)\n"
+            + "            }\n"
+            + "            key=direction \":\" port\n"
+            + "            if(value>bytes[key]+0) bytes[key]=value\n"
+            + "            seen[key]=1\n"
+            + "        }\n"
+            + "        END {for(key in seen) print key, bytes[key]+0}'\n"
+            + "    fi\n"
+            + "}\n"
+            + "declare -A old_udp\n"
+            + "while read -r key value; do old_udp[\"$key\"]=$value; done < <(get_udp_data)\n"
+            + "old_udp_time=$SECONDS\n"
+            + "\n"
             + "# 全局保存上一秒数据的字典\n"
             + "declare -A old_acked\n"
             + "declare -A old_recv\n"
@@ -233,8 +273,8 @@ public class VpsSshCommandService {
             + "while true; do\n"
             + "    sleep 1\n"
             + "    \n"
-            + "    unset allowed_ports new_old_acked new_old_recv port_up port_down port_total output_lines\n"
-            + "    declare -A allowed_ports\n"
+            + "    unset allowed_ports udp_ports new_old_acked new_old_recv port_up port_down port_total output_lines\n"
+            + "    declare -A allowed_ports udp_ports\n"
             + "    declare -A new_old_acked\n"
             + "    declare -A new_old_recv\n"
             + "    declare -A port_up\n"
@@ -248,6 +288,7 @@ public class VpsSshCommandService {
             + "        port=$(grep -hoP '\"listen_port\":\\s*\\K\\d+' \"$conf\" 2>/dev/null)\n"
             + "        if [[ -n \"$port\" ]]; then\n"
             + "            allowed_ports[\"$port\"]=1\n"
+            + "            if grep -Eq '\"type\"[[:space:]]*:[[:space:]]*\"hysteria2\"' \"$conf\"; then udp_ports[\"$port\"]=1; fi\n"
             + "            port_up[\"$port\"]=0\n"
             + "            port_down[\"$port\"]=0\n"
             + "            port_total[\"$port\"]=0\n"
@@ -290,6 +331,25 @@ public class VpsSshCommandService {
             + "        old_recv[\"$k\"]=\"${new_old_recv[$k]}\"\n"
             + "    done\n"
             + "    \n"
+            + "    elapsed=$((SECONDS - old_udp_time))\n"
+            + "    ((elapsed > 0)) || elapsed=1\n"
+            + "    old_udp_time=$SECONDS\n"
+            + "    unset next_udp\n"
+            + "    declare -A next_udp\n"
+            + "    while read -r key value; do\n"
+            + "        port=${key#*:}\n"
+            + "        [[ -n \"${udp_ports[$port]}\" ]] || continue\n"
+            + "        previous=${old_udp[$key]:-$value}\n"
+            + "        delta=$((value - previous))\n"
+            + "        ((delta >= 0)) || delta=0\n"
+            + "        next_udp[\"$key\"]=$value\n"
+            + "        rate=$(awk -v delta=\"$delta\" -v elapsed=\"$elapsed\" 'BEGIN {printf \"%.4f\", delta/elapsed}')\n"
+            + "        if [[ $key == OUT:* ]]; then port_up[\"$port\"]=$rate; else port_down[\"$port\"]=$rate; fi\n"
+            + "    done < <(get_udp_data)\n"
+            + "    unset old_udp\n"
+            + "    declare -A old_udp\n"
+            + "    for key in \"${!next_udp[@]}\"; do old_udp[\"$key\"]=${next_udp[$key]}; done\n"
+            + "\n"
             + "    for port in \"${!allowed_ports[@]}\"; do\n"
             + "        total=${port_total[\"$port\"]:-0}\n"
             + "        up_val=${port_up[\"$port\"]:-0}\n"
@@ -300,7 +360,7 @@ public class VpsSshCommandService {
             + "        down_mb=$(awk \"BEGIN {printf \\\"%.2f\\\", $down_val / 1048576}\")\n"
             + "        \n"
             + "        line=$(printf \"%-12s | %-15s | %-15s\" \"$port\" \"$up_mb\" \"$down_mb\")\n"
-            + "        sort_key=$(printf \"%012d\" \"$total\")\n"
+            + "        sort_key=$(awk -v total=\"$total\" 'BEGIN {printf \"%012.0f\", total}')\n"
             + "        output_lines+=(\"${sort_key}|${line}\")\n"
             + "    done\n"
             + "    \n"
@@ -421,8 +481,9 @@ public class VpsSshCommandService {
             throw new IllegalArgumentException("sing-box inbound tag 不能为空");
         }
         JSONArray outbounds = root.getJSONArray("outbounds");
-        if (outbounds == null || outbounds.isEmpty()) {
-            throw new IllegalArgumentException("sing-box 配置缺少 outbounds");
+        if (outbounds == null) {
+            outbounds = new JSONArray();
+            root.put("outbounds", outbounds);
         }
 
         JSONObject socksOutbound = new JSONObject();
@@ -433,7 +494,8 @@ public class VpsSshCommandService {
         socksOutbound.put("version", "5");
         socksOutbound.put("username", relay.getUsername());
         socksOutbound.put("password", relay.getPassword());
-        outbounds.set(0, socksOutbound);
+        if (isHysteria2Config(root) || outbounds.isEmpty()) outbounds.add(socksOutbound);
+        else outbounds.set(0, socksOutbound);
 
         refreshManagedDomainEgress(outbounds, socksOutbound);
         JSONObject route = root.getJSONObject("route");
@@ -447,6 +509,35 @@ public class VpsSshCommandService {
         rules.add(managedDomainRuleCount(rules, inboundTag), rule);
         route.put("rules", rules);
         root.put("route", route);
+        return JSON.toJSONString(root, JSONWriter.Feature.PrettyFormat);
+    }
+
+    /** A merged sing-box configuration otherwise inherits the first outbound of another node. */
+    public static String ensureNodeScopedDirectRouting(String configJson) {
+        JSONObject root = JSON.parseObject(configJson);
+        JSONArray inbounds = root.getJSONArray("inbounds");
+        if (inbounds == null || inbounds.isEmpty()) throw new IllegalArgumentException("sing-box 配置缺少 inbounds");
+        String inboundTag = inbounds.getJSONObject(0).getString("tag");
+        if (StringUtils.isEmpty(inboundTag)) throw new IllegalArgumentException("sing-box inbound tag 不能为空");
+        JSONArray outbounds = root.getJSONArray("outbounds");
+        if (outbounds == null) { outbounds = new JSONArray(); root.put("outbounds", outbounds); }
+        JSONObject route = root.getJSONObject("route");
+        if (route == null) { route = new JSONObject(); root.put("route", route); }
+        JSONArray rules = route.getJSONArray("rules");
+        if (rules == null) { rules = new JSONArray(); route.put("rules", rules); }
+        for (int i = 0; i < rules.size(); i++) {
+            JSONObject rule = rules.getJSONObject(i);
+            String tag = rule.getString("outbound");
+            if (matchesInbound(rule.get("inbound"), inboundTag) && tag != null
+                    && tag.startsWith(NODE_DIRECT_TAG_PREFIX) && hasOutboundTag(outbounds, tag)) {
+                return JSON.toJSONString(root, JSONWriter.Feature.PrettyFormat);
+            }
+        }
+        // Random identity survives port edits without colliding with a new node reusing the old port.
+        String directTag = NODE_DIRECT_TAG_PREFIX + java.util.UUID.randomUUID();
+        JSONObject direct = new JSONObject(); direct.put("type", "direct"); direct.put("tag", directTag);
+        outbounds.add(direct);
+        JSONObject fallback = inboundRule(inboundTag); fallback.put("outbound", directTag); rules.add(fallback);
         return JSON.toJSONString(root, JSONWriter.Feature.PrettyFormat);
     }
 
@@ -478,10 +569,11 @@ public class VpsSshCommandService {
         JSONObject socksOutbound = null;
         for (int i = 0; i < outbounds.size(); i++) {
             JSONObject outbound = outbounds.getJSONObject(i);
-            if (outbound == null) continue;
+            if (outbound == null || isManagedDomainOutbound(outbound)) continue;
             String tag = outbound.getString("tag");
+            if (isHysteria2Config(root) && (tag == null || !tag.startsWith(SOCKS_RELAY_TAG_PREFIX))) continue;
             boolean routeMatched = StringUtils.isNotEmpty(existingSocksTag) && existingSocksTag.equals(tag);
-            boolean typeMatched = "socks".equals(outbound.getString("type"));
+            boolean typeMatched = "socks".equals(outbound.getString("type")) && !isManagedDomainOutbound(outbound);
             if (routeMatched || typeMatched) {
                 socksOutbound = outbound;
                 break;
@@ -554,7 +646,9 @@ public class VpsSshCommandService {
         }
 
         String effectiveOldTag = oldInboundTag;
-        String effectiveNewTag = StringUtils.isNotEmpty(newInboundTag) ? newInboundTag : oldInboundTag;
+        // Access-log scopes resolve Hysteria2 nodes by protocol and current port.
+        String effectiveNewTag = isHysteria2Config(root) ? "Hysteria2-" + newPort + ".json"
+                : StringUtils.isNotEmpty(newInboundTag) ? newInboundTag : oldInboundTag;
         String matchedOldTag = null;
         Integer matchedOldPort = null;
         boolean matched = false;
@@ -591,6 +685,7 @@ public class VpsSshCommandService {
             addIfNotEmpty(oldRouteInboundTags, matchedOldTag);
             if (matchedOldPort != null) {
                 addIfNotEmpty(oldRouteInboundTags, "VLESS-REALITY-" + matchedOldPort + ".json");
+                addIfNotEmpty(oldRouteInboundTags, "Hysteria2-" + matchedOldPort + ".json");
             }
             JSONObject route = root.getJSONObject("route");
             JSONArray rules = route != null ? route.getJSONArray("rules") : null;
@@ -641,7 +736,9 @@ public class VpsSshCommandService {
         for (int i = 0; i < outbounds.size(); i++) {
             JSONObject outbound = outbounds.getJSONObject(i);
             if (outbound != null && "socks".equals(outbound.getString("type"))
-                    && !isManagedDomainOutbound(outbound)) {
+                    && !isManagedDomainOutbound(outbound)
+                    && (!isHysteria2Config(root) || (outbound.getString("tag") != null
+                    && outbound.getString("tag").startsWith(SOCKS_RELAY_TAG_PREFIX)))) {
                 if (StringUtils.isNotEmpty(outbound.getString("tag"))) socksTags.add(outbound.getString("tag"));
                 socksIndex = i;
                 break;
@@ -650,8 +747,10 @@ public class VpsSshCommandService {
         if (socksIndex < 0) return JSON.toJSONString(root, JSONWriter.Feature.PrettyFormat);
         JSONObject direct = new JSONObject();
         direct.put("type", "direct");
-        outbounds.set(socksIndex, direct);
+        if (isHysteria2Config(root)) outbounds.remove(socksIndex);
+        else outbounds.set(socksIndex, direct);
         refreshManagedDomainEgress(outbounds, direct);
+        if (outbounds.isEmpty()) root.remove("outbounds");
         JSONObject route = root.getJSONObject("route");
         JSONArray rules = route != null ? route.getJSONArray("rules") : null;
         if (rules != null) {
@@ -660,6 +759,12 @@ public class VpsSshCommandService {
             if (route.isEmpty()) root.remove("route");
         }
         return JSON.toJSONString(root, JSONWriter.Feature.PrettyFormat);
+    }
+
+    private static boolean isHysteria2Config(JSONObject root) {
+        JSONArray inbounds = root.getJSONArray("inbounds");
+        return inbounds != null && !inbounds.isEmpty()
+                && "hysteria2".equals(inbounds.getJSONObject(0).getString("type"));
     }
 
     private static boolean isManagedDomainOutbound(JSONObject outbound) {
@@ -733,7 +838,10 @@ public class VpsSshCommandService {
         Set<String> managedOutboundTags = managedDomainOutboundTags(rules, inboundTag);
 
         JSONArray outbounds = root.getJSONArray("outbounds");
-        if (outbounds == null || outbounds.isEmpty()) throw new IllegalArgumentException("sing-box 配置缺少 outbounds");
+        if (outbounds == null) {
+            outbounds = new JSONArray();
+            root.put("outbounds", outbounds);
+        }
         String suffix = Integer.toHexString(inboundTag.hashCode());
         boolean hadManagedMarker = hasOutboundTag(outbounds, DOMAIN_EGRESS_TAG_PREFIX + suffix)
                 || hasOutboundTag(outbounds, DOMAIN_BLOCK_TAG_PREFIX + suffix);
@@ -755,6 +863,7 @@ public class VpsSshCommandService {
             }
             if (rules.isEmpty()) route.remove("rules"); else route.put("rules", rules);
             if (route.isEmpty()) root.remove("route"); else root.put("route", route);
+            if (outbounds.isEmpty()) root.remove("outbounds");
             return JSON.toJSONString(root, JSONWriter.Feature.PrettyFormat);
         }
 
@@ -780,7 +889,7 @@ public class VpsSshCommandService {
 
             if (blacklist) {
                 // Keep an unused, namespaced outbound as an ownership marker for safe/idempotent cleanup.
-                createManagedEgress(outbounds, suffix);
+                createManagedEgress(outbounds, suffix, !isHysteria2Config(root));
                 JSONObject reject = inboundRule(inboundTag);
                 reject.put("domain", exactDomains);
                 reject.put("domain_suffix", suffixDomains);
@@ -788,7 +897,7 @@ public class VpsSshCommandService {
                 reject.put("method", "default");
                 managed.add(reject);
             } else {
-                String egressTag = createManagedEgress(outbounds, suffix);
+                String egressTag = createManagedEgress(outbounds, suffix, !isHysteria2Config(root));
                 JSONObject allow = inboundRule(inboundTag);
                 allow.put("domain", exactDomains);
                 allow.put("domain_suffix", suffixDomains);
@@ -816,7 +925,7 @@ public class VpsSshCommandService {
                 reject.put("outbound", blockTag);
                 managed.add(reject);
             } else {
-                String egressTag = createManagedEgress(outbounds, suffix);
+                String egressTag = createManagedEgress(outbounds, suffix, !isHysteria2Config(root));
                 JSONObject allow = inboundRule(inboundTag);
                 allow.put("domain", exactDomains);
                 allow.put("domain_suffix", suffixDomains);
@@ -941,7 +1050,7 @@ public class VpsSshCommandService {
         }
     }
 
-    private static String createManagedEgress(JSONArray outbounds, String suffix) {
+    private static String createManagedEgress(JSONArray outbounds, String suffix, boolean allowSocksFallback) {
         JSONObject direct = null;
         JSONObject source = null;
         JSONObject socksFallback = null;
@@ -958,9 +1067,12 @@ public class VpsSshCommandService {
             }
             if (direct == null && "direct".equals(outbound.getString("type"))) direct = outbound;
         }
-        if (source == null) source = socksFallback;
+        if (source == null && allowSocksFallback) source = socksFallback;
         if (source == null) source = direct;
-        if (source == null) throw new IllegalArgumentException("sing-box 配置缺少 direct 或 socks outbound");
+        if (source == null) {
+            source = new JSONObject();
+            source.put("type", "direct");
+        }
         String tag = DOMAIN_EGRESS_TAG_PREFIX + suffix;
         JSONObject managed = JSON.parseObject(source.toJSONString());
         managed.put("tag", tag);
@@ -1097,6 +1209,7 @@ public class VpsSshCommandService {
         boolean success = false;
         try {
             ssh = createSshClient(instanceId);
+            if (!newPort.equals(oldPort)) assertRemotePortAvailable(ssh, newPort);
             ProxyNode locator = new ProxyNode();
             locator.setNodeName(oldBaseName);
             locator.setPort(oldPort);
@@ -1515,7 +1628,7 @@ public class VpsSshCommandService {
 
     private static void installRealtimeSpeedScript(Session session) throws IOException {
         String encodedScript = Base64.getEncoder().encodeToString(SINGBOX_SPEED_SCRIPT.getBytes(StandardCharsets.UTF_8));
-        String install = "if [ ! -x " + SPEED_SCRIPT_PATH + " ]; then "
+        String install = "if [ ! -x " + SPEED_SCRIPT_PATH + " ] || ! grep -q '^# SKYWAY_SPEED_VERSION=2$' " + SPEED_SCRIPT_PATH + "; then "
                 + "printf '%s' '" + encodedScript + "' | base64 -d > " + SPEED_SCRIPT_PATH
                 + " && chmod +x " + SPEED_SCRIPT_PATH + "; fi";
         String out = execAndRead(session, "sh -c " + quoteSh(install));
@@ -1913,17 +2026,6 @@ public class VpsSshCommandService {
         }
     }
 
-    private String readAndApplySocksRelay(SSHClient ssh, String confPath, Socks5RelayConfig relay) throws IOException {
-        String original;
-        try (Session readSession = ssh.startSession()) {
-            original = execAndRead(readSession, "cat " + shellQuote(confPath));
-        }
-        if (StringUtils.isEmpty(original)) {
-            throw new IOException("读取 sing-box 配置失败: " + confPath);
-        }
-        return upsertSocks5RelayToSingBoxConfig(original, relay, randomRelayTag());
-    }
-
     public void applySocks5RelayToRemoteConfig(SSHClient ssh, String confPath, Socks5RelayConfig relay) throws IOException {
         if (ssh == null) {
             throw new IOException("SSH 连接为空");
@@ -1931,11 +2033,22 @@ public class VpsSshCommandService {
         if (relay == null) {
             return;
         }
-        String patchedConfig = readAndApplySocksRelay(ssh, confPath, relay);
-        try (Session writeSession = ssh.startSession()) {
-            writeRemoteTextFile(writeSession, confPath, patchedConfig);
+        String original;
+        try (Session read = ssh.startSession()) {
+            original = execAndRead(read, "cat -- " + shellQuote(confPath));
         }
-        restartSingBox(ssh);
+        if (StringUtils.isEmpty(original)) throw new IOException("读取 sing-box 配置失败");
+        String patchedConfig = upsertSocks5RelayToSingBoxConfig(original, relay, randomRelayTag());
+        replaceNodeConfig(ssh, confPath, original, patchedConfig, confPath.endsWith(DISABLED_SUFFIX));
+    }
+
+    public void initializeProxyNodeRouting(SSHClient ssh, String confPath, Socks5RelayConfig relay) throws IOException {
+        String original;
+        try (Session read = ssh.startSession()) { original = execAndRead(read, "cat -- " + shellQuote(confPath)); }
+        if (StringUtils.isEmpty(original)) throw new IOException("读取 sing-box 配置失败");
+        String patched = ensureNodeScopedDirectRouting(original);
+        if (relay != null) patched = upsertSocks5RelayToSingBoxConfig(patched, relay, randomRelayTag());
+        replaceNodeConfig(ssh, confPath, original, patched, confPath.endsWith(DISABLED_SUFFIX));
     }
 
     public void applySocks5RelayToProxyNodeConfig(ProxyNode node, Socks5RelayConfig relay) throws IOException {
@@ -1980,10 +2093,7 @@ public class VpsSshCommandService {
                 throw new IOException("读取 sing-box 配置失败: " + confPath);
             }
             String patchedConfig = removeSocks5RelayFromSingBoxConfig(original);
-            try (Session writeSession = ssh.startSession()) {
-                writeRemoteTextFile(writeSession, confPath, patchedConfig);
-            }
-            restartSingBox(ssh);
+            replaceNodeConfig(ssh, confPath, original, patchedConfig, "1".equals(node.getStatus()));
         } finally {
             if (ssh != null) {
                 try { ssh.close(); } catch (IOException e) { log.debug("SSH close: {}", e.getMessage()); }
@@ -2004,7 +2114,7 @@ public class VpsSshCommandService {
             if (StringUtils.isEmpty(original)) throw new IOException("读取 sing-box 配置失败");
             String patched = RealitySniSupport.patchInbound(original, node, sni);
             if (JSON.parseObject(original).equals(JSON.parseObject(patched))) return null;
-            replaceRealityConfig(ssh, path, original, patched, "1".equals(node.getStatus()));
+            replaceNodeConfig(ssh, path, original, patched, "1".equals(node.getStatus()));
             return original;
         }
     }
@@ -2019,7 +2129,7 @@ public class VpsSshCommandService {
                 current = execAndRead(read, "cat -- " + shellQuote(path));
             }
             if (StringUtils.isEmpty(current)) throw new IOException("读取 sing-box 配置失败");
-            replaceRealityConfig(ssh, path, current, original, "1".equals(node.getStatus()));
+            replaceNodeConfig(ssh, path, current, original, "1".equals(node.getStatus()));
         }
     }
 
@@ -2030,11 +2140,11 @@ public class VpsSshCommandService {
         }
     }
 
-    private void replaceRealityConfig(SSHClient ssh, String path, String original, String patched,
+    private void replaceNodeConfig(SSHClient ssh, String path, String original, String patched,
             boolean disabled) throws IOException {
         String token = Long.toHexString(System.nanoTime());
-        String temp = path + ".skyway-sni-" + token + ".tmp";
-        String backup = path + ".skyway-sni-" + token + ".bak";
+        String temp = path + ".skyway-config-" + token + ".tmp";
+        String backup = path + ".skyway-config-" + token + ".bak";
         boolean replacementStarted = false;
         boolean canDeleteBackup = false;
         try {
@@ -2044,7 +2154,7 @@ public class VpsSshCommandService {
                 String command = "set -e; cp -- " + shellQuote(path) + " " + shellQuote(backup)
                         + "; mv -- " + shellQuote(temp) + " " + shellQuote(path) + "; echo __OK__";
                 String out = execAndRead(replace, "sh -c " + quoteSh(command) + " 2>&1");
-                if (out == null || !out.contains("__OK__")) throw new IOException("替换 SNI 配置失败");
+                if (out == null || !out.contains("__OK__")) throw new IOException("替换节点配置失败");
             }
             if (!disabled) restartSingBoxChecked(ssh);
             canDeleteBackup = true;
@@ -2056,7 +2166,7 @@ public class VpsSshCommandService {
                     try (Session restore = ssh.startSession()) {
                         String out = execAndRead(restore, "sh -c " + quoteSh("set -e; mv -- "
                                 + shellQuote(temp) + " " + shellQuote(path) + "; echo __OK__") + " 2>&1");
-                        if (out == null || !out.contains("__OK__")) throw new IOException("恢复 SNI 配置失败");
+                        if (out == null || !out.contains("__OK__")) throw new IOException("恢复节点配置失败");
                     }
                     if (!disabled) restartSingBoxChecked(ssh);
                     canDeleteBackup = true;
@@ -2065,7 +2175,7 @@ public class VpsSshCommandService {
                     log.error("restore SNI config failed: path={}, backup={}", path, backup, rollbackError);
                 }
             }
-            throw new IOException("SNI 配置更新失败: " + e.getMessage(), e);
+            throw new IOException("节点配置更新失败: " + e.getMessage(), e);
         } finally {
             try (Session cleanup = ssh.startSession()) {
                 execAndRead(cleanup, "rm -f -- " + shellQuote(temp)
@@ -2228,6 +2338,7 @@ public class VpsSshCommandService {
         try {
             JSONObject config = JSON.parseObject(configJson);
             String id = config != null ? config.getString("id") : null;
+            if (StringUtils.isEmpty(id) && config != null) id = config.getString("password");
             return StringUtils.isNotEmpty(id) ? id.trim() : null;
         } catch (Exception ignored) {
             return null;
@@ -2483,27 +2594,30 @@ public class VpsSshCommandService {
     }
 
     /**
-     * 在指定实例上添加节点（执行 sb、重命名、解析），返回可入库的节点对象。支持 VLESS-REALITY、VMess-TCP。
+     * 在指定实例上添加节点（执行 sb、重命名、解析），返回可入库的节点对象。支持 VLESS-REALITY、VMess-TCP、Hysteria2。
      */
     public ProxyNode addProxyNodeOnInstance(Long instanceId, Long customerId, int port, String expireTimeStr, String nodeType) throws IOException {
         return addProxyNodeOnInstance(instanceId, customerId, port, expireTimeStr, nodeType, null);
     }
 
     /**
-     * 在指定实例上添加节点（执行 sb、重命名、解析），返回可入库的节点对象。支持 VLESS-REALITY、VMess-TCP。
-     * relay 仅对 VLESS-REALITY 生效；为空时保持原创建流程不变。
+     * 在指定实例上添加节点（执行 sb、重命名、解析），返回可入库的节点对象。支持 VLESS-REALITY、VMess-TCP、Hysteria2。
+     * relay 对 VLESS-REALITY、Hysteria2 生效；为空时保持原创建流程不变。
      */
     public ProxyNode addProxyNodeOnInstance(Long instanceId, Long customerId, int port, String expireTimeStr, String nodeType,
                                             Socks5RelayConfig relay) throws IOException {
         if (customerId == null) throw new IllegalArgumentException("请选择归属客户");
         if (nodeType == null || nodeType.isEmpty()) nodeType = "VLESS-REALITY";
-        if (!"VLESS-REALITY".equals(nodeType) && !"VMess-TCP".equals(nodeType)) {
+        if (!ProxyNodeProtocol.isSupported(nodeType)) {
             throw new IllegalArgumentException("不支持的协议类型: " + nodeType);
         }
-        if (relay != null && !"VLESS-REALITY".equals(nodeType)) {
-            throw new IllegalArgumentException("当前仅 VLESS-REALITY 支持 SOCKS5 中转");
+        if (relay != null && !ProxyNodeProtocol.supportsRelay(nodeType)) {
+            throw new IllegalArgumentException("当前仅 VLESS-REALITY 和 Hysteria2 支持 SOCKS5 中转");
         }
         SSHClient ssh = null;
+        String pendingPath = null;
+        String renamedPath = null;
+        boolean completed = false;
         try {
             ssh = createSshClient(instanceId);
             try (Session checkSession = ssh.startSession()) {
@@ -2514,18 +2628,10 @@ public class VpsSshCommandService {
             }
             // 在真正执行 sb 前再次检查数据库以外的系统端口、配置和 Docker 映射。
             assertRemotePortAvailable(ssh, port);
-            String runCmd;
-            String oldJsonName;
-            String typeLabel;
-            if ("VMess-TCP".equals(nodeType)) {
-                typeLabel = "VMess-TCP";
-                oldJsonName = "VMess-TCP-" + port + ".json";
-                runCmd = "printf '1\\n5\\n" + port + "\\n' | sb";
-            } else {
-                typeLabel = "VLESS-REALITY";
-                oldJsonName = "VLESS-REALITY-" + port + ".json";
-                runCmd = "printf '1\\n18\\n" + port + "\\n' | sb";
-            }
+            String typeLabel = nodeType;
+            String oldJsonName = nodeType + "-" + port + ".json";
+            String runCmd = ProxyNodeProtocol.createCommand(nodeType, port);
+            pendingPath = CONF_DIR + "/" + oldJsonName;
             String output;
             try (Session runSession = ssh.startSession()) {
                 String toRun = "sh -c \"" + runCmd.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
@@ -2536,7 +2642,8 @@ public class VpsSshCommandService {
             if (output.contains("无法使用") && output.contains("端口")) {
                 throw new IllegalStateException("端口 (" + port + ") 已被占用，请选择其他端口重试");
             }
-            ProxyNode parsed = "VMess-TCP".equals(nodeType) ? parseSbVmessTcpOutput(output, port) : parseSbVlessRealityOutput(output, port);
+            ProxyNode parsed = ProxyNodeProtocol.HYSTERIA2.equals(nodeType) ? Hysteria2Support.parseSbOutput(output, port)
+                    : "VMess-TCP".equals(nodeType) ? parseSbVmessTcpOutput(output, port) : parseSbVlessRealityOutput(output, port);
             if (parsed == null || parsed.getUrl() == null || parsed.getUrl().isEmpty()) {
                 throw new IllegalStateException("解析 sb 输出失败，请检查服务器上 sing-box 是否正常");
             }
@@ -2544,16 +2651,16 @@ public class VpsSshCommandService {
             String customPart = String.valueOf(customerId);
             String targetBaseName = buildNodeBaseName(typeLabel, parsed.getAddress(), port, customPart, expireDate);
             String newJsonName = targetBaseName + ".json";
-            String mvCmd = "mv " + CONF_DIR + "/" + oldJsonName + " " + CONF_DIR + "/" + newJsonName + " 2>&1";
+            renamedPath = CONF_DIR + "/" + newJsonName;
+            String mvCmd = "mv -- " + shellQuote(pendingPath) + " " + shellQuote(renamedPath) + " && echo __MOVED__";
             try (Session mvSession = ssh.startSession()) {
                 String mvOut = execAndRead(mvSession, mvCmd);
-                if (mvOut != null && mvOut.toLowerCase().contains("no such file")) {
+                if (mvOut == null || !mvOut.contains("__MOVED__")) {
                     throw new IOException("重命名失败: 未找到 " + oldJsonName);
                 }
             }
+            initializeProxyNodeRouting(ssh, CONF_DIR + "/" + newJsonName, relay);
             if (relay != null) {
-                String confPath = CONF_DIR + "/" + newJsonName;
-                applySocks5RelayToRemoteConfig(ssh, confPath, relay);
                 JSONObject config = JSON.parseObject(parsed.getConfigJson());
                 config.put("relay", relay.toConfigJson());
                 parsed.setConfigJson(config.toJSONString());
@@ -2564,12 +2671,35 @@ public class VpsSshCommandService {
             parsed.setCustomId(customPart);
             parsed.setExpireTime(expireDate);
             parsed.setStatus("0");
+            completed = true;
             return parsed;
         } finally {
+            if (!completed && ssh != null && pendingPath != null) {
+                try (Session cleanup = ssh.startSession()) {
+                    execAndRead(cleanup, "rm -f -- " + shellQuote(pendingPath)
+                            + (renamedPath == null ? "" : " " + shellQuote(renamedPath)));
+                    restartSingBoxChecked(ssh);
+                } catch (Exception cleanupError) {
+                    log.error("cleanup incomplete node creation failed: instanceId={}, port={}", instanceId, port, cleanupError);
+                }
+            }
             if (ssh != null) {
                 try { ssh.close(); } catch (IOException e) { log.debug("SSH close: {}", e.getMessage()); }
             }
         }
+    }
+
+    /** Removes only the known files allocated by an incomplete sb creation. */
+    public void cleanupProxyNodeCreation(SSHClient ssh, String... configNames) throws IOException {
+        StringBuilder command = new StringBuilder("rm -f --");
+        for (String name : configNames) {
+            if (name == null) continue;
+            command.append(' ').append(shellQuote(CONF_DIR + "/" + normalizeNodeBaseName(name) + ".json"));
+        }
+        try (Session cleanup = ssh.startSession()) {
+            execAndRead(cleanup, command.toString());
+        }
+        restartSingBoxChecked(ssh);
     }
 
     private static String buildNodeBaseName(String nodeType, String address, Integer port, String customerId, Date expireDate) {
@@ -2665,6 +2795,11 @@ public class VpsSshCommandService {
      * 为节点端口确保 iptables 计数规则存在（幂等）。
      */
     public void ensureTrafficRulesForPort(Long instanceId, int port) throws IOException {
+        ensureTrafficRulesForPort(instanceId, port, "VLESS-REALITY");
+    }
+
+    public void ensureTrafficRulesForPort(Long instanceId, int port, String nodeType) throws IOException {
+        String transport = ProxyNodeProtocol.transport(nodeType);
         if (instanceId == null || port <= 0) return;
         SSHClient ssh = null;
         try {
@@ -2679,9 +2814,9 @@ public class VpsSshCommandService {
             }
             try (Session dataSession = ssh.startSession()) {
                 if (useNft) {
-                    ensureTrafficRulesNft(dataSession, port);
+                    ensureTrafficRulesNft(dataSession, port, transport);
                 } else {
-                    ensureTrafficRulesIptables(dataSession, port);
+                    ensureTrafficRulesIptables(dataSession, port, transport);
                 }
             }
         } finally {
@@ -2689,14 +2824,14 @@ public class VpsSshCommandService {
         }
     }
 
-    private void ensureTrafficRulesIptables(Session session, int port) throws IOException {
-        String addIn = "iptables -C " + CHAIN_IN + " -p tcp --dport " + port + " -j ACCEPT 2>/dev/null || iptables -A " + CHAIN_IN + " -p tcp --dport " + port + " -j ACCEPT";
-        String addOut = "iptables -C " + CHAIN_OUT + " -p tcp --sport " + port + " -j ACCEPT 2>/dev/null || iptables -A " + CHAIN_OUT + " -p tcp --sport " + port + " -j ACCEPT";
+    private void ensureTrafficRulesIptables(Session session, int port, String transport) throws IOException {
+        String addIn = "iptables -C " + CHAIN_IN + " -p " + transport + " --dport " + port + " -j ACCEPT 2>/dev/null || iptables -A " + CHAIN_IN + " -p " + transport + " --dport " + port + " -j ACCEPT";
+        String addOut = "iptables -C " + CHAIN_OUT + " -p " + transport + " --sport " + port + " -j ACCEPT 2>/dev/null || iptables -A " + CHAIN_OUT + " -p " + transport + " --sport " + port + " -j ACCEPT";
         // 先删再插到链首；PATH 保证 CentOS 能找到 iptables；整段 2>&1 便于收错；先试 sudo -n，失败再试直接执行
         String block = "( " + PATH_PREFIX +
             "iptables -N " + CHAIN_IN + " 2>/dev/null; iptables -N " + CHAIN_OUT + " 2>/dev/null; " +
-            "iptables -D INPUT -p tcp -j " + CHAIN_IN + " 2>/dev/null; iptables -I INPUT 1 -p tcp -j " + CHAIN_IN + "; " +
-            "iptables -D OUTPUT -p tcp -j " + CHAIN_OUT + " 2>/dev/null; iptables -I OUTPUT 1 -p tcp -j " + CHAIN_OUT + "; " +
+            "iptables -D INPUT -p " + transport + " -j " + CHAIN_IN + " 2>/dev/null; iptables -I INPUT 1 -p " + transport + " -j " + CHAIN_IN + "; " +
+            "iptables -D OUTPUT -p " + transport + " -j " + CHAIN_OUT + " 2>/dev/null; iptables -I OUTPUT 1 -p " + transport + " -j " + CHAIN_OUT + "; " +
             addIn + "; " + addOut + " ) 2>&1";
         String out = execAndRead(session, "sudo -n sh -c " + quoteSh(block));
         boolean usedFallback = out != null && (out.contains("password") || out.contains("sudo:") || out.contains("not allowed"));
@@ -2713,16 +2848,30 @@ public class VpsSshCommandService {
         return "'" + s.replace("'", "'\"'\"'") + "'";
     }
 
-    private void ensureTrafficRulesNft(Session session, int port) throws IOException {
-        String create = "nft add table inet node_traffic 2>/dev/null; " +
-            "nft add chain inet node_traffic in { type filter hook input priority 0\\; policy accept\\; } 2>/dev/null; " +
-            "nft add chain inet node_traffic out { type filter hook output priority 0\\; policy accept\\; } 2>/dev/null; ";
-        // 先清理同端口历史规则，避免重复规则导致读取到 0 计数的尾部规则
-        String cleanIn = "while nft delete rule inet node_traffic in tcp dport " + port + " counter accept 2>/dev/null; do :; done";
-        String cleanOut = "while nft delete rule inet node_traffic out tcp sport " + port + " counter accept 2>/dev/null; do :; done";
-        String addIn = "nft add rule inet node_traffic in tcp dport " + port + " counter accept";
-        String addOut = "nft add rule inet node_traffic out tcp sport " + port + " counter accept";
-        execAndRead(session, "sh -c '" + create + cleanIn + "; " + cleanOut + "; " + addIn + "; " + addOut + "'");
+    private void ensureTrafficRulesNft(Session session, int port, String transport) throws IOException {
+        String create = "nft add table inet node_traffic 2>/dev/null; "
+                + "nft add chain inet node_traffic in '{ type filter hook input priority 0; policy accept; }' 2>/dev/null; "
+                + "nft add chain inet node_traffic out '{ type filter hook output priority 0; policy accept; }' 2>/dev/null; ";
+        String addIn = "nft list chain inet node_traffic in | grep -Eq "
+                + quoteSh(transport + " dport " + port + "( |$)")
+                + " || nft add rule inet node_traffic in " + transport + " dport " + port + " counter accept";
+        String addOut = "nft list chain inet node_traffic out | grep -Eq "
+                + quoteSh(transport + " sport " + port + "( |$)")
+                + " || nft add rule inet node_traffic out " + transport + " sport " + port + " counter accept";
+        execAndRead(session, "sh -c " + quoteSh(PATH_PREFIX + create + addIn + "; " + addOut));
+    }
+
+    private static String nftDeletePortRules(int port) {
+        StringBuilder command = new StringBuilder();
+        for (String chain : Arrays.asList("in", "out")) {
+            String direction = "in".equals(chain) ? "dport" : "sport";
+            command.append("nft -a list chain inet node_traffic ").append(chain)
+                    .append(" 2>/dev/null | awk ")
+                    .append(quoteSh("/(tcp|udp) " + direction + " " + port + " / && /# handle/ {print $NF}"))
+                    .append(" | while read -r handle; do nft delete rule inet node_traffic ")
+                    .append(chain).append(" handle \"$handle\"; done; ");
+        }
+        return command.toString();
     }
 
     /**
@@ -2742,11 +2891,16 @@ public class VpsSshCommandService {
             }
             try (Session dataSession = ssh.startSession()) {
                 if (useNft) {
-                    String del = "sh -c 'while nft delete rule inet node_traffic in tcp dport " + port + " counter accept 2>/dev/null; do :; done; " +
-                        "while nft delete rule inet node_traffic out tcp sport " + port + " counter accept 2>/dev/null; do :; done'";
-                    execAndRead(dataSession, del);
+                    execAndRead(dataSession, "sh -c " + quoteSh(PATH_PREFIX + nftDeletePortRules(port)));
                 } else {
-                    execAndRead(dataSession, "sh -c '" + PATH_PREFIX + "iptables -D " + CHAIN_IN + " -p tcp --dport " + port + " -j ACCEPT 2>/dev/null; iptables -D " + CHAIN_OUT + " -p tcp --sport " + port + " -j ACCEPT 2>/dev/null 2>&1'");
+                    StringBuilder deletion = new StringBuilder(PATH_PREFIX);
+                    for (String transport : Arrays.asList("tcp", "udp")) {
+                        deletion.append("while iptables -D ").append(CHAIN_IN).append(" -p ").append(transport)
+                                .append(" --dport ").append(port).append(" -j ACCEPT 2>/dev/null; do :; done; ")
+                                .append("while iptables -D ").append(CHAIN_OUT).append(" -p ").append(transport)
+                                .append(" --sport ").append(port).append(" -j ACCEPT 2>/dev/null; do :; done; ");
+                    }
+                    execAndRead(dataSession, "sh -c " + quoteSh(deletion.toString()));
                 }
             }
         } finally {
@@ -2862,7 +3016,7 @@ public class VpsSshCommandService {
         String full = execAndRead(session, "nft list table inet node_traffic 2>&1");
         if (full == null) return;
         // 兼容 "counter packets N bytes N" 与 "counter bytes N packets N" 两种 nft 输出顺序
-        Pattern nftRule = Pattern.compile("tcp (dport|sport) (\\d+) .*? bytes (\\d+)");
+        Pattern nftRule = Pattern.compile("(?:tcp|udp) (dport|sport) (\\d+) .*? bytes (\\d+)");
         for (String line : full.split("\\r?\\n")) {
             Matcher m = nftRule.matcher(line);
             if (m.find()) {

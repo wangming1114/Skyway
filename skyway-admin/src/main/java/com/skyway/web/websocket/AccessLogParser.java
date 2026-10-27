@@ -10,7 +10,7 @@ import com.alibaba.fastjson2.annotation.JSONField;
 public final class AccessLogParser {
 
     private static final Pattern ACCESS_LINE = Pattern.compile(
-            "^(\\S+)\\s+(\\S+)\\s+(\\S+).*?inbound/([^\\[]+)\\[([^\\]]+)\\]:\\s+\\[0\\] inbound connection to (.+)$");
+            "^(\\S+)\\s+(\\S+)\\s+(\\S+).*?inbound/([^\\[]+)\\[([^\\]]+)\\]:\\s+(?:\\[[^\\]]*\\] )?inbound (?:packet )?connection to (.+)$");
     private static final Pattern PORT = Pattern.compile("^[0-9]{1,5}$");
 
     private AccessLogParser() {

@@ -24,7 +24,7 @@
       </article>
       <article class="stat-card">
         <span class="summary-icon protocol"></span>
-        <div><strong>支持协议</strong><b>VLESS / Clash</b><small>多种主流协议灵活兼容</small></div>
+        <div><strong>支持协议</strong><b>VLESS / Hysteria2 / Clash</b><small>多种主流协议灵活兼容</small></div>
       </article>
       <article class="stat-card">
         <span class="summary-icon platform"></span>
@@ -102,7 +102,7 @@
             <h3>桌面端导入</h3>
             <button type="button" class="quick-item" @click="$emit('navigate', 'desktop')">
               <ClientIcon type="v2ray" />
-              <div><strong>v2rayN</strong><small>复制 VLESS 链接导入，支持 Reality / gRPC。</small></div>
+              <div><strong>v2rayN</strong><small>复制节点原始链接导入，支持 Reality / gRPC。</small></div>
               <span>查看教程</span>
             </button>
             <button type="button" class="quick-item" @click="$emit('navigate', 'desktop')">
@@ -115,7 +115,7 @@
             <h3>手机端导入</h3>
             <button type="button" class="quick-item" @click="$emit('navigate', 'mobile')">
               <ClientIcon type="v2rayng" />
-              <div><strong>v2rayNG</strong><small>Android 客户端，导入 VLESS 链接。</small></div>
+              <div><strong>v2rayNG</strong><small>Android 客户端，导入节点原始链接。</small></div>
               <span>查看教程</span>
             </button>
             <button type="button" class="quick-item" @click="$emit('navigate', 'mobile')">
