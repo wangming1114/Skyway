@@ -1,6 +1,21 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { getDefaultNodeExpireTime, parseSocks5RelayLines, parseSocks5RelayText } from './proxyNodeBatch.js'
+import { createNodeFormDefaults, getDefaultNodeExpireTime, parseSocks5RelayLines, parseSocks5RelayText } from './proxyNodeBatch.js'
+
+test('each new node form gets its own WS-TLS selection and streaming/social blacklist', () => {
+  const expected = {
+    nodeType: 'VLESS-WS-TLS',
+    domainPolicy: { mode: 'blacklist', presetKeys: ['streaming', 'social'], customDomains: [] }
+  }
+  const single = createNodeFormDefaults()
+  const batch = createNodeFormDefaults()
+  assert.deepEqual(single, expected)
+  single.nodeType = 'VLESS-REALITY'
+  single.domainPolicy.presetKeys.pop()
+  single.domainPolicy.customDomains.push('example.test')
+  assert.deepEqual(batch, expected)
+  assert.deepEqual(createNodeFormDefaults(), expected)
+})
 
 test('parses one SOCKS5 relay using the existing four-part format', () => {
   assert.deepEqual(parseSocks5RelayText('204.1.132.8:36772:8XmKfHnr:Rrh5bTVrj3'), {

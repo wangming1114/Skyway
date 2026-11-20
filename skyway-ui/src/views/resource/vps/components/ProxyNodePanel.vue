@@ -768,7 +768,7 @@ import { parseTime } from '@/utils/skyway'
 import { DEFAULT_REALITY_SNI, isValidRealitySni, readRealitySni } from '@/utils/realitySni'
 import { WS_TLS, fixedSubscription, operationId, validSubdomain, cloudflarePorts } from '@/utils/wsNode'
 import { proxyQrOptions, buildClashSubscribeUrl, safeProxyShareFilename } from '@/utils/proxyShare'
-import { getDefaultNodeExpireTime, parseSocks5RelayLines, parseSocks5RelayText } from '@/utils/proxyNodeBatch'
+import { createNodeFormDefaults, getDefaultNodeExpireTime, parseSocks5RelayLines, parseSocks5RelayText } from '@/utils/proxyNodeBatch'
 import { DocumentCopy, Loading, Edit, Delete } from '@element-plus/icons-vue'
 import AccessLogDialog from './AccessLogDialog.vue'
 import DomainWhitelistEditor from './DomainWhitelistEditor.vue'
@@ -1032,11 +1032,11 @@ const addFormRef = ref(null)
 const customerOptions = ref([])
 const instanceOptions = ref([])
 const addForm = reactive({
+  ...createNodeFormDefaults(),
   customerId: undefined,
   instanceId: undefined,
-  nodeType: 'VLESS-REALITY',
   sni: DEFAULT_REALITY_SNI,
-  port: undefined,
+  port: 443,
   enableRelay: false,
   relayText: '',
   relayHost: '',
@@ -1044,8 +1044,7 @@ const addForm = reactive({
   relayUsername: '',
   relayPassword: '',
   expireTime: null,
-  remark: '',
-  domainPolicy: null
+  remark: ''
 })
 const addFormPermanent = ref(true)
 const addPortAuto = ref(false)
@@ -1088,13 +1087,12 @@ const batchRunning = ref(false)
 const batchExecutionStarted = ref(false)
 const batchPermanent = ref(true)
 const batchForm = reactive({
+  ...createNodeFormDefaults(),
   instanceId: props.instanceId || undefined,
   customerId: undefined,
-  nodeType: 'VLESS-REALITY',
   expireTime: null,
   remark: '',
-  relayPaste: '',
-  domainPolicy: null
+  relayPaste: ''
 })
 const batchRows = ref([])
 let batchRowSequence = 0
@@ -1285,23 +1283,20 @@ function domainPolicyChanged(left, right) {
 
 function handleAdd() {
   addPortRecommendationVersion++
+  Object.assign(addForm, createNodeFormDefaults())
   addForm.customerId = props.fixedCustomer ? props.customerId : undefined
   addForm.instanceId = props.instanceId || undefined
   addForm.subdomain = ''
   addForm.operationId = operationId()
-  addForm.nodeType = 'VLESS-REALITY'
   addForm.sni = DEFAULT_REALITY_SNI
-  addForm.port = undefined
+  addForm.port = 443
   addPortAuto.value = false
   addPortWarning.value = ''
   resetRelayForm()
   addForm.expireTime = getDefaultNodeExpireTime()
   addForm.remark = ''
-  addForm.domainPolicy = null
   addFormPermanent.value = false
   addDialogVisible.value = true
-  const portInstanceId = effectiveInstanceId.value
-  if (portInstanceId) loadSingleRecommendedPort(portInstanceId)
   ensureCustomerOptions()
   ensureInstanceOptions()
   nextTick(() => addFormRef.value?.clearValidate())
@@ -1324,13 +1319,12 @@ function createBatchRow(relayText = '', validationError = '') {
 }
 
 function handleBatchAdd() {
+  Object.assign(batchForm, createNodeFormDefaults())
   batchForm.instanceId = props.instanceId || undefined
   batchForm.customerId = props.fixedCustomer ? props.customerId : undefined
-  batchForm.nodeType = 'VLESS-REALITY'
   batchForm.expireTime = getDefaultNodeExpireTime()
   batchForm.remark = ''
   batchForm.relayPaste = ''
-  batchForm.domainPolicy = null
   batchPermanent.value = false
   batchExecutionStarted.value = false
   batchRows.value = [createBatchRow()]
@@ -1784,14 +1778,20 @@ watch(() => props.wsConnected, (connected) => {
   }
 })
 
+watch(() => addDialogVisible.value && addForm.nodeType === WS_TLS, visible => {
+  if (visible) loadWsRoot()
+})
+
 watch(() => addForm.nodeType, (nodeType, oldType) => {
   if (nodeType === WS_TLS) {
-    loadWsRoot()
     addPortRecommendationVersion++
     addForm.port = 443
     addPortAuto.value = false
     addPortWarning.value = ''
-  } else if (oldType === WS_TLS && effectiveInstanceId.value) loadSingleRecommendedPort(effectiveInstanceId.value)
+  } else if (oldType === WS_TLS) {
+    addForm.port = undefined
+    if (effectiveInstanceId.value) loadSingleRecommendedPort(effectiveInstanceId.value)
+  }
   if (!supportsSocks5Relay(nodeType)) {
     resetRelayForm()
   }
@@ -2394,7 +2394,6 @@ async function resumeWsOperations() {
 
 defineExpose({ handleAdd, handleBatchAdd })
 onMounted(() => {
-  loadWsRoot()
   resumeWsOperations()
   if (props.formsOnly) return
   emit('register-handler', handleWsMessage)

@@ -1,3 +1,12 @@
+import { WS_TLS } from './wsNode.js'
+
+export function createNodeFormDefaults() {
+  return {
+    nodeType: WS_TLS,
+    domainPolicy: { mode: 'blacklist', presetKeys: ['streaming', 'social'], customDomains: [] }
+  }
+}
+
 export function parseSocks5RelayText(value) {
   const text = (value || '').trim()
   if (!text) return { ok: false, message: '请输入 SOCKS5 中转配置' }
