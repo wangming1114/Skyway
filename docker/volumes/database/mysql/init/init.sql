@@ -1426,3 +1426,119 @@ INSERT INTO `sys_user_role` VALUES (1, 1);
 INSERT INTO `sys_user_role` VALUES (2, 2);
 
 SET FOREIGN_KEY_CHECKS = 1;
+
+
+-- Manual VPS port rate-limit upgrade script.
+-- Apply this to existing databases. Fresh installs can use skyway.sql directly.
+
+CREATE TABLE IF NOT EXISTS `res_proxy_node_rate_limit` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `instance_id` bigint(20) NOT NULL COMMENT 'VPS实例ID',
+  `proxy_node_id` bigint(20) NOT NULL COMMENT '代理节点ID',
+  `port` int(11) NOT NULL COMMENT '端口号',
+  `download_mbps` int(11) NOT NULL COMMENT '下载限速Mbps',
+  `upload_mbps` int(11) NOT NULL COMMENT '上传限速Mbps',
+  `expire_time` datetime DEFAULT NULL COMMENT '限速到期时间，NULL=永久',
+  `status` varchar(20) NOT NULL DEFAULT 'active' COMMENT '状态 active/removed/expired/failed',
+  `last_apply_result` varchar(2000) DEFAULT NULL COMMENT '最近一次远端应用结果',
+  `remark` varchar(500) DEFAULT NULL COMMENT '备注',
+  `create_by` varchar(64) DEFAULT '' COMMENT '创建者',
+  `create_time` datetime DEFAULT NULL COMMENT '创建时间',
+  `update_by` varchar(64) DEFAULT '' COMMENT '更新者',
+  `update_time` datetime DEFAULT NULL COMMENT '更新时间',
+  PRIMARY KEY (`id`) USING BTREE,
+  KEY `idx_proxy_node_status` (`proxy_node_id`, `status`) USING BTREE,
+  KEY `idx_instance_status` (`instance_id`, `status`) USING BTREE,
+  KEY `idx_expire_status` (`expire_time`, `status`) USING BTREE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 ROW_FORMAT=DYNAMIC COMMENT='代理节点端口限速表';
+
+INSERT INTO `sys_job`
+  (`job_name`, `job_group`, `invoke_target`, `cron_expression`, `misfire_policy`, `concurrent`, `status`, `create_by`, `create_time`, `update_by`, `update_time`, `remark`)
+SELECT
+  '端口限速到期清理',
+  'DEFAULT',
+  'proxyNodeRateLimitExpireTask.processExpired',
+  '0 */1 * * * ?',
+  '3',
+  '1',
+  '0',
+  'admin',
+  NOW(),
+  '',
+  NULL,
+  '到期限速规则自动 SSH 删除远端端口限速并重载 TC 规则（每分钟）'
+FROM DUAL
+WHERE NOT EXISTS (
+  SELECT 1 FROM `sys_job`
+  WHERE `invoke_target` = 'proxyNodeRateLimitExpireTask.processExpired'
+);
+
+-- 客户订阅信息访问链接
+create table if not exists mb_customer_temp_share (
+  id bigint(20) not null auto_increment comment '主键',
+  customer_id bigint(20) not null comment '客户ID',
+  token varchar(64) not null comment '公开访问令牌',
+  access_password varchar(128) not null comment '访问密码BCrypt哈希',
+  expire_time datetime default null comment '过期时间（为空表示永久）',
+  status char(1) default '0' comment '状态（0正常 1作废）',
+  create_by varchar(64) default '' comment '创建者',
+  create_time datetime comment '创建时间',
+  update_by varchar(64) default '' comment '更新者',
+  update_time datetime comment '更新时间',
+  remark varchar(500) default null comment '备注',
+  primary key (id),
+  unique key uk_mb_customer_temp_share_token (token),
+  key idx_mb_customer_temp_share_customer (customer_id),
+  key idx_mb_customer_temp_share_expire (expire_time)
+) engine=innodb auto_increment=1 default charset=utf8mb4 comment='客户订阅信息访问链接';
+
+alter table mb_customer_temp_share
+  modify expire_time datetime null comment '过期时间（为空表示永久）';
+
+-- Proxy node per-domain access policy. Apply once to existing databases.
+ALTER TABLE `res_proxy_node`
+  ADD COLUMN `domain_policy_json` text COMMENT '域名访问策略JSON(null=不限制，mode=whitelist/blacklist)' AFTER `config_json`;
+
+-- Run once on existing MySQL 5.7+ databases.
+ALTER TABLE res_proxy_node
+  ADD COLUMN listen_port INT NULL,
+  ADD COLUMN ws_key CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NULL,
+  ADD COLUMN subscription_token CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NULL,
+  ADD UNIQUE KEY uk_ws_key (ws_key),
+  ADD UNIQUE KEY uk_ws_subscription (subscription_token),
+  ADD UNIQUE KEY uk_ws_listener (instance_id,listen_port);
+
+CREATE TABLE IF NOT EXISTS res_ws_operation (
+  id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+  sequence_no BIGINT NOT NULL AUTO_INCREMENT UNIQUE,
+  instance_id BIGINT NOT NULL, node_id BIGINT NULL, reserved_port INT NULL,
+  UNIQUE KEY uk_ws_reserved_port (instance_id,reserved_port),
+  kind VARCHAR(12) NOT NULL, actor VARCHAR(64) NOT NULL,
+  request_json TEXT NOT NULL, context_json TEXT NOT NULL,
+  state VARCHAR(16) NOT NULL, stage VARCHAR(500) NOT NULL,
+  attempts INT NOT NULL DEFAULT 0, next_run DATETIME NOT NULL,
+  created_at DATETIME NOT NULL, KEY idx_ws_work (state,next_run),
+  KEY idx_ws_node_work (node_id,state), KEY idx_ws_instance_work (instance_id,kind,state)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS res_ws_domain (
+  id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+  node_key CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  operation_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  instance_id BIGINT NOT NULL, hostname VARCHAR(253) CHARACTER SET ascii NOT NULL,
+  zone_id CHAR(32) CHARACTER SET ascii NOT NULL, record_id CHAR(32) CHARACTER SET ascii NULL,
+  origin VARCHAR(45) CHARACTER SET ascii NOT NULL, proxied TINYINT NOT NULL,
+  state VARCHAR(16) NOT NULL, renew_at DATETIME NULL,
+  UNIQUE KEY uk_ws_hostname (hostname), UNIQUE KEY uk_ws_domain_op (operation_id),
+  KEY idx_ws_domain_node (node_key), KEY idx_ws_domain_instance (instance_id,state), KEY idx_ws_cert (state,renew_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+INSERT INTO sys_config (config_name,config_key,config_value,config_type,create_by,create_time,remark)
+SELECT 'Cloudflare 根域名','skyway.cloudflare.domain','skyway666.sbs','Y','admin',NOW(),'WS-TLS 节点的根域名'
+WHERE NOT EXISTS (SELECT 1 FROM sys_config WHERE config_key='skyway.cloudflare.domain');
+INSERT INTO sys_config (config_name,config_key,config_value,config_type,create_by,create_time,remark)
+SELECT 'Cloudflare Zone ID','skyway.cloudflare.zoneId','','Y','admin',NOW(),'Cloudflare 区域标识'
+WHERE NOT EXISTS (SELECT 1 FROM sys_config WHERE config_key='skyway.cloudflare.zoneId');
+INSERT INTO sys_config (config_name,config_key,config_value,config_type,create_by,create_time,remark)
+SELECT 'Cloudflare API Token','skyway.cloudflare.apiToken','','Y','admin',NOW(),'只写，权限限本区域 DNS 编辑及区域读取'
+WHERE NOT EXISTS (SELECT 1 FROM sys_config WHERE config_key='skyway.cloudflare.apiToken');

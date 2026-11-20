@@ -1,6 +1,9 @@
 <template>
   <div class="app-container">
+    <ProxyNodePanel ref="creationPanel" forms-only use-http-exec @changed="getList" />
     <div v-if="isMobile" class="mobile-resource-tools">
+      <el-button type="primary" icon="Plus" @click="creationPanel.handleAdd()" v-hasPermi="['resource:vps:add']">新增节点</el-button>
+      <el-button type="primary" plain @click="creationPanel.handleBatchAdd()" v-hasPermi="['resource:vps:add']">批量新增</el-button>
       <el-button plain icon="Filter" @click="filterOpen = true">筛选</el-button>
       <el-button type="warning" plain :disabled="selectedIds.length === 0" @click="openBatchDomainWhitelist" v-hasPermi="['resource:vps:edit']">批量域名策略</el-button>
       <el-button type="danger" plain icon="Delete" :disabled="selectedIds.length === 0" @click="handleBatchDelete" v-hasPermi="['resource:vps:remove']">批量删除（{{ selectedIds.length }}）</el-button>
@@ -47,6 +50,8 @@
     </el-form>
 
     <el-row v-if="!isMobile" :gutter="10" class="mb8">
+      <el-button type="primary" icon="Plus" @click="creationPanel.handleAdd()" v-hasPermi="['resource:vps:add']">新增节点</el-button>
+      <el-button type="primary" plain @click="creationPanel.handleBatchAdd()" v-hasPermi="['resource:vps:add']">批量新增</el-button>
       <el-button type="warning" plain :disabled="selectedIds.length === 0" @click="openBatchDomainWhitelist" v-hasPermi="['resource:vps:edit']">批量域名策略</el-button>
       <el-button type="danger" plain icon="Delete" :disabled="selectedIds.length === 0" @click="handleBatchDelete" v-hasPermi="['resource:vps:remove']">批量删除</el-button>
       <right-toolbar v-model:showSearch="showSearch" @queryTable="getList" />
@@ -121,7 +126,8 @@
       </el-table-column>
       <el-table-column label="状态" prop="status" width="120" align="center" sortable="custom" :sort-orders="['descending', 'ascending']">
         <template #default="{ row }">
-          <span class="status-cell">
+          <el-tooltip v-if="row.cleanupStage" :content="row.cleanupStage"><el-tag type="warning" size="small">待清理</el-tag></el-tooltip>
+          <span v-else class="status-cell">
             <el-icon v-if="statusLoadingId === row.id" class="is-loading status-loading"><Loading /></el-icon>
             <el-switch
               v-model="row.status"
@@ -167,7 +173,7 @@
     </el-table>
     <div v-else v-loading="loading" class="mobile-card-list proxy-node-mobile-list">
       <article v-for="row in nodeList" :key="row.id" class="mobile-card proxy-node-card">
-        <div class="mobile-card__head"><el-checkbox :model-value="isNodeSelected(row.id)" :aria-label="`选择节点 ${row.nodeName || row.id}`" @change="checked => toggleNodeSelection(row.id, checked)" /><span class="mobile-card__title">{{ row.nodeName || '-' }}</span><el-tag size="small" :type="getNodeTypeTagColor(row.nodeType)">{{ row.nodeType || '-' }}</el-tag><el-switch v-model="row.status" active-value="0" inactive-value="1" :disabled="statusLoadingId === row.id" @change="handleStatusChange(row)" v-hasPermi="['resource:vps:edit']" /></div>
+        <div class="mobile-card__head"><el-checkbox :model-value="isNodeSelected(row.id)" :aria-label="`选择节点 ${row.nodeName || row.id}`" @change="checked => toggleNodeSelection(row.id, checked)" /><span class="mobile-card__title">{{ row.nodeName || '-' }}</span><el-tag size="small" :type="getNodeTypeTagColor(row.nodeType)">{{ row.nodeType || '-' }}</el-tag><el-tooltip v-if="row.cleanupStage" :content="row.cleanupStage"><el-tag type="warning" size="small">待清理</el-tag></el-tooltip><el-switch v-else v-model="row.status" active-value="0" inactive-value="1" :disabled="statusLoadingId === row.id" @change="handleStatusChange(row)" v-hasPermi="['resource:vps:edit']" /></div>
         <div class="mobile-card__meta"><span class="mobile-card__wide">地址：{{ row.address || '-' }}<template v-if="row.port">:{{ row.port }}</template></span><span>VPS：<el-link v-if="row.instanceId" type="primary" :underline="false" @click="goVpsDetail(row.instanceId)">{{ instanceName(row.instanceId) }}</el-link><i v-else>-</i></span><span>客户：<el-link v-if="row.customerId" type="primary" :underline="false" @click="goCustomerDetail(row.customerId)">{{ customerName(row.customerId) }}</el-link><i v-else>-</i></span><span>有效期：{{ row.expireTime ? parseTime(row.expireTime, '{y}-{m}-{d}') : '永久' }}</span><span>访问范围：{{ domainPolicyText(row) }}</span><span>累计流量：{{ trafficMap[row.id] ? nodeTrafficSummaryText(row) : '-' }}</span><span>实时速率：{{ trafficMap[row.id] ? nodeRealtimeSummaryText(row) : '-' }}</span><span>限速：{{ rateLimitLogicText(row) }}</span><span>限速周期：{{ rateLimitDurationText(row) }}</span><span class="mobile-card__wide">备注：{{ row.remark || '-' }}</span></div>
         <div class="mobile-card__actions"><el-button link type="primary" @click="handleDetail(row)" v-hasPermi="['resource:vps:list', 'resource:vps:query']">详情</el-button><el-button link type="primary" @click="handleShare(row)" v-hasPermi="['resource:vps:list', 'resource:vps:query']">订阅信息</el-button><el-button link type="primary" @click="handleCopyUrl(row)" v-hasPermi="['resource:vps:list', 'resource:vps:query']">复制链接</el-button><el-dropdown trigger="click" @command="(cmd) => handleNodeCommand(cmd, row)" v-hasPermi="['resource:vps:list', 'resource:vps:query', 'resource:vps:edit', 'resource:vps:remove']"><el-button link type="primary" icon="More">更多</el-button><template #dropdown><el-dropdown-menu><el-dropdown-item command="accessLog" v-hasPermi="['resource:vps:list', 'resource:vps:query']">访问日志</el-dropdown-item><el-dropdown-item command="edit" v-hasPermi="['resource:vps:edit']">编辑</el-dropdown-item><el-dropdown-item command="rateLimit" v-hasPermi="['resource:vps:edit']">设置限速</el-dropdown-item><el-dropdown-item command="delete" v-hasPermi="['resource:vps:remove']">删除</el-dropdown-item><el-dropdown-item command="forceDelete" divided v-hasPermi="['resource:vps:remove']">强制删除</el-dropdown-item></el-dropdown-menu></template></el-dropdown></div>
       </article>
@@ -188,7 +194,8 @@
           <span v-else :class="{ 'expire-expired': isExpired(detailData.expireTime) }">{{ detailData.expireTime }}</span>
         </el-descriptions-item>
         <el-descriptions-item label="状态">
-          <dict-tag :options="res_proxy_node_status" :value="detailData.status" />
+          <el-tag v-if="detailData.cleanupStage" type="warning">待清理 · {{ detailData.cleanupStage }}</el-tag>
+          <dict-tag v-else :options="res_proxy_node_status" :value="detailData.status" />
         </el-descriptions-item>
         <el-descriptions-item label="创建时间">{{ detailData.createTime }}</el-descriptions-item>
         <el-descriptions-item label="流量统计" :span="2">
@@ -201,12 +208,17 @@
         <template v-if="detailConfig">
           <el-descriptions-item label="协议">{{ detailConfig.protocol || '-' }}</el-descriptions-item>
           <el-descriptions-item v-if="detailData.nodeType !== 'Hysteria2'" label="用户ID">{{ detailConfig.id || '-' }}</el-descriptions-item>
-          <el-descriptions-item v-if="detailData.nodeType !== 'Hysteria2'" label="流控">{{ detailConfig.flow || '-' }}</el-descriptions-item>
+          <el-descriptions-item v-if="detailData.nodeType === 'VLESS-REALITY'" label="流控">{{ detailConfig.flow || '-' }}</el-descriptions-item>
           <el-descriptions-item label="传输协议">{{ detailConfig.network || '-' }}</el-descriptions-item>
           <el-descriptions-item label="安全层">{{ detailConfig.security || '-' }}</el-descriptions-item>
           <el-descriptions-item v-if="detailData.nodeType !== 'Hysteria2'" label="SNI">{{ detailConfig.sni || '-' }}</el-descriptions-item>
-          <el-descriptions-item v-if="detailData.nodeType !== 'Hysteria2'" label="指纹">{{ detailConfig.fingerprint || '-' }}</el-descriptions-item>
-          <el-descriptions-item v-if="detailData.nodeType !== 'Hysteria2'" label="公钥" :span="2">{{ detailConfig.publicKey || '-' }}</el-descriptions-item>
+          <el-descriptions-item v-if="detailData.nodeType === 'VLESS-REALITY'" label="指纹">{{ detailConfig.fingerprint || '-' }}</el-descriptions-item>
+          <el-descriptions-item v-if="detailData.nodeType === 'VLESS-REALITY'" label="公钥" :span="2">{{ detailConfig.publicKey || '-' }}</el-descriptions-item>
+          <template v-if="detailData.nodeType === WS_TLS">
+            <el-descriptions-item label="WS Host">{{ detailConfig.host }}</el-descriptions-item>
+            <el-descriptions-item label="WS 路径">{{ detailConfig.path }}</el-descriptions-item>
+            <el-descriptions-item label="Cloudflare">{{ detailConfig.cloudflareProxied ? '橙云' : '仅 DNS' }}</el-descriptions-item>
+          </template>
           <template v-if="detailData.nodeType === 'Hysteria2'">
             <el-descriptions-item label="密码"><el-input :model-value="detailConfig.password" type="password" show-password readonly /></el-descriptions-item>
             <el-descriptions-item label="ALPN">{{ Array.isArray(detailConfig.alpn) ? detailConfig.alpn.join(', ') : detailConfig.alpn }}</el-descriptions-item>
@@ -291,16 +303,18 @@
           <div class="proxy-share-section-head">
             <div>
               <div class="proxy-share-section-title">Clash Verge 订阅</div>
-              <div class="proxy-share-section-desc">{{ shareProtocolLabel === 'Hysteria2' ? '适用于 Clash Verge Rev 等使用 Mihomo 内核的客户端。' : '使用 ACL4SSR 基础配置，通过 api.wcc.best 转换为 Clash 订阅。' }}</div>
+              <div class="proxy-share-section-desc">{{ shareData?.nodeType === WS_TLS ? '固定订阅地址，节点换域或改端口后刷新即可。' : shareProtocolLabel === 'Hysteria2' ? '适用于 Clash Verge Rev 等使用 Mihomo 内核的客户端。' : '使用 ACL4SSR 基础配置，通过 api.wcc.best 转换为 Clash 订阅。' }}</div>
             </div>
             <div class="proxy-share-actions">
               <el-button type="primary" size="small" @click="copyToClipboard(shareClashUrl)">
                 <el-icon><DocumentCopy /></el-icon> 复制 Clash 订阅
               </el-button>
               <el-button size="small" @click="openClashSubscribe">打开订阅</el-button>
+              <a v-if="shareData?.nodeType === WS_TLS && shareClashUrl" :href="shareClashUrl" download="skyway-mihomo.yaml">下载 YAML</a>
             </div>
           </div>
           <el-input :model-value="shareClashUrl" readonly type="textarea" :rows="4" />
+          <p v-if="shareData?.subscriptionPath">更换域名或公网端口后，刷新原订阅即可。通过 VLESS 链接导入的客户端需要重新复制链接。</p>
         </section>
       </div>
       <template #footer>
@@ -334,10 +348,15 @@
         <el-form-item label="端口">
           <el-input-number v-model="editNodeForm.port" :min="1" :max="65535" controls-position="right" style="width: 100%" />
         </el-form-item>
+        <template v-if="editNodeRow?.nodeType === WS_TLS && editNodeRow.listenPort">
+          <el-form-item label="归属客户"><el-select v-model="editNodeForm.customerId" filterable><el-option v-for="customer in customerOptions" :key="customer.id" :label="customer.username" :value="customer.id" /></el-select></el-form-item>
+          <el-form-item label="子域名前缀"><el-input v-model.trim="editNodeForm.subdomain" maxlength="63"><template #append>.{{ editNodeRow.address.split('.').slice(1).join('.') }}</template></el-input></el-form-item>
+          <el-form-item label="Cloudflare 代理"><el-switch v-model="editNodeForm.cloudflareProxied" active-text="橙云" inactive-text="仅 DNS" /></el-form-item>
+        </template>
         <el-form-item v-if="canEditSni" label="SNI" required>
           <el-input v-model="editNodeForm.sni" placeholder="如 www.bing.com，不含协议或端口" maxlength="253" />
         </el-form-item>
-        <el-form-item label="订阅链接">
+        <el-form-item v-if="editNodeRow?.nodeType !== WS_TLS || !editNodeRow?.listenPort" label="订阅链接">
           <el-input v-model="editNodeForm.url" type="textarea" :rows="4" maxlength="2000" show-word-limit placeholder="支持手动编辑" />
         </el-form-item>
         <template v-if="canEditRelay">
@@ -373,6 +392,7 @@
       </el-form>
       <template #footer>
         <el-button @click="editNodeVisible = false">取消</el-button>
+        <span v-if="editNodeSaving && editNodeForm.progress" role="status">{{ editNodeForm.progress }}</span>
         <el-button type="primary" :loading="editNodeSaving" @click="submitNodeEdit">确定</el-button>
       </template>
     </el-dialog>
@@ -468,11 +488,14 @@ import {
 import { listCustomer } from '@/api/member/customer'
 import { parseTime } from '@/utils/skyway'
 import { isValidRealitySni, readRealitySni } from '@/utils/realitySni'
-import { buildClashSubscribeUrl, safeProxyShareFilename } from '@/utils/proxyShare'
+import { WS_TLS, fixedSubscription, operationId, validSubdomain, cloudflarePorts } from '@/utils/wsNode'
+import { proxyQrOptions, buildClashSubscribeUrl, safeProxyShareFilename } from '@/utils/proxyShare'
 import { DocumentCopy, Loading, Edit } from '@element-plus/icons-vue'
+import ProxyNodePanel from '../components/ProxyNodePanel.vue'
 import AccessLogDialog from '../components/AccessLogDialog.vue'
 import DomainWhitelistEditor from '../components/DomainWhitelistEditor.vue'
 
+const creationPanel = ref(null)
 const { proxy } = getCurrentInstance()
 const { res_proxy_node_status } = proxy.useDict('res_proxy_node_status')
 const router = useRouter()
@@ -484,6 +507,7 @@ const hasEditPermi = computed(() => (userStore.permissions || []).some(p => p ==
 const nodeTypeOptions = [
   { value: 'VLESS-REALITY', label: 'VLESS-REALITY' },
   { value: 'VMess-TCP', label: 'VMess-TCP' },
+  { value: 'VLESS-WS-TLS', label: 'VLESS-WS-TLS' },
   { value: 'Hysteria2', label: 'Hysteria2' }
 ]
 
@@ -546,7 +570,9 @@ const shareParsed = computed(() => {
   if (!shareVlessUrl.value) return null
   try { return parseProxyShareUrl(shareVlessUrl.value) } catch { return null }
 })
-const shareClashUrl = computed(() => shareVlessUrl.value ? buildClashSubscribeUrl(shareVlessUrl.value) : '')
+const shareClashUrl = computed(() => shareData.value?.nodeType === WS_TLS
+  ? fixedSubscription(shareData.value.subscriptionPath)
+  : shareVlessUrl.value ? buildClashSubscribeUrl(shareVlessUrl.value) : '')
 const shareProtocolLabel = computed(() => shareData.value?.nodeType === 'Hysteria2' ? 'Hysteria2' : shareData.value?.nodeType === 'VMess-TCP' ? 'VMess' : 'VLESS')
 const shareQrDataUrl = ref('')
 const shareBaseName = computed(() => shareData.value?.nodeName || shareParsed.value?.name || 'proxy-share')
@@ -784,7 +810,7 @@ function resolveSpeedSnapshot(row) {
 
 function nodeRealtimeSpeedText(row) {
   if (!row || speedSnapshot.value?.error) return '实时：-'
-  const port = row.port != null ? String(row.port) : ''
+  const port = String(row.listenPort || row.port || '')
   const snapshot = resolveSpeedSnapshot(row)
   const speed = port && snapshot?.ports ? snapshot.ports[port] : null
   if (!speed) return '实时：-'
@@ -793,7 +819,7 @@ function nodeRealtimeSpeedText(row) {
 
 function getNodeRealtimeSpeed(row) {
   if (!row || speedSnapshot.value?.error) return null
-  const port = row.port != null ? String(row.port) : ''
+  const port = String(row.listenPort || row.port || '')
   const snapshot = resolveSpeedSnapshot(row)
   return port && snapshot?.ports ? snapshot.ports[port] : null
 }
@@ -872,11 +898,7 @@ function refreshShareQrCode() {
   shareQrDataUrl.value = ''
   const shareUrl = shareVlessUrl.value
   if (!shareUrl) return
-  QRCode.toDataURL(shareUrl, {
-    width: 220,
-    margin: 1,
-    errorCorrectionLevel: 'M'
-  }).then(url => {
+  QRCode.toDataURL(shareUrl, proxyQrOptions(shareData.value?.nodeType)).then(url => {
     if (shareVlessUrl.value === shareUrl) shareQrDataUrl.value = url
   }).catch(() => {
     if (shareVlessUrl.value === shareUrl) proxy.$modal.msgWarning('二维码生成失败，请直接复制原始链接')
@@ -1023,7 +1045,12 @@ function domainPolicyChanged(left, right) {
 
 function openNodeEdit(row) {
   editNodeRow.value = row
+  editNodeForm.operationId = null
+  editNodeForm.progress = ''
+  editNodeForm.customerId = row.customerId
   editNodeForm.expireTime = row.expireTime || null
+  editNodeForm.subdomain = row.nodeType === WS_TLS ? row.address.split('.')[0] : ''
+  editNodeForm.cloudflareProxied = row.nodeType === WS_TLS && JSON.parse(row.configJson || '{}').cloudflareProxied === true
   editNodeForm.port = row.port
   editNodeForm.url = row.url || ''
   editNodeForm.sni = readRealitySni(row)
@@ -1139,6 +1166,8 @@ function submitRemoveRateLimit() {
 
 function syncUpdatedNodeName(row, updatedNode) {
   if (!updatedNode) return
+  if (updatedNode.address) row.address = updatedNode.address
+  if (updatedNode.subscriptionPath) row.subscriptionPath = updatedNode.subscriptionPath
   if (updatedNode.nodeName != null) row.nodeName = updatedNode.nodeName
   if (updatedNode.port != null) row.port = updatedNode.port
   if (Object.prototype.hasOwnProperty.call(updatedNode, 'url')) row.url = updatedNode.url || ''
@@ -1149,6 +1178,7 @@ function syncUpdatedNodeName(row, updatedNode) {
     if (shareVisible.value && shareData.value.url !== previousUrl) refreshShareQrCode()
   }
   if (detailData.value?.id === row.id) {
+    detailData.value.address = row.address
     detailData.value.nodeName = row.nodeName
     detailData.value.port = row.port
     detailData.value.url = row.url
@@ -1172,6 +1202,15 @@ function submitNodeEdit() {
     port: editNodeForm.port,
     url: (editNodeForm.url || '').trim()
   }
+  if (editNodeRow.value.nodeType === WS_TLS && editNodeRow.value.listenPort) {
+    if (!validSubdomain(editNodeForm.subdomain)) return proxy.$modal.msgWarning('请输入有效的一级子域名前缀')
+    if (editNodeForm.cloudflareProxied && !cloudflarePorts.includes(editNodeForm.port)) return proxy.$modal.msgWarning('橙云支持的 HTTPS 端口为 ' + cloudflarePorts.join('、'))
+    payload.subdomain = editNodeForm.subdomain
+    payload.cloudflareProxied = editNodeForm.cloudflareProxied
+    payload.operationId = editNodeForm.operationId || (editNodeForm.operationId = operationId())
+    payload.instanceId = editNodeRow.value.instanceId
+    payload.customerId = editNodeForm.customerId
+  }
   if (canEditSni.value) payload.sni = editNodeForm.sni.trim()
   if (editNodeForm.enableRelay && canEditRelay.value) {
     const relayText = (editNodeForm.relayText || '').trim()
@@ -1186,7 +1225,8 @@ function submitNodeEdit() {
   }
   editNodeSaving.value = true
   const policyChanged = domainPolicyChanged(editOriginalDomainPolicy.value, editNodeForm.domainPolicy)
-  updateProxyNode(payload).then(async res => {
+  if (payload.operationId && policyChanged) payload.domainPolicy = editNodeForm.domainPolicy
+  updateProxyNode(payload, stage => { editNodeForm.progress = stage }).then(async res => {
     const row = editNodeRow.value
     row.expireTime = payload.expireTime
     row.port = payload.port
@@ -1199,7 +1239,11 @@ function submitNodeEdit() {
       row.remark = ''
       row.configJson = removeRelayFromConfigJson(row.configJson)
     }
-    if (policyChanged) {
+    if (payload.operationId) {
+      row.domainPolicy = res.data.domainPolicy
+      row.domainWhitelist = res.data.domainWhitelist
+      row.customerId = res.data.customerId
+    } else if (policyChanged) {
       const policyRes = await updateProxyDomainPolicy(row.id, { domainPolicy: editNodeForm.domainPolicy })
       row.domainPolicy = policyRes?.data?.domainPolicy || null
       row.domainWhitelist = policyRes?.data?.domainWhitelist || null
@@ -1208,6 +1252,9 @@ function submitNodeEdit() {
       detailData.value.expireTime = row.expireTime
       detailData.value.port = row.port
       detailData.value.url = row.url
+      detailData.value.address = row.address
+      detailData.value.customerId = row.customerId
+      detailData.value.subscriptionPath = row.subscriptionPath
       detailData.value.nodeName = row.nodeName
       detailData.value.remark = row.remark
       detailData.value.configJson = row.configJson
@@ -1217,7 +1264,12 @@ function submitNodeEdit() {
     proxy.$modal.msgSuccess('节点已更新')
     editNodeVisible.value = false
     getList()
-  }).catch(() => {}).finally(() => {
+  }).catch(error => {
+    if (payload.operationId) {
+      editNodeForm.operationId = null
+      proxy.$modal.msgError(error.message || '更新节点失败')
+    }
+  }).finally(() => {
     editNodeSaving.value = false
   })
 }
@@ -1233,7 +1285,7 @@ function submitRemarkEdit() {
   const id = remarkEditRow.value.id
   const remark = (remarkEditValue.value || '').trim()
   remarkSaving.value = true
-  updateProxyNode({ id, remark }).then(res => {
+  updateProxyNode({ id, remark }, undefined, remarkEditRow.value).then(res => {
     remarkEditRow.value.remark = remark
     syncUpdatedNodeName(remarkEditRow.value, res?.data)
     proxy.$modal.msgSuccess('备注已更新')
@@ -1247,7 +1299,7 @@ function handleStatusChange(row) {
   const text = row.status === '0' ? '启用' : '停用'
   proxy.$modal.confirm(`确认要${text}节点"${row.nodeName}"吗？`).then(() => {
     statusLoadingId.value = row.id
-    return updateProxyNode({ id: row.id, status: row.status })
+    return updateProxyNode({ id: row.id, status: row.status }, undefined, row)
   }).then(res => {
     syncUpdatedNodeName(row, res?.data)
     proxy.$modal.msgSuccess(`${text}成功`)
@@ -1316,7 +1368,7 @@ function handleBatchDelete() {
     selectedIds.value = []
     tableRef.value?.clearSelection?.()
     getList()
-  }).catch(() => {}).finally(() => {
+  }).catch(error => { if (error instanceof Error) getList() }).finally(() => {
     proxy.$modal.closeLoading()
     batchDeleteLoading.value = false
   })
@@ -1354,7 +1406,7 @@ function handleDelete(row) {
     proxy.$modal.msgSuccess('删除成功')
     detailVisible.value = false
     getList()
-  }).catch(() => {}).finally(() => {
+  }).catch(error => { if (error instanceof Error) getList() }).finally(() => {
     proxy.$modal.closeLoading()
     deleteLoadingId.value = null
   })
@@ -1362,7 +1414,7 @@ function handleDelete(row) {
 
 function handleForceDelete(row) {
   if (!row?.id) return
-  proxy.$modal.confirm(`确认要强制删除节点"${row.nodeName}"吗？此操作只删除本地节点和流量记录，不连接服务器，也不会清理服务器上的残留配置。`).then(() => {
+  proxy.$modal.confirm(`确认要强制删除节点"${row.nodeName}"吗？将删除本地节点、流量及平台管理的 DNS 记录。离线 VPS 上的配置需另行清理。`).then(() => {
     deleteLoadingId.value = row.id
     proxy.$modal.loading('正在强制删除节点...')
     return forceDelProxyNode(row.id)
@@ -1370,7 +1422,7 @@ function handleForceDelete(row) {
     proxy.$modal.msgSuccess('强制删除成功')
     detailVisible.value = false
     getList()
-  }).catch(() => {}).finally(() => {
+  }).catch(error => { if (error instanceof Error) getList() }).finally(() => {
     proxy.$modal.closeLoading()
     deleteLoadingId.value = null
   })

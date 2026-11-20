@@ -1,5 +1,6 @@
 package com.skyway.web.controller.resource;
 
+import com.skyway.web.service.ws.WsNodeService;
 import java.text.SimpleDateFormat;
 import java.util.HashMap;
 import java.util.Date;
@@ -13,7 +14,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.validation.annotation.Validated;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import javax.validation.Validator;
+import javax.validation.ConstraintViolation;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -48,6 +51,9 @@ import com.skyway.web.service.VpsInstanceOperationCoordinator;
 @RestController
 @RequestMapping("/resource/vps/proxyNode")
 public class ProxyNodeController extends BaseController {
+
+    @Autowired
+    private WsNodeService wsNodes;
 
     private static final Logger log = LoggerFactory.getLogger(ProxyNodeController.class);
 
@@ -285,13 +291,14 @@ public class ProxyNodeController extends BaseController {
             return AjaxResult.error("限速到期时间必须晚于当前时间");
         }
         try {
-            PortRateLimitRemoteResult remoteResult = vpsSshCommandService.setPortRateLimit(
-                    node.getInstanceId(), node.getPort(), downloadMbps, uploadMbps);
+            PortRateLimitRemoteResult remoteResult = WsNodeService.managed(node)
+                    ? wsNodes.rate(node, downloadMbps, uploadMbps)
+                    : vpsSshCommandService.setPortRateLimit(node.getInstanceId(), node.getPort(), downloadMbps, uploadMbps);
             ProxyNodeRateLimit existing = proxyNodeRateLimitService.getActiveByNodeId(id);
             ProxyNodeRateLimit row = existing != null ? existing : new ProxyNodeRateLimit();
             row.setInstanceId(node.getInstanceId());
             row.setProxyNodeId(node.getId());
-            row.setPort(node.getPort());
+            row.setPort(node.getTrafficPort());
             row.setDownloadMbps(downloadMbps);
             row.setUploadMbps(uploadMbps);
             row.setExpireTime(expireTime);
@@ -348,7 +355,8 @@ public class ProxyNodeController extends BaseController {
             return success();
         }
         try {
-            PortRateLimitRemoteResult remoteResult = vpsSshCommandService.removePortRateLimit(existing.getInstanceId(), existing.getPort());
+            PortRateLimitRemoteResult remoteResult = WsNodeService.managed(node) ? wsNodes.rate(node, 0, 0)
+                    : vpsSshCommandService.removePortRateLimit(existing.getInstanceId(), existing.getPort());
             proxyNodeRateLimitService.markRemoved(existing.getId(), remoteResult.getOutput(), getUsername());
             return success();
         } catch (Exception e) {
@@ -357,13 +365,29 @@ public class ProxyNodeController extends BaseController {
         }
     }
 
+    @Autowired private ObjectMapper objectMapper;
+    @Autowired private Validator validator;
+
     @PreAuthorize("@ss.hasPermi('resource:vps:add')")
     @Log(title = "代理节点", businessType = BusinessType.INSERT)
     @PostMapping
-    public AjaxResult add(@Validated @RequestBody ProxyNode row) {
-        if (row.getCustomerId() == null) {
-            return AjaxResult.error("请选择归属客户");
+    public AjaxResult add(@RequestBody Map<String, Object> body) {
+        if (ProxyNodeProtocol.WS_TLS.equals(body.get("nodeType"))) {
+            Long instanceId = com.alibaba.fastjson2.JSONObject.from(body).getLong("instanceId");
+            if (instanceId == null) return AjaxResult.error("请选择 VPS");
+            if (!body.containsKey("subdomain") && body.get("address") != null) {
+                body.put("subdomain", wsNodes.prefix(String.valueOf(body.get("address"))));
+            }
+            return success(wsNodes.submit("CREATE", instanceId, null, body, getUsername()));
         }
+        ProxyNode row = objectMapper.convertValue(body, ProxyNode.class);
+        for (ConstraintViolation<ProxyNode> violation : validator.validate(row)) {
+            return AjaxResult.error(violation.getMessage());
+        }
+        if (row.getCustomerId() == null) return AjaxResult.error("请选择归属客户");
+        row.setListenPort(null);
+        row.setWsKey(null);
+        row.setSubscriptionToken(null);
         row.setCreateBy(getUsername());
         int rows = proxyNodeService.insert(row);
         if (rows > 0 && row.getInstanceId() != null && row.getPort() != null && row.getPort() > 0) {
@@ -397,6 +421,8 @@ public class ProxyNodeController extends BaseController {
             // Re-read after waiting so edits use the latest name, port, status and SNI.
             existing = proxyNodeService.getById(id);
             if (existing == null) return AjaxResult.error("节点不存在");
+            if (WsNodeService.managed(existing))
+                return success(wsNodes.submit("EDIT", existing.getInstanceId(), existing.getId(), body, getUsername()));
             return editLocked(body, existing);
         }
     }
@@ -912,6 +938,7 @@ public class ProxyNodeController extends BaseController {
         if (StringUtils.isEmpty(ids)) {
             return AjaxResult.error("参数错误");
         }
+        List<String> pending = new ArrayList<>();
         String[] parts = ids.split(",");
         for (String part : parts) {
             Long id;
@@ -922,6 +949,11 @@ public class ProxyNodeController extends BaseController {
             }
             ProxyNode node = proxyNodeService.getById(id);
             if (node != null) {
+                if (WsNodeService.managed(node)) {
+                    try { wsNodes.delete(node, false, getUsername()); }
+                    catch (IllegalStateException e) { pending.add("#" + id + " " + e.getMessage()); }
+                    continue;
+                }
                 AjaxResult rateLimitResult = removeActiveRateLimitBeforeDelete(node, getUsername());
                 if (!rateLimitResult.isSuccess()) {
                     return rateLimitResult;
@@ -936,7 +968,7 @@ public class ProxyNodeController extends BaseController {
             }
             proxyNodeService.deleteById(id);
         }
-        return success();
+        return pending.isEmpty() ? success() : error(String.join("；", pending));
     }
 
     private AjaxResult removeActiveRateLimitBeforeDelete(ProxyNode node, String username) {
@@ -970,6 +1002,7 @@ public class ProxyNodeController extends BaseController {
         if (StringUtils.isEmpty(ids)) {
             return AjaxResult.error("参数错误");
         }
+        List<String> pending = new ArrayList<>();
         String[] parts = ids.split(",");
         for (String part : parts) {
             Long id;
@@ -980,12 +1013,17 @@ public class ProxyNodeController extends BaseController {
             }
             ProxyNode node = proxyNodeService.getById(id);
             if (node != null) {
+                if (WsNodeService.managed(node)) {
+                    try { wsNodes.delete(node, true, getUsername()); }
+                    catch (IllegalStateException e) { pending.add("#" + id + " " + e.getMessage()); }
+                    continue;
+                }
                 markLocalRateLimitsRemoved(id);
                 proxyNodeTrafficService.deleteByNodeId(id);
                 proxyNodeService.deleteById(id);
             }
         }
-        return success();
+        return pending.isEmpty() ? success() : error(String.join("；", pending));
     }
 
     private void markLocalRateLimitsRemoved(Long nodeId) {

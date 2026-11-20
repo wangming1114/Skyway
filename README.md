@@ -41,7 +41,7 @@ docker compose up -d
 ## 核心特性
 
 **1. sing-box 一键整合**  
-深度整合 [233boy/sing-box](https://github.com/233boy/sing-box)，支持 VLESS-REALITY、TUIC、Trojan、Hysteria2、Shadowsocks 2022、VMess 等主流协议；一键安装与配置、自动化 TLS，极简运维，零学习成本。
+深度整合 [233boy/sing-box](https://github.com/233boy/sing-box)，支持 VLESS-REALITY、VLESS-WS-TLS、TUIC、Trojan、Hysteria2、Shadowsocks 2022、VMess 等主流协议；一键安装与配置、自动化 TLS，极简运维，零学习成本。
 
 **2. 全自动节点管理**  
 节点生命周期管理、批量部署、状态监控与自动修复；多节点、多协议统一管控，一处配置，处处生效。
@@ -63,6 +63,7 @@ docker compose up -d
 ## 文档与许可
 
 - **部署文档**：[docker/README.md](docker/README.md)
+- [VLESS-WS-TLS 的 Cloudflare 设置、固定订阅和验收](docs/vless-ws-tls.md)
 - **反馈与讨论**：欢迎通过 [GitHub Issues](https://github.com/skyway/Skyway-Vue/issues) 提交问题与建议
 
 本项目采用 [MIT](LICENSE) 许可证。

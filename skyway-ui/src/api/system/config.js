@@ -30,6 +30,7 @@ export function addConfig(data) {
   return request({
     url: '/system/config',
     method: 'post',
+    headers: data.configKey === 'skyway.cloudflare.apiToken' ? { repeatSubmit: false } : {},
     data: data
   })
 }
@@ -39,6 +40,7 @@ export function updateConfig(data) {
   return request({
     url: '/system/config',
     method: 'put',
+    headers: data.configKey === 'skyway.cloudflare.apiToken' ? { repeatSubmit: false } : {},
     data: data
   })
 }

@@ -93,6 +93,14 @@
             <scope>runtime</scope>
         </dependency>
 
+        <!-- In-memory lifecycle regression tests for durable WS operations. -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <version>2.1.214</version>
+            <scope>test</scope>
+        </dependency>
+
         <!-- 单元测试 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

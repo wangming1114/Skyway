@@ -87,6 +87,7 @@ public class MbCustomerTempShareServiceImpl implements IMbCustomerTempShareServi
         node.setAddress(source.getAddress());
         node.setPort(source.getPort());
         node.setUrl(source.getUrl());
+        node.setSubscriptionToken(source.getSubscriptionToken());
         node.setExpireTime(source.getExpireTime());
         node.setStatus(source.getStatus());
         node.setCreateTime(source.getCreateTime());

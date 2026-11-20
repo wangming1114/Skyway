@@ -999,7 +999,7 @@ function handleDeleteInstance(row) {
 }
 
 function handleForceDeleteInstance(row) {
-  proxy.$modal.confirm(`确认要强制删除 VPS "${displayName(row)}" 吗？此操作只删除本地 VPS、节点和流量记录，不连接服务器，也不会清理服务器上的残留配置。`).then(() => {
+  proxy.$modal.confirm(`确认要强制删除 VPS "${displayName(row)}" 吗？将清理本地 VPS、节点、流量及平台管理的 DNS 记录。离线 VPS 上的配置需另行清理。`).then(() => {
     return forceDelInstance(row.id)
   }).then(() => {
     getList()

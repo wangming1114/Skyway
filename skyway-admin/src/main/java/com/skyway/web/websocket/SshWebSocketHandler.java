@@ -1,5 +1,6 @@
 package com.skyway.web.websocket;
 
+import com.skyway.web.service.ws.WsNodeService;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -66,6 +67,8 @@ import java.io.ByteArrayOutputStream;
  */
 @Component
 public class SshWebSocketHandler extends AbstractWebSocketHandler {
+
+    @Autowired private WsNodeService wsNodes;
 
     private static final Logger log = LoggerFactory.getLogger(SshWebSocketHandler.class);
     private static final String ATTR_INSTANCE_ID = "instanceId";
@@ -573,6 +576,10 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
             sendExecEnd(wsSession, reqId, -1);
             return;
         }
+        if (ProxyNodeProtocol.WS_TLS.equals(nodeType)) {
+            manageWsNode(wsSession, obj, null);
+            return;
+        }
         final String sni;
         try {
             sni = ProxyNodeProtocol.HYSTERIA2.equals(nodeType) ? null : RealitySniSupport.requestedSni(obj, nodeType);
@@ -847,6 +854,62 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
         return typePart + "-" + addressPart + "-" + portPart + "-" + customerPart + "-" + expiryTag;
     }
 
+    private void manageWsNode(WebSocketSession session, JSONObject request, ProxyNode deleting) {
+        Object reqId = request.get("reqId");
+        Object granted = session.getAttributes().get("wsPermissions");
+        Set<?> permissions = granted instanceof Set ? (Set<?>) granted : java.util.Collections.emptySet();
+        String permission = deleting == null ? "resource:vps:add" : "resource:vps:remove";
+        Long instance = (Long) session.getAttributes().get(ATTR_INSTANCE_ID);
+        if ((!permissions.contains(permission) && !permissions.contains("*:*:*")) || instance == null
+                || (deleting != null && !instance.equals(deleting.getInstanceId()))) {
+            sendExecError(session, reqId, "缺少此节点操作的权限");
+            sendExecEnd(session, reqId, -1);
+            return;
+        }
+        String actor = (String) session.getAttributes().get("wsActor");
+        executor.execute(() -> {
+            try {
+                if (deleting == null) {
+                    String id = wsNodes.submit("CREATE", instance, null, request, actor).getString("operationId");
+                    followWsCreation(session, reqId, id, actor);
+                } else {
+                    wsNodes.delete(deleting, false, actor);
+                }
+                if (session.isOpen()) sendExecEnd(session, reqId, 0);
+            } catch (Exception ex) {
+                if (session.isOpen()) {
+                    sendExecError(session, reqId, ex.getMessage());
+                    sendExecEnd(session, reqId, -1);
+                }
+            }
+        });
+    }
+
+    private void followWsCreation(WebSocketSession session, Object reqId, String id, String actor) throws Exception {
+        sendWsEvent(session, JSONObject.of("type", "node_operation", "reqId", reqId, "operationId", id));
+        String stage = null;
+        while (session.isOpen()) {
+            JSONObject result = wsNodes.status(id, actor);
+            if (!java.util.Objects.equals(stage, result.getString("stage"))) {
+                stage = result.getString("stage");
+                sendExecOutput(session, reqId, stage + "\n", false);
+            }
+            if ("FAILED".equals(result.getString("state"))) throw new IOException(stage);
+            if ("DONE".equals(result.getString("state"))) {
+                sendWsEvent(session, JSONObject.of("type", "node_created", "reqId", reqId,
+                        "node", toJsonNode((ProxyNode) result.get("node"))));
+                return;
+            }
+            Thread.sleep(1500);
+        }
+    }
+
+    private void sendWsEvent(WebSocketSession session, JSONObject event) throws IOException {
+        synchronized (session) {
+            if (session.isOpen()) session.sendMessage(new TextMessage(event.toJSONString()));
+        }
+    }
+
     /**
      * 删除节点：根据 nodeId 查库得到 nodeName，在服务器上通过 sb 菜单 4 按名称匹配删除配置，成功后再删数据库。
      */
@@ -872,6 +935,10 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
             return;
         }
 
+        if (WsNodeService.managed(node)) {
+            manageWsNode(wsSession, obj, node);
+            return;
+        }
         String nodeName = node.getNodeName();
         String nameTrim = (nodeName != null ? nodeName : "").trim();
         if (nameTrim.isEmpty()) {
@@ -1232,6 +1299,11 @@ public class SshWebSocketHandler extends AbstractWebSocketHandler {
         JSONObject o = new JSONObject();
         o.put("id", node.getId());
         o.put("instanceId", node.getInstanceId());
+        o.put("customerId", node.getCustomerId());
+        if (WsNodeService.managed(node)) {
+            o.put("listenPort", node.getListenPort());
+            o.put("subscriptionPath", node.getSubscriptionPath());
+        }
         o.put("nodeName", node.getNodeName());
         o.put("nodeType", node.getNodeType());
         o.put("address", node.getAddress());

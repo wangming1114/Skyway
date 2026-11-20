@@ -30,7 +30,9 @@ COPY skyway-generator/src skyway-generator/src
 RUN mvn package -B -pl skyway-admin -am -DskipTests -q
 
 # Stage 2: runtime（镜像源：docker.1ms.run）
+FROM goacme/lego:v4.26.0 AS lego
 FROM docker.1ms.run/library/eclipse-temurin:8-jre
+COPY --from=lego /usr/bin/lego /usr/local/bin/lego
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends fontconfig && rm -rf /var/lib/apt/lists/*

@@ -36,6 +36,13 @@
       </article>
     </div>
 
+    <section v-if="node?.wsParameters" class="share-panel">
+      <h2>连接参数</h2>
+      <dl><dt>UUID</dt><dd>{{ node.wsParameters.uuid }}</dd><dt>WS Host</dt><dd>{{ node.wsParameters.host }}</dd>
+        <dt>WS 路径</dt><dd>{{ node.wsParameters.path }}</dd><dt>传输安全</dt><dd>{{ node.wsParameters.tls }}</dd></dl>
+      <p>更换域名或公网端口后，刷新原 Clash 订阅即可。通过 VLESS 链接导入的客户端需要重新复制链接。</p>
+      <a v-if="node.clashUrl" :href="node.clashUrl" download="skyway-mihomo.yaml">下载 Mihomo 配置</a>
+    </section>
     <section class="share-panel node-onboarding-panel">
       <div class="node-card-head">
         <span class="section-lightning-icon"></span>

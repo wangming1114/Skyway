@@ -1,11 +1,19 @@
+import { WS_TLS, fixedSubscription } from './wsNode.js'
+
 export const DEFAULT_SUBCONVERTER_URL = 'https://api.wcc.best/sub'
 export const DEFAULT_CLASH_CONFIG_URL = 'https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash/config/ACL4SSR_Online.ini'
 export const DEFAULT_QR_SERVICE_URL = 'https://api.qrserver.com/v1/create-qr-code/'
 export const HYSTERIA2_SUBCONVERTER_URL = 'https://sub-server.v2rayssr.com/sub'
 export const HYSTERIA2_CLASH_CONFIG_URL = 'https://raw.githubusercontent.com/Aethersailor/Custom_OpenClash_Rules/main/cfg/Custom_Clash.ini'
 
+export function proxyQrOptions(nodeType) {
+  return nodeType === WS_TLS
+    ? { scale: 6, margin: 4, errorCorrectionLevel: 'M' }
+    : { width: 220, margin: 1, errorCorrectionLevel: 'M' }
+}
+
 export function supportsSocks5Relay(nodeType) {
-  return nodeType === 'VLESS-REALITY' || nodeType === 'Hysteria2'
+  return nodeType === 'VLESS-REALITY' || nodeType === 'Hysteria2' || nodeType === WS_TLS
 }
 
 export function parseProxyShareUrl(value) {
@@ -109,7 +117,8 @@ export function normalizeShareNode(node = {}, now = new Date()) {
     vlessUrl: isVless ? rawUrl : '',
     shareUrl: isVless || isHysteria2 ? rawUrl : '',
     shareProtocol: isHysteria2 ? 'Hysteria2' : 'VLESS',
-    clashUrl: isVless || isHysteria2 ? buildClashSubscribeUrl(rawUrl) : (isClash ? rawUrl : '')
+    wsParameters: protocol === WS_TLS && parsedUrl ? { uuid: parsedUrl.uuid, host: parsedUrl.params.host, path: parsedUrl.params.path, tls: parsedUrl.params.security } : null,
+    clashUrl: protocol === WS_TLS ? fixedSubscription(node.subscriptionPath) : isVless || isHysteria2 ? buildClashSubscribeUrl(rawUrl) : (isClash ? rawUrl : '')
   }
 }
 
@@ -169,6 +178,7 @@ function inferProtocol(node, parsedUrl) {
     const security = parsedUrl.params?.security
     const network = parsedUrl.params?.type
     if (security === 'reality') return 'VLESS-REALITY'
+    if (security === 'tls' && network === 'ws') return WS_TLS
     if (network === 'grpc') return 'VLESS-GRPC'
     return 'VLESS'
   }

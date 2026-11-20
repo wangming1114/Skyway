@@ -122,7 +122,7 @@ public class AccessLogWebSocketHandler extends AbstractWebSocketHandler {
             }
             VpsInstance instance = vpsInstanceService.getById(node.getInstanceId());
             if (instance == null) throw new IllegalArgumentException("节点所属 VPS 不存在");
-            MonitorScope scope = new MonitorScope(node.getInstanceId(), node.getNodeType() + "-" + node.getPort() + ".json");
+            MonitorScope scope = new MonitorScope(node.getInstanceId(), node.getInboundTag());
             scope.nodesByTag.put(scope.wantedTag, node);
             loadCustomerName(scope, node.getCustomerId());
             return scope;
@@ -138,7 +138,7 @@ public class AccessLogWebSocketHandler extends AbstractWebSocketHandler {
         if (nodes != null) {
             for (ProxyNode node : nodes) {
                 if (node != null && node.getNodeType() != null && node.getPort() != null) {
-                    scope.nodesByTag.put(node.getNodeType() + "-" + node.getPort() + ".json", node);
+                    scope.nodesByTag.put(node.getInboundTag(), node);
                     loadCustomerName(scope, node.getCustomerId());
                 }
             }

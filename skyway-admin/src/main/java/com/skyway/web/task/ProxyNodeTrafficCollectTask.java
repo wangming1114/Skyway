@@ -9,6 +9,8 @@ import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import com.skyway.web.service.ws.WsRemote;
+import com.skyway.web.service.ws.WsNodeService;
 import org.springframework.stereotype.Component;
 import com.skyway.resource.domain.ProxyNode;
 import com.skyway.resource.service.IProxyNodeService;
@@ -34,6 +36,8 @@ public class ProxyNodeTrafficCollectTask {
     @Autowired
     private VpsSshCommandService vpsSshCommandService;
 
+    @Autowired private WsRemote wsRemote;
+
     public void collect() {
         List<ProxyNode> all = proxyNodeService.selectList(new ProxyNode());
         if (all == null || all.isEmpty()) {
@@ -47,15 +51,17 @@ public class ProxyNodeTrafficCollectTask {
             List<ProxyNode> nodesOnInstance = e.getValue();
             // 先为本实例所有节点确保流量规则存在（CentOS 等首次无链时先建链再读，避免一直读到空）
             for (ProxyNode node : nodesOnInstance) {
-                if (node.getPort() == null || node.getPort() <= 0) continue;
+                if (node.getTrafficPort() == null || node.getTrafficPort() <= 0) continue;
                 try {
-                    if ("Hysteria2".equals(node.getNodeType())) {
-                        vpsSshCommandService.ensureTrafficRulesForPort(instanceId, node.getPort(), "Hysteria2");
+                    if (WsNodeService.managed(node)) {
+                        wsRemote.ensureCounters(node);
+                    } else if ("Hysteria2".equals(node.getNodeType())) {
+                        vpsSshCommandService.ensureTrafficRulesForPort(instanceId, node.getTrafficPort(), "Hysteria2");
                     } else {
-                        vpsSshCommandService.ensureTrafficRulesForPort(instanceId, node.getPort());
+                        vpsSshCommandService.ensureTrafficRulesForPort(instanceId, node.getTrafficPort());
                     }
                 } catch (Exception ex) {
-                    log.warn("ensureTrafficRulesForPort instanceId={} port={} failed: {}", instanceId, node.getPort(), ex.getMessage());
+                    log.warn("ensureTrafficRulesForPort instanceId={} port={} failed: {}", instanceId, node.getTrafficPort(), ex.getMessage());
                 }
             }
             Map<Integer, TrafficPair> counters = null;

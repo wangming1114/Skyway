@@ -1,11 +1,14 @@
 package com.skyway.web.task;
 
+import com.skyway.web.service.ws.WsNodeService;
 import java.util.Date;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
+import com.skyway.resource.domain.ProxyNode;
+import com.skyway.resource.service.IProxyNodeService;
 import com.skyway.resource.domain.ProxyNodeRateLimit;
 import com.skyway.resource.service.IProxyNodeRateLimitService;
 import com.skyway.web.service.VpsSshCommandService;
@@ -17,6 +20,9 @@ import com.skyway.web.service.VpsSshCommandService.PortRateLimitRemoteResult;
  */
 @Component("proxyNodeRateLimitExpireTask")
 public class ProxyNodeRateLimitExpireTask {
+
+    @Autowired private IProxyNodeService nodes;
+    @Autowired private WsNodeService wsNodes;
 
     private static final Logger log = LoggerFactory.getLogger(ProxyNodeRateLimitExpireTask.class);
     private static final int MAX_RULES_PER_RUN = 20;
@@ -41,7 +47,9 @@ public class ProxyNodeRateLimitExpireTask {
                 continue;
             }
             try {
-                PortRateLimitRemoteResult result = vpsSshCommandService.removePortRateLimit(rule.getInstanceId(), rule.getPort());
+                ProxyNode node = rule.getProxyNodeId() == null ? null : nodes.getById(rule.getProxyNodeId());
+                PortRateLimitRemoteResult result = WsNodeService.managed(node) ? wsNodes.rate(node, 0, 0)
+                        : vpsSshCommandService.removePortRateLimit(rule.getInstanceId(), rule.getPort());
                 proxyNodeRateLimitService.markExpired(rule.getId(), result.getOutput(), "system");
             } catch (Exception e) {
                 log.warn("proxyNodeRateLimitExpireTask: remove expired rule failed id={}, instanceId={}, port={}: {}",

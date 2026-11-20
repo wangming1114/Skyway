@@ -19,6 +19,7 @@ import com.skyway.resource.domain.ProxyNode;
 import com.skyway.resource.service.IProxyNodeService;
 import com.skyway.web.service.CustomerEmailCodeService;
 import com.skyway.web.service.VpsSshCommandService;
+import com.skyway.web.service.ws.WsNodeService;
 
 /**
  * 节点到期停用与邮件通知定时任务。
@@ -34,6 +35,8 @@ public class ProxyNodeExpireTask {
 
     @Autowired
     private IProxyNodeService proxyNodeService;
+
+    @Autowired private WsNodeService wsNodes;
 
     @Autowired
     private VpsSshCommandService vpsSshCommandService;
@@ -64,6 +67,11 @@ public class ProxyNodeExpireTask {
                 continue;
             }
             try {
+                if (WsNodeService.managed(node)) {
+                    ProxyNode disabled = wsNodes.stopIfExpired(node, now);
+                    if (disabled != null) stopped.add(disabled);
+                    continue;
+                }
                 vpsSshCommandService.renameProxyNodeConfig(
                     node.getInstanceId(),
                     node.getNodeName(),

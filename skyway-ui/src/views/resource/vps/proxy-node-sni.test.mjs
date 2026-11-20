@@ -2,8 +2,9 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import vm from 'node:vm'
+import { WS_TLS } from '../../../utils/wsNode.js'
 import { parse, babelParse } from '@vue/compiler-sfc'
-import { parseProxyShareUrl } from '../../../utils/proxyShare.js'
+import { parseProxyShareUrl, proxyQrOptions } from '../../../utils/proxyShare.js'
 import { DEFAULT_REALITY_SNI, isValidRealitySni, readRealitySni } from '../../../utils/realitySni.js'
 
 function loadFormFunctions(path, names, bindings) {
@@ -15,7 +16,7 @@ function loadFormFunctions(path, names, bindings) {
     assert.ok(declaration, name)
     return source.slice(declaration.start, declaration.end)
   })
-  const context = vm.createContext(bindings)
+  const context = vm.createContext({ WS_TLS, ...bindings })
   vm.runInContext(functions.join('\n'), context)
   return context
 }
@@ -67,7 +68,7 @@ for (const path of ['./components/ProxyNodePanel.vue', './proxyNode/index.vue'])
     const shareVlessUrl = { value: 'vless://id@server:443?sni=old.example' }
     const shareQrDataUrl = { value: 'previous QR' }
     const form = loadFormFunctions(path, ['refreshShareQrCode'], {
-      shareVlessUrl, shareQrDataUrl,
+      shareVlessUrl, shareQrDataUrl, proxyQrOptions, shareData: { value: { nodeType: 'VLESS-REALITY' } },
       QRCode: { toDataURL(url) { return new Promise(resolve => pending.push({ url, resolve })) } },
       proxy: { $modal: { msgWarning() {} } }
     })

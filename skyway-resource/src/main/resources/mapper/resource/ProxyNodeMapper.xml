@@ -12,6 +12,10 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         <result property="nodeType"    column="node_type"    />
         <result property="address"     column="address"      />
         <result property="port"        column="port"         />
+        <result property="listenPort" column="listen_port"/>
+        <result property="wsKey" column="ws_key"/>
+        <result property="subscriptionToken" column="subscription_token"/>
+        <result property="cleanupStage" column="cleanup_stage"/>
         <result property="url"         column="url"          />
         <result property="configJson"  column="config_json"  />
         <result property="domainPolicyJson" column="domain_policy_json" />
@@ -27,8 +31,13 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     </resultMap>
 
     <sql id="selectProxyNodeVo">
-        select p.id, p.instance_id, p.customer_id, p.node_name, p.node_type, p.address, p.port, p.url, p.config_json, p.domain_policy_json,
+        select p.id, p.instance_id, p.customer_id, p.node_name, p.node_type, p.address, p.port, p.listen_port, p.ws_key, p.subscription_token, p.url, p.config_json, p.domain_policy_json,
                p.expire_time, p.custom_id, p.status, p.remark, p.create_by, p.create_time, p.update_by, p.update_time,
+               case when p.ws_key is not null then
+                 (select w.stage from res_ws_operation w where w.instance_id = p.instance_id
+                    and (w.kind = 'FORCE_VPS' or (w.node_id = p.id and w.kind in ('DELETE','FORCE')))
+                    and w.state not in ('DONE','FAILED') order by w.sequence_no desc limit 1)
+               end as cleanup_stage,
                (select ifnull(sum(ifnull(t.rx_delta, 0) + ifnull(t.tx_delta, 0)), 0)
                   from res_proxy_node_traffic t where t.node_id = p.id) as total_traffic_bytes
         from res_proxy_node p
@@ -42,8 +51,8 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             <if test="nodeType != null and nodeType != ''"> and p.node_type = #{nodeType} </if>
             <if test="status != null and status != ''"> and p.status = #{status} </if>
             <if test="nodeName != null and nodeName != ''"> and p.node_name like concat('%', #{nodeName}, '%') </if>
-            <if test="expireStatus == 'unexpired'"> and (p.expire_time is null or p.expire_time &gt;= sysdate()) </if>
-            <if test="expireStatus == 'expired'"> and p.expire_time is not null and p.expire_time &lt; sysdate() </if>
+            <if test="expireStatus == 'unexpired'"> and (p.expire_time is null or p.expire_time &gt;= CURRENT_TIMESTAMP) </if>
+            <if test="expireStatus == 'expired'"> and p.expire_time is not null and p.expire_time &lt; CURRENT_TIMESTAMP </if>
         </where>
         order by p.create_time desc
     </select>
@@ -56,8 +65,8 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             <if test="nodeType != null and nodeType != ''"> and node_type = #{nodeType} </if>
             <if test="status != null and status != ''"> and status = #{status} </if>
             <if test="nodeName != null and nodeName != ''"> and node_name like concat('%', #{nodeName}, '%') </if>
-            <if test="expireStatus == 'unexpired'"> and (expire_time is null or expire_time &gt;= sysdate()) </if>
-            <if test="expireStatus == 'expired'"> and expire_time is not null and expire_time &lt; sysdate() </if>
+            <if test="expireStatus == 'unexpired'"> and (expire_time is null or expire_time &gt;= CURRENT_TIMESTAMP) </if>
+            <if test="expireStatus == 'expired'"> and expire_time is not null and expire_time &lt; CURRENT_TIMESTAMP </if>
         </where>
     </select>
 
@@ -80,12 +89,14 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
 
     <select id="selectByInstanceIdAndPort" resultMap="ProxyNodeResult">
         <include refid="selectProxyNodeVo"/>
-        where instance_id = #{instanceId} and port = #{port}
+        where instance_id = #{instanceId} and coalesce(listen_port, port) = #{port}
         limit 1
     </select>
 
     <select id="selectPortsByInstanceId" resultType="int">
-        select port from res_proxy_node where instance_id = #{instanceId} and port is not null order by port
+        select port from res_proxy_node where instance_id = #{instanceId}
+        union select listen_port from res_proxy_node where instance_id = #{instanceId} and listen_port is not null
+        union select reserved_port from res_ws_operation where instance_id = #{instanceId} and reserved_port is not null
     </select>
 
     <select id="countByInstanceId" resultType="int">
@@ -97,8 +108,8 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
     </select>
 
     <insert id="insert" parameterType="com.skyway.resource.domain.ProxyNode" useGeneratedKeys="true" keyProperty="id">
-        insert into res_proxy_node (instance_id, customer_id, node_name, node_type, address, port, url, config_json, domain_policy_json, expire_time, custom_id, status, remark, create_by, create_time, update_time)
-        values (#{instanceId}, #{customerId}, #{nodeName}, #{nodeType}, #{address}, #{port}, #{url}, #{configJson}, #{domainPolicyJson}, #{expireTime}, #{customId}, #{status}, #{remark}, #{createBy}, sysdate(), sysdate())
+        insert into res_proxy_node (instance_id, customer_id, node_name, node_type, address, port, listen_port, ws_key, subscription_token, url, config_json, domain_policy_json, expire_time, custom_id, status, remark, create_by, create_time, update_time)
+        values (#{instanceId}, #{customerId}, #{nodeName}, #{nodeType}, #{address}, #{port}, #{listenPort}, #{wsKey}, #{subscriptionToken}, #{url}, #{configJson}, #{domainPolicyJson}, #{expireTime}, #{customId}, #{status}, #{remark}, #{createBy}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
     </insert>
 
     <update id="update" parameterType="com.skyway.resource.domain.ProxyNode">
@@ -109,6 +120,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             <if test="nodeType != null and nodeType != ''">node_type = #{nodeType},</if>
             <if test="address != null and address != ''">address = #{address},</if>
             <if test="port != null">port = #{port},</if>
+            <if test="subscriptionToken != null">subscription_token = #{subscriptionToken},</if>
             <if test="url != null">url = #{url},</if>
             <if test="configJson != null">config_json = #{configJson},</if>
             expire_time = #{expireTime},
@@ -116,14 +128,14 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             <if test="status != null">status = #{status},</if>
             <if test="remark != null">remark = #{remark},</if>
             <if test="updateBy != null and updateBy != ''">update_by = #{updateBy},</if>
-            update_time = sysdate()
+            update_time = CURRENT_TIMESTAMP
         </set>
         where id = #{id}
     </update>
 
     <update id="updateDomainPolicy">
         update res_proxy_node
-        set domain_policy_json = #{domainPolicyJson}, update_by = #{updateBy}, update_time = sysdate()
+        set domain_policy_json = #{domainPolicyJson}, update_by = #{updateBy}, update_time = CURRENT_TIMESTAMP
         where id = #{id}
     </update>
 

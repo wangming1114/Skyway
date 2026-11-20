@@ -20,6 +20,7 @@ import com.skyway.common.core.page.TableDataInfo;
 import com.skyway.common.enums.BusinessType;
 import com.skyway.common.utils.poi.ExcelUtil;
 import com.skyway.system.domain.SysConfig;
+import com.skyway.system.service.CloudflareCredentials;
 import com.skyway.system.service.ISysConfigService;
 
 /**
@@ -43,15 +44,17 @@ public class SysConfigController extends BaseController
     {
         startPage();
         List<SysConfig> list = configService.selectConfigList(config);
+        list.forEach(CloudflareCredentials::mask);
         return getDataTable(list);
     }
 
-    @Log(title = "参数管理", businessType = BusinessType.EXPORT)
+    @Log(title = "参数管理", businessType = BusinessType.EXPORT, excludeParamNames = {"configValue"})
     @PreAuthorize("@ss.hasPermi('system:config:export')")
     @PostMapping("/export")
     public void export(HttpServletResponse response, SysConfig config)
     {
         List<SysConfig> list = configService.selectConfigList(config);
+        list.forEach(CloudflareCredentials::mask);
         ExcelUtil<SysConfig> util = new ExcelUtil<SysConfig>(SysConfig.class);
         util.exportExcel(response, list, "参数数据");
     }
@@ -63,7 +66,7 @@ public class SysConfigController extends BaseController
     @GetMapping(value = "/{configId}")
     public AjaxResult getInfo(@PathVariable Long configId)
     {
-        return success(configService.selectConfigById(configId));
+        return success(CloudflareCredentials.mask(configService.selectConfigById(configId)));
     }
 
     /**
@@ -72,14 +75,14 @@ public class SysConfigController extends BaseController
     @GetMapping(value = "/configKey/{configKey}")
     public AjaxResult getConfigKey(@PathVariable String configKey)
     {
-        return success(configService.selectConfigByKey(configKey));
+        return success(CloudflareCredentials.display(configKey, configService.selectConfigByKey(configKey)));
     }
 
     /**
      * 新增参数配置
      */
     @PreAuthorize("@ss.hasPermi('system:config:add')")
-    @Log(title = "参数管理", businessType = BusinessType.INSERT)
+    @Log(title = "参数管理", businessType = BusinessType.INSERT, excludeParamNames = {"configValue"})
     @PostMapping
     public AjaxResult add(@Validated @RequestBody SysConfig config)
     {
@@ -95,7 +98,7 @@ public class SysConfigController extends BaseController
      * 修改参数配置
      */
     @PreAuthorize("@ss.hasPermi('system:config:edit')")
-    @Log(title = "参数管理", businessType = BusinessType.UPDATE)
+    @Log(title = "参数管理", businessType = BusinessType.UPDATE, excludeParamNames = {"configValue"})
     @PutMapping
     public AjaxResult edit(@Validated @RequestBody SysConfig config)
     {

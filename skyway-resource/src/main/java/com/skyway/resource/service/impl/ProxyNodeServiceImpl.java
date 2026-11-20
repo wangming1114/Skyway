@@ -126,6 +126,7 @@ public class ProxyNodeServiceImpl implements IProxyNodeService {
                 return null;
             }
 
+            if (ProxyNodeProtocol.WS_TLS.equals(nodeType)) return com.skyway.resource.domain.VlessWsTls.share(node, cfg);
             if ("VLESS-REALITY".equals(nodeType)) {
                 return buildVlessRealityUrl(node, cfg);
             }

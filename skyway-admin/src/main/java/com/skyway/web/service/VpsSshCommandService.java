@@ -187,7 +187,7 @@ public class VpsSshCommandService {
             + "  esac\n"
             + "done\n";
     private static final String SINGBOX_SPEED_SCRIPT = "#!/bin/bash\n"
-            + "# SKYWAY_SPEED_VERSION=2\n"
+            + "# SKYWAY_SPEED_VERSION=3\n"
             + "export PATH=/usr/sbin:/sbin:$PATH\n"
             + "\n"
             + "# 捕获 Ctrl+C 信号，优雅退出并恢复光标\n"
@@ -225,23 +225,23 @@ public class VpsSshCommandService {
             + "}\n"
             + "\n"
             + "\n"
-            + "# UDP sockets do not expose TCP byte counters in ss. Read the managed firewall counters.\n"
-            + "get_udp_data() {\n"
+            + "# Use firewall counters for UDP and for the managed WS loopback listeners.\n"
+            + "get_counter_data() {\n"
             + "    if command -v iptables >/dev/null 2>&1; then\n"
             + "        for direction in IN OUT; do\n"
             + "            iptables -L \"NODE_TRAFFIC_$direction\" -v -n -x 2>/dev/null | awk -v direction=\"$direction\" '\n"
-            + "            / udp / && $1 ~ /^[0-9]+$/ {\n"
+            + "            (/ udp / || ($3==\"RETURN\" && ($4==\"tcp\" || $4==6) && ($6==\"lo\" || $7==\"lo\"))) && $1 ~ /^[0-9]+$/ {\n"
             + "                for (i=1;i<=NF;i++) if ($i ~ /^[ds]pt:/) {\n"
             + "                    port=$i; sub(/^[ds]pt:/,\"\",port); if (port==\"\") port=$(i+1)\n"
             + "                    if ($2+0 > bytes[port]+0) bytes[port]=$2+0\n"
             + "                    seen[port]=1\n"
             + "                }\n"
             + "            }\n"
-            + "            END {for (port in seen) print direction \":\" port, bytes[port]+0}'\n"
+            + "            END {for (port in seen) printf \"%s:%s %.0f\\n\", direction, port, bytes[port]}'\n"
             + "        done\n"
             + "    else\n"
             + "        nft list table inet node_traffic 2>/dev/null | awk '\n"
-            + "        /udp (dport|sport)/ {\n"
+            + "        /udp (dport|sport)|[io]ifname \"lo\" tcp (dport|sport)/ {\n"
             + "            port=\"\"; value=0; direction=\"\"\n"
             + "            for(i=1;i<=NF;i++) {\n"
             + "                if($i==\"dport\") {port=$(i+1); direction=\"IN\"}\n"
@@ -252,12 +252,12 @@ public class VpsSshCommandService {
             + "            if(value>bytes[key]+0) bytes[key]=value\n"
             + "            seen[key]=1\n"
             + "        }\n"
-            + "        END {for(key in seen) print key, bytes[key]+0}'\n"
+            + "        END {for(key in seen) printf \"%s %.0f\\n\", key, bytes[key]}'\n"
             + "    fi\n"
             + "}\n"
-            + "declare -A old_udp\n"
-            + "while read -r key value; do old_udp[\"$key\"]=$value; done < <(get_udp_data)\n"
-            + "old_udp_time=$SECONDS\n"
+            + "declare -A old_counters\n"
+            + "while read -r key value; do old_counters[\"$key\"]=$value; done < <(get_counter_data)\n"
+            + "old_counters_time=$SECONDS\n"
             + "\n"
             + "# 全局保存上一秒数据的字典\n"
             + "declare -A old_acked\n"
@@ -273,8 +273,8 @@ public class VpsSshCommandService {
             + "while true; do\n"
             + "    sleep 1\n"
             + "    \n"
-            + "    unset allowed_ports udp_ports new_old_acked new_old_recv port_up port_down port_total output_lines\n"
-            + "    declare -A allowed_ports udp_ports\n"
+            + "    unset allowed_ports counter_ports new_old_acked new_old_recv port_up port_down port_total output_lines\n"
+            + "    declare -A allowed_ports counter_ports\n"
             + "    declare -A new_old_acked\n"
             + "    declare -A new_old_recv\n"
             + "    declare -A port_up\n"
@@ -285,10 +285,10 @@ public class VpsSshCommandService {
             + "    # 动态获取配置目录下的有效端口\n"
             + "    shopt -s nullglob\n"
             + "    for conf in \"$CONF_DIR\"/*.json; do\n"
-            + "        port=$(grep -hoP '\"listen_port\":\\s*\\K\\d+' \"$conf\" 2>/dev/null)\n"
+            + "        port=$(sed -nE 's/.*\"listen_port\"[[:space:]]*:[[:space:]]*([0-9]+).*/\\1/p' \"$conf\" 2>/dev/null)\n"
             + "        if [[ -n \"$port\" ]]; then\n"
             + "            allowed_ports[\"$port\"]=1\n"
-            + "            if grep -Eq '\"type\"[[:space:]]*:[[:space:]]*\"hysteria2\"' \"$conf\"; then udp_ports[\"$port\"]=1; fi\n"
+            + "            if [[ ${conf##*/} == VLESS-WS-TLS-* ]] || grep -Eq '\"type\"[[:space:]]*:[[:space:]]*\"hysteria2\"' \"$conf\"; then counter_ports[\"$port\"]=1; fi\n"
             + "            port_up[\"$port\"]=0\n"
             + "            port_down[\"$port\"]=0\n"
             + "            port_total[\"$port\"]=0\n"
@@ -331,24 +331,24 @@ public class VpsSshCommandService {
             + "        old_recv[\"$k\"]=\"${new_old_recv[$k]}\"\n"
             + "    done\n"
             + "    \n"
-            + "    elapsed=$((SECONDS - old_udp_time))\n"
+            + "    elapsed=$((SECONDS - old_counters_time))\n"
             + "    ((elapsed > 0)) || elapsed=1\n"
-            + "    old_udp_time=$SECONDS\n"
-            + "    unset next_udp\n"
-            + "    declare -A next_udp\n"
+            + "    old_counters_time=$SECONDS\n"
+            + "    unset next_counters\n"
+            + "    declare -A next_counters\n"
             + "    while read -r key value; do\n"
             + "        port=${key#*:}\n"
-            + "        [[ -n \"${udp_ports[$port]}\" ]] || continue\n"
-            + "        previous=${old_udp[$key]:-$value}\n"
+            + "        [[ -n \"${counter_ports[$port]}\" ]] || continue\n"
+            + "        previous=${old_counters[$key]:-$value}\n"
             + "        delta=$((value - previous))\n"
             + "        ((delta >= 0)) || delta=0\n"
-            + "        next_udp[\"$key\"]=$value\n"
+            + "        next_counters[\"$key\"]=$value\n"
             + "        rate=$(awk -v delta=\"$delta\" -v elapsed=\"$elapsed\" 'BEGIN {printf \"%.4f\", delta/elapsed}')\n"
             + "        if [[ $key == OUT:* ]]; then port_up[\"$port\"]=$rate; else port_down[\"$port\"]=$rate; fi\n"
-            + "    done < <(get_udp_data)\n"
-            + "    unset old_udp\n"
-            + "    declare -A old_udp\n"
-            + "    for key in \"${!next_udp[@]}\"; do old_udp[\"$key\"]=${next_udp[$key]}; done\n"
+            + "    done < <(get_counter_data)\n"
+            + "    unset old_counters\n"
+            + "    declare -A old_counters\n"
+            + "    for key in \"${!next_counters[@]}\"; do old_counters[\"$key\"]=${next_counters[$key]}; done\n"
             + "\n"
             + "    for port in \"${!allowed_ports[@]}\"; do\n"
             + "        total=${port_total[\"$port\"]:-0}\n"
@@ -360,7 +360,7 @@ public class VpsSshCommandService {
             + "        down_mb=$(awk \"BEGIN {printf \\\"%.2f\\\", $down_val / 1048576}\")\n"
             + "        \n"
             + "        line=$(printf \"%-12s | %-15s | %-15s\" \"$port\" \"$up_mb\" \"$down_mb\")\n"
-            + "        sort_key=$(awk -v total=\"$total\" 'BEGIN {printf \"%012.0f\", total}')\n"
+            + "        sort_key=$(awk -v up=\"$up_val\" -v down=\"$down_val\" 'BEGIN {printf \"%012.0f\", up+down}')\n"
             + "        output_lines+=(\"${sort_key}|${line}\")\n"
             + "    done\n"
             + "    \n"
@@ -494,7 +494,7 @@ public class VpsSshCommandService {
         socksOutbound.put("version", "5");
         socksOutbound.put("username", relay.getUsername());
         socksOutbound.put("password", relay.getPassword());
-        if (isHysteria2Config(root) || outbounds.isEmpty()) outbounds.add(socksOutbound);
+        if (usesScopedEgress(root) || outbounds.isEmpty()) outbounds.add(socksOutbound);
         else outbounds.set(0, socksOutbound);
 
         refreshManagedDomainEgress(outbounds, socksOutbound);
@@ -571,7 +571,7 @@ public class VpsSshCommandService {
             JSONObject outbound = outbounds.getJSONObject(i);
             if (outbound == null || isManagedDomainOutbound(outbound)) continue;
             String tag = outbound.getString("tag");
-            if (isHysteria2Config(root) && (tag == null || !tag.startsWith(SOCKS_RELAY_TAG_PREFIX))) continue;
+            if (usesScopedEgress(root) && (tag == null || !tag.startsWith(SOCKS_RELAY_TAG_PREFIX))) continue;
             boolean routeMatched = StringUtils.isNotEmpty(existingSocksTag) && existingSocksTag.equals(tag);
             boolean typeMatched = "socks".equals(outbound.getString("type")) && !isManagedDomainOutbound(outbound);
             if (routeMatched || typeMatched) {
@@ -737,7 +737,7 @@ public class VpsSshCommandService {
             JSONObject outbound = outbounds.getJSONObject(i);
             if (outbound != null && "socks".equals(outbound.getString("type"))
                     && !isManagedDomainOutbound(outbound)
-                    && (!isHysteria2Config(root) || (outbound.getString("tag") != null
+                    && (!usesScopedEgress(root) || (outbound.getString("tag") != null
                     && outbound.getString("tag").startsWith(SOCKS_RELAY_TAG_PREFIX)))) {
                 if (StringUtils.isNotEmpty(outbound.getString("tag"))) socksTags.add(outbound.getString("tag"));
                 socksIndex = i;
@@ -747,7 +747,7 @@ public class VpsSshCommandService {
         if (socksIndex < 0) return JSON.toJSONString(root, JSONWriter.Feature.PrettyFormat);
         JSONObject direct = new JSONObject();
         direct.put("type", "direct");
-        if (isHysteria2Config(root)) outbounds.remove(socksIndex);
+        if (usesScopedEgress(root)) outbounds.remove(socksIndex);
         else outbounds.set(socksIndex, direct);
         refreshManagedDomainEgress(outbounds, direct);
         if (outbounds.isEmpty()) root.remove("outbounds");
@@ -759,6 +759,17 @@ public class VpsSshCommandService {
             if (route.isEmpty()) root.remove("route");
         }
         return JSON.toJSONString(root, JSONWriter.Feature.PrettyFormat);
+    }
+
+    private static boolean usesScopedEgress(JSONObject root) {
+        return isHysteria2Config(root) || isWsInbound(root);
+    }
+
+    private static boolean isWsInbound(JSONObject root) {
+        JSONArray array = root.getJSONArray("inbounds");
+        if (array == null || array.isEmpty()) return false;
+        JSONObject first = array.getJSONObject(0);
+        return first != null && first.getString("tag") != null && first.getString("tag").startsWith("skyway-ws-");
     }
 
     private static boolean isHysteria2Config(JSONObject root) {
@@ -889,7 +900,7 @@ public class VpsSshCommandService {
 
             if (blacklist) {
                 // Keep an unused, namespaced outbound as an ownership marker for safe/idempotent cleanup.
-                createManagedEgress(outbounds, suffix, !isHysteria2Config(root));
+                createManagedEgress(outbounds, suffix, !usesScopedEgress(root));
                 JSONObject reject = inboundRule(inboundTag);
                 reject.put("domain", exactDomains);
                 reject.put("domain_suffix", suffixDomains);
@@ -897,7 +908,7 @@ public class VpsSshCommandService {
                 reject.put("method", "default");
                 managed.add(reject);
             } else {
-                String egressTag = createManagedEgress(outbounds, suffix, !isHysteria2Config(root));
+                String egressTag = createManagedEgress(outbounds, suffix, !usesScopedEgress(root));
                 JSONObject allow = inboundRule(inboundTag);
                 allow.put("domain", exactDomains);
                 allow.put("domain_suffix", suffixDomains);
@@ -925,7 +936,7 @@ public class VpsSshCommandService {
                 reject.put("outbound", blockTag);
                 managed.add(reject);
             } else {
-                String egressTag = createManagedEgress(outbounds, suffix, !isHysteria2Config(root));
+                String egressTag = createManagedEgress(outbounds, suffix, !usesScopedEgress(root));
                 JSONObject allow = inboundRule(inboundTag);
                 allow.put("domain", exactDomains);
                 allow.put("domain_suffix", suffixDomains);
@@ -1305,12 +1316,27 @@ public class VpsSshCommandService {
                 || StringUtils.isEmpty(inst.getSshUsername())) {
             throw new IllegalStateException("实例不存在或 SSH 信息不完整");
         }
-        SSHClient ssh = new SSHClient();
-        ssh.addHostKeyVerifier(new PromiscuousVerifier());
-        ssh.setConnectTimeout(15_000);
-        ssh.connect(inst.getIp(), inst.getSshPort() != null ? inst.getSshPort() : 22);
-        ssh.authPassword(inst.getSshUsername(), inst.getSshPassword() != null ? inst.getSshPassword() : "");
-        return ssh;
+        for (int attempt = 1; ; attempt++) {
+            SSHClient ssh = new SSHClient();
+            ssh.addHostKeyVerifier(new PromiscuousVerifier());
+            ssh.setConnectTimeout(15_000);
+            try {
+                ssh.connect(inst.getIp(), inst.getSshPort());
+                ssh.authPassword(inst.getSshUsername(), inst.getSshPassword() != null ? inst.getSshPassword() : "");
+                return ssh;
+            } catch (IOException failure) {
+                try { ssh.close(); } catch (IOException closeFailure) { failure.addSuppressed(closeFailure); }
+                // A busy OpenSSH listener can drop a connection before exchanging banners.
+                if (attempt >= 3 || !(failure instanceof net.schmizz.sshj.transport.TransportException)
+                        || !String.valueOf(failure.getMessage()).contains("identification exchange")) throw failure;
+                try {
+                    TimeUnit.SECONDS.sleep(2L * attempt);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new java.io.InterruptedIOException("SSH 连接重试已中断");
+                }
+            }
+        }
     }
 
     /**
@@ -1628,7 +1654,7 @@ public class VpsSshCommandService {
 
     private static void installRealtimeSpeedScript(Session session) throws IOException {
         String encodedScript = Base64.getEncoder().encodeToString(SINGBOX_SPEED_SCRIPT.getBytes(StandardCharsets.UTF_8));
-        String install = "if [ ! -x " + SPEED_SCRIPT_PATH + " ] || ! grep -q '^# SKYWAY_SPEED_VERSION=2$' " + SPEED_SCRIPT_PATH + "; then "
+        String install = "if [ ! -x " + SPEED_SCRIPT_PATH + " ] || ! grep -q '^# SKYWAY_SPEED_VERSION=3$' " + SPEED_SCRIPT_PATH + "; then "
                 + "printf '%s' '" + encodedScript + "' | base64 -d > " + SPEED_SCRIPT_PATH
                 + " && chmod +x " + SPEED_SCRIPT_PATH + "; fi";
         String out = execAndRead(session, "sh -c " + quoteSh(install));
@@ -2314,7 +2340,7 @@ public class VpsSshCommandService {
         if (StringUtils.isNotEmpty(credentialId)) {
             script.append("grep -Fq -- ").append(shellQuote(credentialId)).append(" \"$f\"");
         } else {
-            script.append("grep -Eq ").append(shellQuote("\"listen_port\"[[:space:]]*:[[:space:]]*" + node.getPort() + "([^0-9]|$)"))
+            script.append("grep -Eq ").append(shellQuote("\"listen_port\"[[:space:]]*:[[:space:]]*" + node.getTrafficPort() + "([^0-9]|$)"))
                     .append(" \"$f\"");
         }
         script.append("; then printf '__CONF__%s\\n' \"$f\"; fi; done; fi");

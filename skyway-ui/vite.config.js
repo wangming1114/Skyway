@@ -46,6 +46,7 @@ export default defineConfig(({ mode, command }) => {
       host: true,
       open: true,
       proxy: {
+        '/share/subscription/': { target: baseUrl, changeOrigin: true },
         // https://cn.vitejs.dev/config/#server-proxy
         '/dev-api': {
           target: baseUrl,

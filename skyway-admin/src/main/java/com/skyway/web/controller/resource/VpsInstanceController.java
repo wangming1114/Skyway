@@ -1,5 +1,7 @@
 package com.skyway.web.controller.resource;
 
+import com.skyway.web.service.ws.CloudflareDns;
+import com.skyway.web.service.ws.WsNodeService;
 import java.util.Collections;
 import java.util.List;
 import javax.servlet.http.HttpServletResponse;
@@ -49,6 +51,9 @@ import org.slf4j.LoggerFactory;
 public class VpsInstanceController extends BaseController {
 
     private static final Logger log = LoggerFactory.getLogger(VpsInstanceController.class);
+
+    @Autowired
+    private WsNodeService wsNodes;
 
     @Autowired
     private IVpsInstanceService vpsInstanceService;
@@ -191,6 +196,12 @@ public class VpsInstanceController extends BaseController {
             VpsInstance existing = vpsInstanceService.getById(row.getId());
             if (existing != null) {
                 row.setStatus(existing.getStatus());
+                if (!java.util.Objects.equals(existing.getIp(), row.getIp()) && wsNodes.hasBindings(row.getId())) {
+                    CloudflareDns.origin(row.getIp());
+                    int updated = vpsInstanceService.update(row);
+                    if (updated > 0) wsNodes.syncAddress(row.getId());
+                    return toAjax(updated);
+                }
             }
         }
         return toAjax(vpsInstanceService.update(row));
@@ -203,16 +214,21 @@ public class VpsInstanceController extends BaseController {
     @Log(title = "VPS实例", businessType = BusinessType.DELETE)
     @DeleteMapping("/{id}")
     public AjaxResult remove(@PathVariable Long id) {
+        if (wsNodes.hasBindings(id)) return error("请先清理该实例的托管节点，或使用强制删除");
         return toAjax(vpsInstanceService.deleteById(id));
     }
 
     /**
-     * 强制删除VPS实例：仅清理本地节点、流量数据和实例记录，不连接服务器。
+     * 强制删除 VPS 时回收托管 DNS、节点数据与实例记录，可用于离线服务器。
      */
     @PreAuthorize("@ss.hasPermi('resource:vps:remove')")
     @Log(title = "VPS实例强制删除", businessType = BusinessType.DELETE)
     @DeleteMapping("/{id}/force")
     public AjaxResult forceRemove(@PathVariable Long id) {
+        if (wsNodes.hasBindings(id)) {
+            wsNodes.forceVps(id, getUsername());
+            return success();
+        }
         ProxyNode query = new ProxyNode();
         query.setInstanceId(id);
         List<ProxyNode> nodes = proxyNodeService.selectList(query);
@@ -264,6 +280,8 @@ public class VpsInstanceController extends BaseController {
         if (!ProxyNodeProtocol.isSupported(nodeType)) {
             return AjaxResult.error("不支持的协议类型: " + nodeType);
         }
+        if (ProxyNodeProtocol.WS_TLS.equals(nodeType))
+            return success(wsNodes.submit("CREATE", instanceId, null, body, getUsername()));
         String sni;
         try {
             sni = ProxyNodeProtocol.HYSTERIA2.equals(nodeType) ? null : RealitySniSupport.requestedSni(body, nodeType);

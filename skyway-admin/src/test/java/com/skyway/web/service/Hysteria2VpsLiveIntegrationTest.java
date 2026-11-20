@@ -26,7 +26,6 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 import net.schmizz.sshj.SSHClient;
 import net.schmizz.sshj.connection.channel.direct.Session;
-import net.schmizz.sshj.transport.verification.PromiscuousVerifier;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -42,6 +41,73 @@ public class Hysteria2VpsLiveIntegrationTest {
     private static final int SOCKS_PORT = 29091;
     private static final int UDP_PORT = 29092;
     private static final String AUDIT = "/root/skyway-live-audit-20261026-hysteria2";
+
+    @Test
+    @org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable(named = "SKYWAY_WS_LEGACY_CONFIG", matches = ".+")
+    void legacyProtocolsShareEditAndTrafficWithWsDeployment() throws Exception {
+        JSONObject config = JSON.parseObject(new String(Files.readAllBytes(
+                Paths.get(System.getenv("SKYWAY_WS_LEGACY_CONFIG"))), StandardCharsets.UTF_8));
+        Fixture f = new Fixture(config.getString("host"), config.getString("password"), "");
+        String dir = "/tmp/skyway-protocol-qa-" + UUID.randomUUID();
+        try {
+            f.run("umask 077; mkdir " + dir + " && cd " + dir
+                    + " && sha256sum /etc/sing-box/conf/*.json > originals");
+            f.ssh.newSCPFileTransfer().upload(System.getenv("SKYWAY_WS_LEGACY_MIHOMO_GZ"), dir + "/client.gz");
+            try (InputStream fixture = getClass().getResourceAsStream("/ws/traffic-fixture.py")) {
+                f.write(dir + "/echo.py", org.springframework.util.StreamUtils.copyToString(fixture, StandardCharsets.UTF_8));
+            }
+            f.run("cd " + dir + " && gzip -dc client.gz > mihomo && chmod 0700 mihomo"
+                    + " && (nohup python3 -I " + dir + "/echo.py 0 >port 2>echo.log </dev/null & echo $! >echo.pid)");
+            int echo = Integer.parseInt(f.run("cd " + dir + " && for i in 1 2 3 4 5; do test -s port && break; sleep 1; done; cat port").trim());
+            for (String type : Arrays.asList("Hysteria2", "VLESS-REALITY")) {
+                ProxyNode node = f.create(type, f.port, "VLESS-REALITY".equals(type) ? map("sni", "www.bing.com") : null);
+                URI original = URI.create(node.getUrl());
+                assertEquals(f.port, original.getPort());
+                f.edit(node, map("port", f.port + 1));
+                URI edited = URI.create(node.getUrl());
+                assertEquals(f.port + 1, edited.getPort());
+                assertEquals(original.getUserInfo(), edited.getUserInfo());
+                assertEquals("Hysteria2".equals(type) ? "hysteria2" : "vless", edited.getScheme());
+                f.traffic.collect();
+                long[] before = f.trafficData.getTotalByNodeId(node.getId());
+                int mixedPort = f.port + 7;
+                String yaml = new String(Client.configuration(node, mixedPort), StandardCharsets.UTF_8);
+                f.write(dir + "/client.json", yaml);
+                f.run("cd " + dir + " && (nohup " + dir + "/mihomo -d " + dir + " -f client.json >client.log 2>&1 </dev/null & echo $! >client.pid)");
+                try {
+                    String curl = "curl --noproxy '' --max-time 40 -fsS -x socks5h://127.0.0.1:" + mixedPort;
+                    String target = " http://127.0.0.1:" + echo;
+                    f.run("cd " + dir + " && " + curl + " --retry 4 --retry-connrefused -o body" + target + "/download"
+                            + " && test \"$(wc -c < body)\" -eq 1048576 && " + curl + " --data-binary @body" + target + "/upload");
+                } finally {
+                    stopFixtureProcess(f, dir, "client", dir + "/mihomo");
+                }
+                f.traffic.collect();
+                long[] after = f.trafficData.getTotalByNodeId(node.getId());
+                assertTrue(after[0] > before[0] && after[1] > before[1]);
+                assertTrue(f.editor.remove(node.getId().toString()).isSuccess());
+                f.pass(type + " create, share, port edit, Mihomo bidirectional 1 MiB transfer, counters and delete");
+            }
+        } finally {
+            try {
+                for (ProxyNode node : new ArrayList<>(f.nodes.values()))
+                    assertTrue(f.editor.remove(node.getId().toString()).isSuccess());
+                stopFixtureProcess(f, dir, "client", dir + "/mihomo");
+                stopFixtureProcess(f, dir, "echo", dir + "/echo.py");
+                f.run("cd " + dir + " && sha256sum -c --status originals && cd / && rm -rf -- " + dir);
+            } finally {
+                f.ssh.close();
+                Files.deleteIfExists(f.local);
+                SecurityContextHolder.clearContext();
+            }
+        }
+    }
+
+    private static void stopFixtureProcess(Fixture f, String dir, String name, String executable) throws Exception {
+        f.run("cd " + dir + " && if test -s " + name + ".pid; then pid=$(cat " + name
+                + ".pid); if grep -Fqa " + executable + " /proc/$pid/cmdline 2>/dev/null; then kill $pid; fi; rm -f "
+                + name + ".pid; fi");
+    }
 
     @Test
     void realServerLifecycleTrafficPoliciesClientsAndLegacyProtocols() throws Exception {
@@ -177,7 +243,7 @@ public class Hysteria2VpsLiveIntegrationTest {
         final VpsPortAvailabilityService ports = new VpsPortAvailabilityService();
         final VpsInstanceOperationCoordinator locks = new VpsInstanceOperationCoordinator();
         final AtomicLong sequence = new AtomicLong(990100);
-        final SSHClient ssh = new SSHClient();
+        final SSHClient ssh;
         final Path local = Files.createTempDirectory("skyway-vps-live-");
         int port;
         boolean failNextUpdate;
@@ -187,13 +253,13 @@ public class Hysteria2VpsLiveIntegrationTest {
 
         Fixture(String host, String password, String executable) throws Exception {
             this.host = host; this.password = password; this.executable = executable;
-            ssh.addHostKeyVerifier(new PromiscuousVerifier()); ssh.setConnectTimeout(15000); ssh.setTimeout(60000);
-            ssh.connect(host, 22); ssh.authPassword("root", password);
             VpsInstance instance = new VpsInstance(); instance.setId(INSTANCE); instance.setIp(host); instance.setSshPort(22);
             instance.setSshUsername("root"); instance.setSshPassword(password); instance.setStatus("running");
             when(instances.getById(INSTANCE)).thenReturn(instance);
             when(instances.selectList(any())).thenReturn(Arrays.asList(instance));
             ReflectionTestUtils.setField(remote, "vpsInstanceService", instances);
+            ssh = remote.openSshClient(INSTANCE);
+            ssh.setTimeout(60000);
             ProxyNodeMapper mapper = mock(ProxyNodeMapper.class);
             ReflectionTestUtils.setField(nodeService, "proxyNodeMapper", mapper);
             when(mapper.insert(any())).thenAnswer(call -> { ProxyNode n = call.getArgument(0); n.setId(sequence.incrementAndGet()); nodes.put(n.getId(), copy(n)); return 1; });
@@ -396,6 +462,7 @@ public class Hysteria2VpsLiveIntegrationTest {
             limits.get(node.getId()).setExpireTime(new Date(System.currentTimeMillis() - 1000));
             ProxyNodeRateLimitExpireTask task = new ProxyNodeRateLimitExpireTask();
             ReflectionTestUtils.setField(task, "proxyNodeRateLimitService", rateService);
+            ReflectionTestUtils.setField(task, "nodes", nodeService);
             ReflectionTestUtils.setField(task, "vpsSshCommandService", remote); task.processExpired();
             assertTrue(limits.isEmpty());
             assertFalse(run("cat /etc/tc_ports_rules.conf").contains(node.getPort() + ":"));

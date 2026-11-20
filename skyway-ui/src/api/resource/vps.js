@@ -1,4 +1,79 @@
 import request from '@/utils/request'
+import useUserStore from '@/store/modules/user'
+import { operationId, WS_TLS } from '@/utils/wsNode'
+
+const pendingPrefix = () => 'skyway.ws.operations.' + useUserStore().id + '.'
+const delay = ms => new Promise(resolve => setTimeout(resolve, ms))
+
+function rememberOperation(id, scope) {
+  const key = pendingPrefix() + id
+  if (scope) localStorage.setItem(key, JSON.stringify(scope))
+  else localStorage.removeItem(key)
+}
+
+export function pendingWsOperations(instanceId, customerId) {
+  const prefix = pendingPrefix()
+  const ids = []
+  for (const key of Object.keys(localStorage)) {
+    if (!key.startsWith(prefix)) continue
+    try {
+      const scope = JSON.parse(localStorage.getItem(key))
+      if ((!instanceId || Number(scope.instanceId) === Number(instanceId)) &&
+          (!customerId || Number(scope.customerId) === Number(customerId))) ids.push(key.slice(prefix.length))
+    } catch { localStorage.removeItem(key) }
+  }
+  return ids
+}
+
+function networkFailure(error) {
+  return !!error?.isAxiosError && (!error.response || error.response.status >= 500)
+}
+
+export async function waitWsOperation(result, onStage) {
+  const id = result.data?.operationId
+  if (!id) return result
+  let state = result.data
+  let previousStage
+  let wait = 1500
+  while (true) {
+    if (state.stage && state.stage !== previousStage) {
+      previousStage = state.stage
+      onStage?.(state.stage)
+    }
+    if (state.state === 'DONE' || state.state === 'FAILED') {
+      rememberOperation(id, null)
+      if (state.state === 'FAILED') throw new Error(state.stage)
+      return { ...result, data: state.node }
+    }
+    await delay(wait)
+    try {
+      const response = await request({ url: '/resource/vps/proxyNode/wsOperations/' + id, method: 'get' })
+      if (!response.data) throw new Error('未找到该操作，请重新提交')
+      state = response.data
+      wait = 1500
+    } catch (error) {
+      if (!networkFailure(error)) { rememberOperation(id, null); throw error }
+      wait = Math.min(wait * 2, 15000)
+    }
+  }
+}
+
+async function submitWsOperation(options, scope, onStage) {
+  const id = options.data.operationId
+  rememberOperation(id, scope)
+  for (let attempt = 0; ; attempt++) {
+    let response
+    try {
+      response = await request({ ...options, headers: { repeatSubmit: false } })
+    } catch (error) {
+      if (!networkFailure(error)) { rememberOperation(id, null); throw error }
+      if (attempt >= 2) return waitWsOperation({ data: { operationId: id } }, onStage)
+      await delay(1500)
+      continue
+    }
+    return waitWsOperation(response, onStage)
+  }
+}
 
 // ========== 分类（树） ==========
 export function listCategoryTree() {
@@ -261,12 +336,11 @@ export function addProxyNode(data) {
   })
 }
 
-export function updateProxyNode(data) {
-  return request({
-    url: '/resource/vps/proxyNode',
-    method: 'put',
-    data: data
-  })
+export function updateProxyNode(data, onStage, node) {
+  if (node?.nodeType === WS_TLS && node.listenPort) data.operationId ||= operationId()
+  const options = { url: '/resource/vps/proxyNode', method: 'put', data }
+  if (data.operationId) return submitWsOperation(options, { instanceId: node?.instanceId ?? data.instanceId, customerId: node?.customerId ?? data.customerId }, onStage)
+  return request(options).then(response => waitWsOperation(response, onStage))
 }
 
 export function delProxyNode(ids) {
@@ -301,10 +375,9 @@ export function checkInstanceSsh(instanceId) {
 }
 
 /** 在指定实例上添加代理节点（HTTP 同步，用于客户详情等无 WebSocket 场景） */
-export function addProxyNodeOnInstance(instanceId, data) {
-  return request({
-    url: '/resource/vps/instance/' + instanceId + '/proxyNode',
-    method: 'post',
-    data: data
-  })
+export function addProxyNodeOnInstance(instanceId, data, onStage) {
+  const options = { url: '/resource/vps/instance/' + instanceId + '/proxyNode', method: 'post', data }
+  if (data.nodeType !== WS_TLS) return request(options)
+  data.operationId ||= operationId()
+  return submitWsOperation(options, { instanceId, customerId: data.customerId }, onStage)
 }

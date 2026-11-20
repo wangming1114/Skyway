@@ -139,7 +139,8 @@
                <el-input v-model="form.configKey" placeholder="请输入参数键名" />
             </el-form-item>
             <el-form-item label="参数键值" prop="configValue">
-               <el-input v-model="form.configValue" type="textarea" placeholder="请输入参数键值" />
+               <el-input v-if="form.configKey === 'skyway.cloudflare.apiToken'" v-model="form.configValue" type="password" autocomplete="new-password" placeholder="输入新的 Cloudflare API Token" />
+              <el-input v-else v-model="form.configValue" type="textarea" placeholder="请输入参数键值" />
             </el-form-item>
             <el-form-item label="系统内置" prop="configType">
                <el-radio-group v-model="form.configType">

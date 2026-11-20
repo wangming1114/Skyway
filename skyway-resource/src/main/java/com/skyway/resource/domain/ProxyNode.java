@@ -42,6 +42,33 @@ public class ProxyNode extends BaseEntity {
     /** 端口 */
     private Integer port;
 
+    private Integer listenPort;
+    private String wsKey;
+    private String subscriptionToken;
+    private String cleanupStage;
+
+    public String getCleanupStage() { return cleanupStage; }
+    public void setCleanupStage(String value) { cleanupStage = value; }
+
+    /** WS clients use the public Caddy port. Metering uses the private inbound port. */
+    public Integer getListenPort() { return listenPort; }
+    public void setListenPort(Integer value) { listenPort = value; }
+    @JsonIgnore
+    public Integer getTrafficPort() { return listenPort != null ? listenPort : port; }
+    @JsonIgnore
+    public String getWsKey() { return wsKey; }
+    public void setWsKey(String value) { wsKey = value; }
+    @JsonIgnore
+    public String getSubscriptionToken() { return subscriptionToken; }
+    public void setSubscriptionToken(String value) { subscriptionToken = value; }
+    public String getSubscriptionPath() {
+        return subscriptionToken == null ? null : "/share/subscription/" + subscriptionToken + "/clash";
+    }
+    @JsonIgnore
+    public String getInboundTag() {
+        return wsKey == null ? nodeType + "-" + port + ".json" : "skyway-ws-" + wsKey;
+    }
+
     /** 完整分享链接 */
     private String url;
 

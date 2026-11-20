@@ -358,6 +358,11 @@ public class ProxyNodeDomainPolicyLiveIntegrationTest {
     }
 
     private static String trafficRules(SSHClient ssh) throws Exception {
-        return runAllowFailure(ssh, "iptables-save | grep -E 'NODE_TRAFFIC|^-A (INPUT|OUTPUT)'");
+        String rules = runAllowFailure(ssh, "iptables-save | grep -E 'NODE_TRAFFIC|^-A (INPUT|OUTPUT)'");
+        // The legacy collector moves its active transport to the front. Two adjacent
+        // protocol-only jumps to the same chain match disjoint packets in either order.
+        return rules.replaceAll(
+                "(?m)^-A (INPUT|OUTPUT) -p udp -j (NODE_TRAFFIC_(?:IN|OUT))\\n-A \\1 -p tcp -j \\2$",
+                "-A $1 -p tcp -j $2\n-A $1 -p udp -j $2");
     }
 }

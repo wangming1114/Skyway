@@ -16,6 +16,7 @@ import com.skyway.common.utils.StringUtils;
 import com.skyway.system.domain.SysConfig;
 import com.skyway.system.mapper.SysConfigMapper;
 import com.skyway.system.service.ISysConfigService;
+import com.skyway.system.service.CloudflareCredentials;
 
 /**
  * 参数配置 服务层实现
@@ -27,6 +28,9 @@ public class SysConfigServiceImpl implements ISysConfigService
 {
     @Autowired
     private SysConfigMapper configMapper;
+
+    @Autowired
+    private CloudflareCredentials credentials;
 
     @Autowired
     private RedisCache redisCache;
@@ -117,6 +121,7 @@ public class SysConfigServiceImpl implements ISysConfigService
     @Override
     public int insertConfig(SysConfig config)
     {
+        if (CloudflareCredentials.isToken(config.getConfigKey())) config.setConfigValue(credentials.encrypt(config.getConfigValue()));
         int row = configMapper.insertConfig(config);
         if (row > 0)
         {
@@ -135,6 +140,11 @@ public class SysConfigServiceImpl implements ISysConfigService
     public int updateConfig(SysConfig config)
     {
         SysConfig temp = configMapper.selectConfigById(config.getConfigId());
+        if (CloudflareCredentials.isToken(temp.getConfigKey()) || CloudflareCredentials.isToken(config.getConfigKey())) {
+            if (!temp.getConfigKey().equals(config.getConfigKey())) throw new ServiceException("Cloudflare 凭据键名为固定值");
+            String value = config.getConfigValue();
+            config.setConfigValue(CloudflareCredentials.MASK.equals(value) ? temp.getConfigValue() : credentials.encrypt(value));
+        }
         if (!StringUtils.equals(temp.getConfigKey(), config.getConfigKey()))
         {
             redisCache.deleteObject(getCacheKey(temp.getConfigKey()));

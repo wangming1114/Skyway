@@ -80,7 +80,7 @@ import { computed, getCurrentInstance, nextTick, reactive, ref, watch } from 'vu
 import { useRoute } from 'vue-router'
 import QRCode from 'qrcode'
 import { unlockCustomerTempShare } from '@/api/member/customerTempShare'
-import { buildShareNodeSummary, filterShareNodes, normalizeShareNode, safeProxyShareFilename } from '@/utils/proxyShare'
+import { proxyQrOptions, buildShareNodeSummary, filterShareNodes, normalizeShareNode, safeProxyShareFilename } from '@/utils/proxyShare'
 import heroOverview from '@/assets/share/customer/hero-overview.png'
 import OverviewScreen from './screens/OverviewScreen.vue'
 import DesktopGuideScreen from './screens/DesktopGuideScreen.vue'
@@ -231,7 +231,7 @@ function copyNodeClash(node) {
 function refreshDetailQrCode() {
   detailQrUrl.value = ''
   if (!selectedNode.value?.shareUrl) return
-  QRCode.toDataURL(selectedNode.value.shareUrl, { width: 220, margin: 1, errorCorrectionLevel: 'M' }).then(url => {
+  QRCode.toDataURL(selectedNode.value.shareUrl, proxyQrOptions(selectedNode.value.protocol)).then(url => {
     detailQrUrl.value = url
   }).catch(() => {
     proxy.$modal.msgWarning('二维码生成失败，请直接复制链接')

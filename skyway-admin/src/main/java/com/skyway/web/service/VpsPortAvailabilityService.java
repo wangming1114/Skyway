@@ -74,7 +74,7 @@ public class VpsPortAvailabilityService {
             throw new ServiceException("端口范围为 1-65535");
         }
         ProxyNode existing = proxyNodeService.getByInstanceIdAndPort(instanceId, port);
-        if (existing != null) {
+        if (existing != null || databasePorts(instanceId).contains(port)) {
             throw new ServiceException("端口 " + port + " 已被当前 VPS 的代理节点使用");
         }
         RemotePortScan scan = completeScanForCreate(instanceId, port);

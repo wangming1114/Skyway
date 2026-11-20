@@ -12,6 +12,9 @@ skyway:
   addressEnabled: false
   # 验证码类型 math 数字计算 char 字符验证
   captchaType: math
+  # Cloudflare 发布 TXT 后由 ACME 签发机构从公网核验，适用于管理端无法直连权威 DNS 的网络。
+  ws:
+    acme-propagation-wait-seconds: 30
   # C 端邮箱验证码
   mail:
     from: ${spring.mail.username:}

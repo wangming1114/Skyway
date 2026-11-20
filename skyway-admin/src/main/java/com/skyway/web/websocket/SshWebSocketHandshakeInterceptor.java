@@ -77,6 +77,8 @@ public class SshWebSocketHandshakeInterceptor implements HandshakeInterceptor {
         try {
             Long instanceId = Long.parseLong(instanceIdStr);
             attributes.put(ATTR_INSTANCE_ID, instanceId);
+            attributes.put("wsActor", loginUser.getUsername());
+            attributes.put("wsPermissions", new java.util.HashSet<>(permissions));
             log.debug("SSH WebSocket 握手通过: username={}, instanceId={}", loginUser.getUsername(), instanceId);
             return true;
         } catch (NumberFormatException e) {

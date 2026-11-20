@@ -19,7 +19,7 @@ test('batch create serially reuses the existing single-node HTTP API', () => {
   const executor = source.match(/async function executeBatchRows\(targetRows\)[\s\S]*?\n}\n\nfunction submitBatchAdd/)?.[0] || ''
   assert.match(executor, /for \(const row of targetRows\)/)
   assert.match(source, /async function resolveAutoBatchPort[\s\S]*?excludePorts[\s\S]*?await getRecommendPort\(batchInstanceId\.value,/)
-  assert.match(executor, /await addProxyNodeOnInstance\(batchInstanceId\.value, payload\)/)
+  assert.match(executor, /await addProxyNodeOnInstance\(batchInstanceId\.value, payload(?:,\s*stage\s*=>[^\n]+)?\)/)
   assert.match(executor, /autoPort: row\.autoPort/)
   assert.match(executor, /res\?\.data\?\.port[\s\S]*?row\.port = Number\(res\.data\.port\)/)
   assert.match(executor, /row\.status = 'failed'/)

@@ -51,6 +51,7 @@ services:
     env_file: .env
     environment:
       TZ: Asia/Shanghai
+      SKYWAY_WS_STATE_DIR: /app/private
       SPRING_PROFILES_ACTIVE: prod
       SPRING_CONFIG_ADDITIONAL_LOCATION: file:/app/config/
       MYSQL_DATABASE: ${MYSQL_DATABASE:-skyway}
@@ -62,6 +63,7 @@ services:
       - ./volumes/skyway/config:/app/config:ro
       - ./volumes/skyway/logs:/app/logs
       - ./volumes/skyway/upload:/app/upload
+      - ./volumes/skyway/private:/app/private
     depends_on:
       mysql:
         condition: service_healthy
